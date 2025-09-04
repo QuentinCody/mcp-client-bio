@@ -19,6 +19,231 @@ export interface MCPClientManager {
   cleanup: () => Promise<void>;
 }
 
+// Simple in-memory cache (per server URL + headers signature) to avoid reconnecting every request
+interface CachedClientEntry {
+  client: any;
+  tools: Record<string, any>;
+  lastUsed: number;
+}
+
+const CLIENT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const clientCache = new Map<string, CachedClientEntry>();
+
+// Tool metrics & invocation tracking (in-memory)
+interface ToolMetric {
+  name: string;
+  count: number;
+  success: number;
+  error: number;
+  timeout: number;
+  totalMs: number;
+  lastMs?: number;
+  lastStatus?: 'success' | 'error' | 'timeout';
+  lastError?: string;
+  lastInvokedAt?: number;
+}
+
+const toolMetrics = new Map<string, ToolMetric>();
+let currentInvocationBatch: Array<{
+  tool: string;
+  startedAt: number;
+  durationMs?: number;
+  status?: 'success' | 'error' | 'timeout';
+  error?: string;
+}> = [];
+
+export function resetMCPInvocationLog() {
+  currentInvocationBatch = [];
+}
+
+export function getMCPMetrics(options: { includeInvocations?: boolean } = {}) {
+  const metrics = Array.from(toolMetrics.values()).map(m => ({
+    ...m,
+    avgMs: m.count ? Math.round(m.totalMs / m.count) : 0,
+    successRate: m.count ? +(m.success / m.count * 100).toFixed(1) : 0
+  }));
+  metrics.sort((a,b) => (b.lastInvokedAt || 0) - (a.lastInvokedAt || 0));
+  return {
+    metrics,
+    invocations: options.includeInvocations ? currentInvocationBatch.slice() : undefined
+  };
+}
+
+// Periodic cleanup (runs once per module load lifecycle)
+if (typeof globalThis !== 'undefined' && !(globalThis as any).__mcpClientCacheCleanup) {
+  (globalThis as any).__mcpClientCacheCleanup = true;
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of clientCache.entries()) {
+      if (now - entry.lastUsed > CLIENT_TTL_MS) {
+        try { entry.client.disconnect?.(); } catch {}
+        clientCache.delete(key);
+      }
+    }
+  }, 60_000).unref?.();
+}
+
+function cacheKey(server: MCPServerConfig) {
+  const headersSig = (server.headers || []).map(h => `${h.key}=${h.value}`).sort().join('&');
+  return `${server.type}:${server.url}?${headersSig}`;
+}
+
+// Robust schema sanitizer: ensure every object property has a type; default to string or object
+function sanitizeSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') return { type: 'object', additionalProperties: true };
+
+  const clone = Array.isArray(schema) ? [] : { ...schema };
+
+  // If this node represents a schema without a type but has schema-like keys
+  if (!clone.type) {
+    if (clone.properties) clone.type = 'object';
+    else if (clone.items) clone.type = 'array';
+    else if (Array.isArray(clone.anyOf) || Array.isArray(clone.oneOf) || Array.isArray(clone.allOf)) clone.type = 'object';
+  }
+
+  // Recurse properties
+  if (clone.properties && typeof clone.properties === 'object') {
+    for (const [k, v] of Object.entries(clone.properties)) {
+      // If leaf value isn't an object, coerce to schema
+      if (!v || typeof v !== 'object') {
+        clone.properties[k] = { type: 'string' };
+        continue;
+      }
+      clone.properties[k] = sanitizeSchema(v);
+      if (!clone.properties[k].type) {
+        // Fallback if still missing
+        clone.properties[k].type = 'string';
+      }
+    }
+  }
+
+  // Recurse array items
+  if (clone.type === 'array') {
+    if (!clone.items) {
+      clone.items = { type: 'string' };
+    } else {
+      clone.items = sanitizeSchema(clone.items);
+      if (!clone.items.type) clone.items.type = 'string';
+    }
+  }
+
+  // Normalize anyOf/oneOf/allOf by sanitizing members
+  for (const key of ['anyOf','oneOf','allOf'] as const) {
+    if (Array.isArray((clone as any)[key])) {
+      (clone as any)[key] = (clone as any)[key].map((n: any) => sanitizeSchema(n));
+    }
+  }
+
+  // Ensure additionalProperties present for objects (OpenAI lenient)
+  if (clone.type === 'object' && clone.additionalProperties === undefined) {
+    clone.additionalProperties = true;
+  }
+
+  // Strip unsupported keywords if present
+  delete (clone as any).$schema;
+  delete (clone as any).$id;
+  delete (clone as any).$defs;
+
+  return clone;
+}
+
+function sanitizeToolParameters(tool: any): any {
+  if (!tool) return tool;
+  const t = { ...tool };
+  // Common nested locations: inputSchema, parameters, schema
+  if (t.inputSchema) t.inputSchema = sanitizeSchema(t.inputSchema);
+  if (t.parameters) t.parameters = sanitizeSchema(t.parameters);
+  // Unify to 'parameters' if only inputSchema exists
+  if (!t.parameters && t.inputSchema) t.parameters = t.inputSchema;
+  return t;
+}
+
+const DEFAULT_TOOL_TIMEOUT_MS = (() => {
+  const raw = process.env.MCP_TOOL_TIMEOUT_MS;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 1000 ? n : 30000; // 30s default
+})();
+
+function wrapWithTimeout(fn: any, name: string, timeoutMs: number) {
+  if (typeof fn !== 'function') return fn;
+  if ((fn as any).__wrappedWithTimeout) return fn; // idempotent
+  const wrapped = async (...args: any[]) => {
+    let timer: any;
+    return await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (cb: () => void) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          cb();
+        }
+      };
+      timer = setTimeout(() => {
+        finish(() => reject(new Error(`Tool '${name}' timed out after ${timeoutMs}ms`)));
+      }, timeoutMs);
+      Promise.resolve()
+        .then(() => fn(...args))
+        .then(result => finish(() => resolve(result)))
+        .catch(err => finish(() => reject(err)));
+    });
+  };
+  (wrapped as any).__wrappedWithTimeout = true;
+  return wrapped;
+}
+
+function attachTimeoutsToTool(toolName: string, toolDef: any, timeoutMs: number) {
+  const copy = { ...toolDef };
+  const candidateFns = ['call', 'execute', 'run', 'invoke'];
+  for (const key of candidateFns) {
+    if (copy[key]) {
+      const original = wrapWithTimeout(copy[key], toolName, timeoutMs);
+      // Wrap again to record metrics & invocation details
+      copy[key] = async (...args: any[]) => {
+        const startedAt = Date.now();
+        const batchEntry: { tool: string; startedAt: number; durationMs?: number; status?: 'success' | 'error' | 'timeout'; error?: string } = { tool: toolName, startedAt };
+        currentInvocationBatch.push(batchEntry);
+        let metric = toolMetrics.get(toolName);
+        if (!metric) {
+          metric = { name: toolName, count: 0, success: 0, error: 0, timeout: 0, totalMs: 0 };
+          toolMetrics.set(toolName, metric);
+        }
+        metric.count += 1;
+        metric.lastInvokedAt = startedAt;
+        try {
+          const result = await original(...args);
+          const duration = Date.now() - startedAt;
+            metric.success += 1;
+            metric.totalMs += duration;
+            metric.lastMs = duration;
+            metric.lastStatus = 'success';
+            batchEntry.durationMs = duration;
+            batchEntry.status = 'success';
+          return result;
+        } catch (err: any) {
+          const duration = Date.now() - startedAt;
+          metric.totalMs += duration;
+          metric.lastMs = duration;
+          batchEntry.durationMs = duration;
+          const message = err instanceof Error ? err.message : String(err);
+          if (message.includes('timed out')) {
+            metric.timeout += 1;
+            metric.lastStatus = 'timeout';
+            batchEntry.status = 'timeout';
+          } else {
+            metric.error += 1;
+            metric.lastStatus = 'error';
+            metric.lastError = message;
+            batchEntry.status = 'error';
+            batchEntry.error = message;
+          }
+          throw err;
+        }
+      };
+    }
+  }
+  return copy;
+}
+
 /**
  * Coerce MCP inputSchema to OpenAI-safe schema for Responses API
  * Based on OpenAI's recommended approach for handling MCP tool schemas
@@ -190,56 +415,96 @@ export async function initializeMCPClients(
   mcpServers: MCPServerConfig[] = [],
   abortSignal?: AbortSignal
 ): Promise<MCPClientManager> {
-  // Initialize tools
-  let tools = {};
-  const mcpClients: any[] = [];
+  let aggregatedTools: Record<string, any> = {};
+  const acquiredClients: any[] = [];
 
-  // Process each MCP server configuration
-  for (const mcpServer of mcpServers) {
-    try {
-      const headers = mcpServer.headers?.reduce((acc, header) => {
-        if (header.key) acc[header.key] = header.value || '';
-        return acc;
-      }, {} as Record<string, string>);
-
-      const transport = mcpServer.type === 'sse'
-        ? {
-          type: 'sse' as const,
-          url: mcpServer.url,
-          headers,
-        }
-        : new StreamableHTTPClientTransport(new URL(mcpServer.url), {
-          requestInit: {
-            headers,
-          },
-        });
-
-      const mcpClient = await createMCPClient({ transport });
-      mcpClients.push(mcpClient);
-
-      const mcptools = await mcpClient.tools();
-
-      console.log(`MCP tools from ${mcpServer.url}:`, Object.keys(mcptools));
-
-      // Add MCP tools to tools object
-      tools = { ...tools, ...mcptools };
-    } catch (error) {
-      console.error("Failed to initialize MCP client:", error);
-      // Continue with other servers instead of failing the entire request
-    }
+  // Filter duplicates by URL + headers signature
+  const uniqueServers: MCPServerConfig[] = [];
+  const seen = new Set<string>();
+  for (const s of mcpServers) {
+    const key = cacheKey(s);
+    if (!seen.has(key)) { seen.add(key); uniqueServers.push(s); }
   }
 
-  // Register cleanup for all clients if an abort signal is provided
-  if (abortSignal && mcpClients.length > 0) {
+  // Parallel connect with per-server timeout & reuse cache
+  const connectionPromises = uniqueServers.map(async (server) => {
+    const key = cacheKey(server);
+
+    // Reuse cached client if valid
+    const cached = clientCache.get(key);
+    if (cached) {
+      cached.lastUsed = Date.now();
+      aggregatedTools = { ...aggregatedTools, ...cached.tools };
+      acquiredClients.push(cached.client); // track so caller can cleanup if needed
+      return;
+    }
+
+    const headersObj = server.headers?.reduce((acc, header) => {
+      if (header.key) acc[header.key] = header.value || '';
+      return acc;
+    }, {} as Record<string, string>);
+
+    const connectTimeoutMs = server.type === 'sse' ? 8000 : 6000;
+
+    const transport = server.type === 'sse'
+      ? {
+        type: 'sse' as const,
+        url: server.url,
+        headers: headersObj,
+      }
+      : new StreamableHTTPClientTransport(new URL(server.url), {
+        requestInit: { headers: headersObj },
+      });
+
+    const connectPromise = (async () => {
+      const client = await createMCPClient({ transport });
+      const rawTools = await client.tools();
+      // Sanitize + wrap each tool with timeout
+      const sanitizedTools: Record<string, any> = {};
+      for (const [toolName, toolDef] of Object.entries(rawTools)) {
+        const sanitized = sanitizeToolParameters(toolDef);
+        sanitizedTools[toolName] = attachTimeoutsToTool(toolName, sanitized, DEFAULT_TOOL_TIMEOUT_MS);
+      }
+      clientCache.set(key, { client, tools: sanitizedTools, lastUsed: Date.now() });
+      aggregatedTools = { ...aggregatedTools, ...sanitizedTools };
+      acquiredClients.push(client);
+    })();
+
+    // Enforce timeout
+    const timeoutPromise = new Promise<void>((resolve, reject) => {
+      const to = setTimeout(() => {
+        reject(new Error(`MCP connect timeout after ${connectTimeoutMs}ms: ${server.url}`));
+      }, connectTimeoutMs);
+      connectPromise.then(() => { clearTimeout(to); resolve(); }).catch(err => { clearTimeout(to); reject(err); });
+    });
+
+    try {
+      await timeoutPromise;
+    } catch (err) {
+      // Swallow error, continue other servers
+    }
+  });
+
+  // Apply overall budget (e.g., 10s)
+  const overallBudgetMs = 10000;
+  const overall = Promise.all(connectionPromises);
+  const overallWithCap = Promise.race([
+    overall,
+    new Promise<void>(resolve => setTimeout(resolve, overallBudgetMs))
+  ]);
+  await overallWithCap;
+
+  // Attach abort cleanup only for newly acquired (not cached) clients
+  if (abortSignal && acquiredClients.length > 0) {
     abortSignal.addEventListener('abort', async () => {
-      await cleanupMCPClients(mcpClients);
+      await cleanupMCPClients(acquiredClients);
     });
   }
 
   return {
-    tools,
-    clients: mcpClients,
-    cleanup: async () => await cleanupMCPClients(mcpClients)
+    tools: aggregatedTools,
+    clients: acquiredClients,
+    cleanup: async () => await cleanupMCPClients(acquiredClients)
   };
 }
 
