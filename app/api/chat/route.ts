@@ -378,12 +378,99 @@ Response format: Markdown supported. Use tools to answer questions.`;
       getErrorMessage: (error) => {
         console.error("Error in getErrorMessage:", error);
         
+        // Helper function to extract rate limit details from various error structures
+        const extractRateLimitInfo = (err: any) => {
+          const errorStr = err?.toString() || '';
+          const messageStr = err?.message || '';
+          const responseBodyStr = err?.responseBody || '';
+          const fullErrorStr = JSON.stringify(err, null, 2);
+          
+          // Check if this is a rate limit error from various sources
+          const isRateLimit = 
+            /rate limit/i.test(errorStr) || 
+            /rate limit/i.test(messageStr) || 
+            /rate limit/i.test(responseBodyStr) ||
+            err?.statusCode === 429;
+            
+          if (!isRateLimit) return null;
+          
+          // Extract provider information
+          let provider = 'Unknown';
+          if (/groq/i.test(fullErrorStr) || /llama/i.test(messageStr)) provider = 'Groq';
+          else if (/openai/i.test(fullErrorStr) || /gpt/i.test(messageStr)) provider = 'OpenAI';
+          else if (/anthropic/i.test(fullErrorStr) || /claude/i.test(messageStr)) provider = 'Anthropic';
+          else if (/google/i.test(fullErrorStr) || /gemini/i.test(messageStr)) provider = 'Google';
+          
+          // Extract model name
+          let model = '';
+          const modelMatch = messageStr.match(/model `([^`]+)`/) || 
+                           messageStr.match(/model ([a-zA-Z0-9\-\/]+)/);
+          if (modelMatch) model = modelMatch[1];
+          
+          // Extract retry time
+          let retryTime = '';
+          const retryMatch = messageStr.match(/try again in ([0-9.]+s)/i) ||
+                           messageStr.match(/retry-after.*?([0-9.]+)/i);
+          if (retryMatch) {
+            const seconds = parseFloat(retryMatch[1]);
+            if (seconds < 60) {
+              retryTime = `${Math.ceil(seconds)} seconds`;
+            } else {
+              retryTime = `${Math.ceil(seconds / 60)} minutes`;
+            }
+          }
+          
+          // Extract token usage info if available
+          let tokenInfo = '';
+          const tokenMatch = messageStr.match(/Limit ([0-9,]+), Used ([0-9,]+), Requested ([0-9,]+)/);
+          if (tokenMatch) {
+            const [, limit, used] = tokenMatch;
+            const remaining = parseInt(limit.replace(/,/g, '')) - parseInt(used.replace(/,/g, ''));
+            tokenInfo = `${remaining.toLocaleString()} tokens remaining of ${limit} limit`;
+          }
+          
+          return {
+            provider,
+            model,
+            retryTime,
+            tokenInfo,
+            hasUpgradeInfo: /upgrade/i.test(messageStr) || /billing/i.test(messageStr)
+          };
+        };
+        
         // Check if this is the typeName error we're seeing
         if (error && error.toString && error.toString().includes('typeName')) {
           console.log("Detected typeName error in stream processing");
           return "Response processing error occurred.";
         }
         
+        // Enhanced rate limit error handling
+        const rateLimitInfo = extractRateLimitInfo(error);
+        if (rateLimitInfo) {
+          let message = `Rate limit exceeded for ${rateLimitInfo.provider}`;
+          if (rateLimitInfo.model) {
+            message += ` (${rateLimitInfo.model})`;
+          }
+          
+          if (rateLimitInfo.retryTime) {
+            message += `. Please try again in ${rateLimitInfo.retryTime}`;
+          } else {
+            message += '. Please try again later';
+          }
+          
+          if (rateLimitInfo.tokenInfo) {
+            message += `. ${rateLimitInfo.tokenInfo}`;
+          }
+          
+          if (rateLimitInfo.hasUpgradeInfo) {
+            message += '. Consider upgrading your account for higher limits';
+          }
+          
+          message += '.';
+          return message;
+        }
+        
+        // Legacy rate limit detection
         if (error instanceof Error) {
           if (error.message.includes("Rate limit")) {
             return "Rate limit exceeded. Please try again later.";

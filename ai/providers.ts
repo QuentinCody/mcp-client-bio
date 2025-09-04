@@ -2,6 +2,7 @@ import { createGroq } from "@ai-sdk/groq";
 import { createXai } from "@ai-sdk/xai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 import {
   customProvider,
@@ -52,6 +53,10 @@ const openaiClient = createOpenAI({
   apiKey: getApiKey('OPENAI_API_KEY'),
 });
 
+const googleClient = createGoogleGenerativeAI({
+  apiKey: getApiKey('GOOGLE_GENERATIVE_AI_API_KEY'),
+});
+
 const languageModels = {
   "claude-sonnet-4": anthropicClient("claude-sonnet-4-20250514"),
   "gpt-5": openaiClient.responses("gpt-5"),
@@ -67,7 +72,10 @@ const languageModels = {
   ),
   "grok-3-mini": xaiClient("grok-3-mini-latest"),
   "kimi-k2": groqClient('moonshotai/kimi-k2-instruct'),
-  "llama4": groqClient('meta-llama/llama-4-scout-17b-16e-instruct')
+  "llama4": groqClient('meta-llama/llama-4-scout-17b-16e-instruct'),
+  "gemini-2.5-pro": googleClient("gemini-2.5-pro"),
+  "gemini-2.5-flash": googleClient("gemini-2.5-flash"),
+  "gemini-2.5-flash-lite": googleClient("gemini-2.5-flash-lite")
 };
 
 export const modelDetails: Record<keyof typeof languageModels, ModelInfo> = {
@@ -140,6 +148,27 @@ export const modelDetails: Record<keyof typeof languageModels, ModelInfo> = {
     description: "Latest version of Meta's Llama 4 with good balance of capabilities.",
     apiVersion: "llama-4-scout-17b-16e-instruct",
     capabilities: ["Balanced", "Efficient", "Agentic"]
+  },
+  "gemini-2.5-pro": {
+    provider: "Google",
+    name: "Gemini 2.5 Pro",
+    description: "Google's state-of-the-art thinking model with advanced reasoning over complex problems in code, math, and STEM.",
+    apiVersion: "gemini-2.5-pro",
+    capabilities: ["Reasoning", "Analysis", "Coding", "Math", "STEM", "Long Context", "Thinking", "Tools"]
+  },
+  "gemini-2.5-flash": {
+    provider: "Google",
+    name: "Gemini 2.5 Flash",
+    description: "Google's best price-performance model with thinking capabilities and well-rounded functionality.",
+    apiVersion: "gemini-2.5-flash",
+    capabilities: ["Reasoning", "Analysis", "Thinking", "Fast", "Efficient", "Tools"]
+  },
+  "gemini-2.5-flash-lite": {
+    provider: "Google",
+    name: "Gemini 2.5 Flash Lite",
+    description: "Lightweight version of Gemini 2.5 Flash optimized for speed and cost efficiency.",
+    apiVersion: "gemini-2.5-flash-lite",
+    capabilities: ["Fast", "Efficient", "Analysis", "Tools"]
   }
 };
 

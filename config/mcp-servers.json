@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "OpenTargets",
+      "type": "streamable-http",
+      "url": "https://open-targets-mcp-server.quentincody.workers.dev/mcp",
+      "description": "Access to OpenTargets genetics and drug discovery data"
+    },
+    {
+      "name": "CIViC",
+      "type": "streamable-http",
+      "url": "https://civic-mcp-server.quentincody.workers.dev/mcp",
+      "description": "Clinical Interpretation of Variants in Cancer database"
+    }
+  ]
+}

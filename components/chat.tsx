@@ -7,6 +7,7 @@ import { Textarea } from "./textarea";
 import { ProjectOverview } from "./project-overview";
 import { Messages } from "./messages";
 import { toast } from "sonner";
+import { showRateLimitToast } from "@/lib/rate-limit-toast";
 import { useRouter, useParams } from "next/navigation";
 import { getUserId } from "@/lib/user-id";
 import { useLocalStorage } from "@/lib/hooks/use-local-storage";
@@ -121,12 +122,24 @@ export default function Chat() {
         }
       },
       onError: (error) => {
-        toast.error(
-          error.message.length > 0
-            ? error.message
-            : "An error occured, please try again later.",
-          { position: "top-center", richColors: true },
-        );
+        const errorMessage = error.message.length > 0
+          ? error.message
+          : "An error occurred, please try again later.";
+        
+        // Check if this is a rate limit error and show enhanced notification
+        if (/rate limit/i.test(errorMessage)) {
+          showRateLimitToast(errorMessage, () => {
+            // Retry the last message by re-submitting the form
+            if (input.trim()) {
+              handleSubmit(new Event('submit') as any);
+            }
+          });
+        } else {
+          toast.error(errorMessage, { 
+            position: "top-center", 
+            richColors: true 
+          });
+        }
       },
     });
     
