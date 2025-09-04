@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef } from "react";
+import { createContext, useContext, useRef, useEffect } from "react";
 import { useLocalStorage } from "@/lib/hooks/use-local-storage";
 import { isServerLocked } from "@/lib/utils";
 
@@ -269,6 +269,48 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
 
   // Calculate mcpServersForApi based on current state
   const mcpServersForApi = getActiveServersForApi();
+
+  // Auto-connect selected servers on initial load
+  useEffect(() => {
+    let isInitialMount = true;
+    
+    const autoConnectServers = async () => {
+      // Only auto-connect if we have servers and selections, but no active connections
+      if (mcpServers.length > 0 && selectedMcpServers.length > 0 && isInitialMount) {
+        const hasActiveConnections = mcpServers.some(server => 
+          selectedMcpServers.includes(server.id) && server.status === "connected"
+        );
+        
+        // If no servers are already connected, auto-connect all selected ones
+        if (!hasActiveConnections) {
+          console.log("[MCPProvider] Auto-connecting selected servers:", selectedMcpServers);
+          
+          // Start all selected servers in parallel
+          const connectionPromises = selectedMcpServers.map(async (serverId) => {
+            const server = mcpServers.find(s => s.id === serverId);
+            if (server && (!server.status || server.status === "disconnected")) {
+              try {
+                await startServer(serverId);
+              } catch (error) {
+                console.error(`[MCPProvider] Failed to auto-connect server ${server.name}:`, error);
+              }
+            }
+          });
+          
+          await Promise.all(connectionPromises);
+        }
+        
+        isInitialMount = false;
+      }
+    };
+
+    // Small delay to ensure localStorage has been loaded
+    const timeoutId = setTimeout(autoConnectServers, 100);
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [mcpServers, selectedMcpServers, startServer]);
 
   return (
     <MCPContext.Provider

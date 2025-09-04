@@ -172,21 +172,8 @@ Response format: Markdown supported. Use tools to answer questions.`;
       ]
     : messages;
 
-  // Auto-select model based on query complexity and rate limits
+  // Always use the selected model - no automatic fallbacks
   let effectiveModel = selectedModel;
-  
-  // If hitting rate limits, automatically downgrade to Haiku for better token limits
-  const lastMessage = messages[messages.length - 1]?.content?.toString() || '';
-  const isSimpleQuery = !isComplexQuery && 
-    !lastMessage.includes('analyze') && 
-    !lastMessage.includes('complex') && 
-    lastMessage.length < 200;
-
-  // Use GPT-4o mini for simple queries (faster and cheaper)
-  if (isSimpleQuery && selectedModel === 'claude-sonnet-4') {
-    effectiveModel = 'gpt-4o-mini';
-    console.log('Auto-switching to GPT-4o mini for better rate limits');
-  }
 
   // For GPT-5 models using Responses API, we need different configuration
   const isGPT5Model = effectiveModel.startsWith('gpt-5');
