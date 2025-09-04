@@ -7,10 +7,66 @@
       "description": "Access to OpenTargets genetics and drug discovery data"
     },
     {
+      "name": "Entrez",
+      "type": "streamable-http",
+      "url": "https://entrez-mcp-server.quentincody.workers.dev/mcp",
+      "description": "NCBI Entrez system for accessing a variety of biological databases"
+    },
+    {
       "name": "CIViC",
       "type": "streamable-http",
       "url": "https://civic-mcp-server.quentincody.workers.dev/mcp",
       "description": "Clinical Interpretation of Variants in Cancer database"
+    },
+    {
+      "name": "CatalysisHub",
+      "type": "sse",
+      "url": "https://catalysis-hub-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "DataCite",
+      "type": "sse",
+      "url": "https://datacite-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "RCSB PDB",
+      "type": "sse",
+      "url": "https://rcsb-pdb-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "NCI GDC",
+      "type": "sse",
+      "url": "https://nci-gdc-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "Pharos",
+      "type": "sse",
+      "url": "https://pharos-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "NCI PDC",
+      "type": "sse",
+      "url": "https://nci-pdc-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "DGIdb",
+      "type": "streamable-http",
+      "url": "https://dgidb-mcp-server.quentincody.workers.dev/mcp"
+    },
+    {
+      "name": "ZincBind",
+      "type": "sse",
+      "url": "https://zincbind-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "OpenNeuro",
+      "type": "sse",
+      "url": "https://open-neuro-mcp-server.quentincody.workers.dev/sse"
+    },
+    {
+      "name": "UniProt",
+      "type": "sse",
+      "url": "https://uniprot-mcp-server.quentincody.workers.dev/sse"
     }
   ]
 }

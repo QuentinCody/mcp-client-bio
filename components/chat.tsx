@@ -16,6 +16,7 @@ import { convertToUIMessages } from "@/lib/chat-store";
 import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { useMCP } from "@/lib/context/mcp-context";
+import { ToolMetricsPanel } from "./tool-metrics";
 
 // Type for chat data from DB
 interface ChatData {
@@ -166,6 +167,7 @@ export default function Chat() {
 
   return (
     <div className="h-dvh flex flex-col justify-center w-full max-w-[430px] sm:max-w-3xl mx-auto px-4 sm:px-6 py-3">
+  <ToolMetricsPanel />
       {messages.length === 0 && !isLoadingChat ? (
         <div className="max-w-xl mx-auto w-full">
           <ProjectOverview />

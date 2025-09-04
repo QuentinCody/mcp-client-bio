@@ -3,63 +3,185 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
+// Connection pool for MCP clients following best practices
+const connectionPool = new Map<string, { client: Client; lastUsed: number }>();
+
+// Cleanup stale connections every 30 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [url, { client, lastUsed }] of connectionPool.entries()) {
+    if (now - lastUsed > 60000) { // 1 minute timeout
+      client.close().catch(() => {}); // Ignore cleanup errors
+      connectionPool.delete(url);
+    }
+  }
+}, 30000);
+
+let parseErrorCount = 0; // retained for logic but no logging
+
 export async function POST(req: NextRequest) {
+  let client: Client | undefined;
+  const startTime = Date.now();
+
   try {
-    const { url } = await req.json();
+    // Robust body parsing: tolerate empty / aborted bodies quietly
+    let requestData: any = {};
+    try {
+      // Read raw text first to distinguish empty body
+      const raw = await req.text();
+      if (raw && raw.trim().length > 0) {
+        try {
+          requestData = JSON.parse(raw);
+        } catch (jsonErr) {
+          parseErrorCount++;
+          // logging suppressed
+          return NextResponse.json({ ready: false, error: 'Invalid JSON body' }, { status: 400 });
+        }
+      } else {
+        // No body provided – treat as malformed
+        return NextResponse.json({ ready: false, error: 'Request body required' }, { status: 400 });
+      }
+    } catch (readErr: any) {
+      // Likely an aborted request – keep noise low
+  // logging suppressed
+      return NextResponse.json({ ready: false, error: 'Body read error' }, { status: 400 });
+    }
+
+    const { url, headers, preferredType } = requestData;
 
     if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ 
+        ready: false, 
+        error: 'URL is required' 
+      }, { status: 400 });
     }
 
-    let client: Client | undefined = undefined;
+    // Check connection pool first
+    const poolKey = `${url}-${JSON.stringify(headers || {})}`;
+    const pooledConnection = connectionPool.get(poolKey);
+    
+    if (pooledConnection) {
+      connectionPool.set(poolKey, { ...pooledConnection, lastUsed: Date.now() });
+  // logging suppressed
+      
+      try {
+        const tools = await pooledConnection.client.listTools();
+        return NextResponse.json({
+          ready: true,
+          cached: true,
+          tools: tools.tools?.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema
+          })) || []
+        });
+      } catch (poolError) {
+  // logging suppressed
+        pooledConnection.client.close().catch(() => {});
+        connectionPool.delete(poolKey);
+      }
+    }
+
     const baseUrl = new URL(url);
+    let transportType = 'unknown';
+    let connectionError: Error | undefined;
+
+    // Decide transport order based on preferredType hint
+    const tryOrder: ("streamable-http" | "sse")[] = preferredType === 'sse'
+      ? ['sse', 'streamable-http']
+      : ['streamable-http', 'sse'];
+
+    // Try transports in order
+    for (const attempt of tryOrder) {
+      try {
+        if (client) {
+          await client.close().catch(() => {});
+        }
+        client = new Client({
+          name: 'mcp-health-client',
+          version: '1.0.0'
+        });
+        if (attempt === 'streamable-http') {
+          const transport = new StreamableHTTPClientTransport(baseUrl);
+          await client.connect(transport);
+        } else {
+          const sseTransport = new SSEClientTransport(baseUrl);
+          await client.connect(sseTransport);
+        }
+        transportType = attempt;
+  // logging suppressed
+        connectionError = undefined;
+        break; // success
+      } catch (err) {
+        connectionError = err as Error;
+  // logging suppressed
+      }
+    }
+    if (connectionError) {
+      return NextResponse.json({
+        ready: false,
+        error: `Connection failed (${tryOrder.join(' -> ')}): ${connectionError.message}`,
+        transportAttempted: tryOrder
+      }, { status: 503 });
+    }
+
+    if (!client) {
+      return NextResponse.json({
+        ready: false,
+        error: 'Failed to create client connection'
+      }, { status: 503 });
+    }
+
+    // Get tools with timeout
+    const toolsPromise = client.listTools();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Tool listing timeout')), 5000);
+    });
 
     try {
-      // First try Streamable HTTP transport
-      client = new Client({
-        name: 'streamable-http-client',
-        version: '1.0.0'
-      });
+      const tools = await Promise.race([toolsPromise, timeoutPromise]);
+      const connectionTime = Date.now() - startTime;
+      
+  // logging suppressed
+      
+      // Add to connection pool for reuse
+      connectionPool.set(poolKey, { client, lastUsed: Date.now() });
 
-      const transport = new StreamableHTTPClientTransport(baseUrl);
-      await client.connect(transport);
-      console.log("Connected using Streamable HTTP transport");
-    } catch (error) {
-      // If that fails with a 4xx error, try the older SSE transport
-      console.log("Streamable HTTP connection failed, falling back to SSE transport");
-      client = new Client({
-        name: 'sse-client',
-        version: '1.0.0'
-      });
-      const sseTransport = new SSEClientTransport(baseUrl);
-      await client.connect(sseTransport);
-      console.log("Connected using SSE transport");
-    }
-
-    // Get tools from the connected client
-    const tools = await client.listTools();
-    console.log('Tools response:', tools);
-
-    // Disconnect after getting tools
-    await client.close();
-
-    if (tools && tools.tools) {
+      const listed = tools?.tools || [];
       return NextResponse.json({
         ready: true,
-        tools: tools.tools.map(tool => ({
+        transport: transportType,
+        connectionTime,
+        toolCount: listed.length,
+        tools: listed.map(tool => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema
         }))
       });
-    } else {
-      return NextResponse.json({ ready: false, error: 'No tools available' }, { status: 503 });
+    } catch (toolsError) {
+  // logging suppressed
+      await client.close().catch(() => {});
+      
+      return NextResponse.json({
+        ready: false,
+        error: `Tools listing failed: ${toolsError instanceof Error ? toolsError.message : 'Unknown error'}`,
+        transport: transportType
+      }, { status: 503 });
     }
+
   } catch (error) {
-    console.error('MCP health check failed:', error);
+    const connectionTime = Date.now() - startTime;
+  // logging suppressed
+    
+    if (client) {
+      await client.close().catch(() => {});
+    }
+    
     return NextResponse.json({
       ready: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      connectionTime
     }, { status: 503 });
   }
 } 
