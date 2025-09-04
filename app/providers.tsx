@@ -49,7 +49,7 @@ export function Providers({ children }: { children: ReactNode }) {
       const servers: McpServer[] = preset.map((server, index) => ({
         id: `config-${index}`,
         name: server.name,
-        type: server.type === "streamable-http" ? "http" : server.type,
+        type: server.type === "streamable-http" ? "http" : server.type as "sse" | "http",
         url: server.url,
         headers: [],
         description: server.description,
