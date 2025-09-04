@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useRef, useEffect } from "react";
+import { createContext, useContext, useRef, useEffect, useCallback } from "react";
 import { useLocalStorage } from "@/lib/hooks/use-local-storage";
 import { isServerLocked } from "@/lib/utils";
 
@@ -124,12 +124,12 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const activeServersRef = useRef<Record<string, boolean>>({});
 
   // Helper to get a server by ID
-  const getServerById = (serverId: string): MCPServer | undefined => {
+  const getServerById = useCallback((serverId: string): MCPServer | undefined => {
     return mcpServers.find((server) => server.id === serverId);
-  };
+  }, [mcpServers]);
 
   // Update server status
-  const updateServerStatus = (
+  const updateServerStatus = useCallback((
     serverId: string,
     status: ServerStatus,
     errorMessage?: string
@@ -141,10 +141,10 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
           : server
       )
     );
-  };
+  }, [setMcpServersInternal]);
 
   // Update server with tools
-  const updateServerWithTools = (
+  const updateServerWithTools = useCallback((
     serverId: string,
     tools: MCPTool[],
     status: ServerStatus = "connected"
@@ -156,7 +156,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
           : server
       )
     );
-  };
+  }, [setMcpServersInternal]);
 
   // Get active servers formatted for API usage
   const getActiveServersForApi = (): MCPServerApi[] => {
@@ -174,7 +174,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Start a server using MCP SDK
-  const startServer = async (serverId: string): Promise<boolean> => {
+  const startServer = useCallback(async (serverId: string): Promise<boolean> => {
     const server = getServerById(serverId);
     if (!server) {
       console.error(`[startServer] Server not found for ID: ${serverId}`);
@@ -241,7 +241,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       );
       return false;
     }
-  };
+  }, [getServerById, updateServerStatus, updateServerWithTools]);
 
   // Stop a server
   const stopServer = async (serverId: string): Promise<boolean> => {
