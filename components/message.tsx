@@ -36,23 +36,57 @@ export function ReasoningMessagePart({
   }, []);
 
   useEffect(() => {
+    // Auto-expand when reasoning starts, so users see tokens immediately
     memoizedSetIsExpanded(isReasoning);
   }, [isReasoning, memoizedSetIsExpanded]);
 
   return (
     <div className="flex flex-col mb-2 group">
       {isReasoning ? (
-        <div
-          className={cn(
-            "flex items-center gap-2.5 rounded-full py-1.5 px-3",
-            "bg-indigo-50/50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-300",
-            "border border-indigo-200/50 dark:border-indigo-700/20 w-fit"
-          )}
-        >
-          <div className="animate-spin h-3.5 w-3.5">
-            <SpinnerIcon />
+        <div className="space-y-2">
+          <div
+            className={cn(
+              "flex items-center gap-2.5 rounded-full py-1.5 px-3",
+              "bg-indigo-50/50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-300",
+              "border border-indigo-200/50 dark:border-indigo-700/20 w-fit"
+            )}
+          >
+            <div className="animate-spin h-3.5 w-3.5">
+              <SpinnerIcon />
+            </div>
+            <div className="text-xs font-medium tracking-tight">Thinking...</div>
           </div>
-          <div className="text-xs font-medium tracking-tight">Thinking...</div>
+          {/* Show reasoning content immediately while thinking */}
+          {part.details && part.details.length > 0 && (
+            <div
+              className={cn(
+                "text-sm text-muted-foreground flex flex-col gap-2",
+                "pl-3.5 ml-0.5",
+                "border-l border-amber-200/50 dark:border-amber-700/30"
+              )}
+            >
+              <div className="text-xs text-muted-foreground/70 pl-1 font-medium">
+                The assistant&apos;s thought process:
+              </div>
+              {part.details.map((detail, detailIndex) =>
+                detail.type === "text" ? (
+                  <div
+                    key={detailIndex}
+                    className="px-2 py-1.5 bg-muted/10 rounded-md border border-border/30"
+                  >
+                    <div className="relative">
+                      <Markdown>{detail.text}</Markdown>
+                      {detailIndex === part.details.length - 1 && (
+                        <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1 align-text-bottom" />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  "<redacted>"
+                )
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <button
@@ -117,7 +151,12 @@ export function ReasoningMessagePart({
                 key={detailIndex}
                 className="px-2 py-1.5 bg-muted/10 rounded-md border border-border/30"
               >
-                <Markdown>{detail.text}</Markdown>
+                <div className="relative">
+                  <Markdown>{detail.text}</Markdown>
+                  {isReasoning && detailIndex === part.details.length - 1 && (
+                    <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1 align-text-bottom" />
+                  )}
+                </div>
               </div>
             ) : (
               "<redacted>"
@@ -171,6 +210,7 @@ const PurePreviewMessage = ({
           {message.parts?.map((part, i) => {
             switch (part.type) {
               case "text":
+                const isStreamingText = isLatestMessage && status === "streaming" && i === message.parts.length - 1;
                 return (
                   <div
                     key={`message-${message.id}-part-${i}`}
@@ -182,7 +222,12 @@ const PurePreviewMessage = ({
                           message.role === "user",
                       })}
                     >
-                      <Markdown>{part.text}</Markdown>
+                      <div className="relative">
+                        <Markdown>{part.text}</Markdown>
+                        {isStreamingText && (
+                          <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1 align-text-bottom" />
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
