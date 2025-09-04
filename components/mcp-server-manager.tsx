@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
+import { isServerLocked } from "@/lib/utils";
 
 // Default template for a new MCP server
 const INITIAL_NEW_SERVER: Omit<MCPServer, "id"> = {
@@ -248,6 +249,12 @@ export const MCPServerManager = ({
   const [editingHeaderIndex, setEditingHeaderIndex] = useState<number | null>(
     null
   );
+  const [locked, setLocked] = useState(false);
+
+  // Check if servers are locked
+  useEffect(() => {
+    setLocked(isServerLocked());
+  }, []);
   const [editedEnvValue, setEditedEnvValue] = useState<string>("");
   const [editedHeaderValue, setEditedHeaderValue] = useState<string>("");
 
@@ -267,6 +274,11 @@ export const MCPServerManager = ({
   };
 
   const addServer = () => {
+    if (isServerLocked()) {
+      toast.error("Cannot add servers - demo is locked to preset servers");
+      return;
+    }
+
     if (!newServer.name) {
       toast.error("Server name is required");
       return;
@@ -292,6 +304,12 @@ export const MCPServerManager = ({
 
   const removeServer = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    if (isServerLocked()) {
+      toast.error("Cannot remove servers - demo is locked to preset servers");
+      return;
+    }
+    
     const updatedServers = servers.filter((server) => server.id !== id);
     onServersChange(updatedServers);
 
@@ -507,6 +525,11 @@ export const MCPServerManager = ({
   };
 
   const updateServer = () => {
+    if (isServerLocked()) {
+      toast.error("Cannot edit servers - demo is locked to preset servers");
+      return;
+    }
+    
     if (!newServer.name) {
       toast.error("Server name is required");
       return;
@@ -758,23 +781,27 @@ export const MCPServerManager = ({
                                     />
                                   </button>
 
-                                  <button
-                                    onClick={(e) => removeServer(server.id, e)}
-                                    className="p-1 rounded-full hover:bg-muted/70"
-                                    aria-label="Remove server"
-                                    title="Remove server"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                  </button>
+                                  {!locked && (
+                                    <button
+                                      onClick={(e) => removeServer(server.id, e)}
+                                      className="p-1 rounded-full hover:bg-muted/70"
+                                      aria-label="Remove server"
+                                      title="Remove server"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </button>
+                                  )}
 
-                                  <button
-                                    onClick={() => startEditing(server)}
-                                    className="p-1 rounded-full hover:bg-muted/50"
-                                    aria-label="Edit server"
-                                    title="Edit server"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                  </button>
+                                  {!locked && (
+                                    <button
+                                      onClick={() => startEditing(server)}
+                                      className="p-1 rounded-full hover:bg-muted/50"
+                                      aria-label="Edit server"
+                                      title="Edit server"
+                                    >
+                                      <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1266,14 +1293,16 @@ export const MCPServerManager = ({
                 <X className="h-3.5 w-3.5" />
                 Disable All
               </Button>
-              <Button
-                onClick={() => setView("add")}
-                size="sm"
-                className="gap-1.5"
-              >
-                <PlusCircle className="h-3.5 w-3.5" />
-                Add Server
-              </Button>
+              {!locked && (
+                <Button
+                  onClick={() => setView("add")}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  Add Server
+                </Button>
+              )}
             </>
           ) : (
             <>

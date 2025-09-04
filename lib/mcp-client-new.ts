@@ -37,12 +37,11 @@ function coerceToOpenAIToolParams(schema: any): any {
 
     if ("additionalProperties" in node) {
       const ap = node.additionalProperties;
-      // Collapse any empty or typeless object schema into boolean true for OpenAI validator
       if (ap && typeof ap === "object" && !Array.isArray(ap) && (!ap.type || Object.keys(ap).length === 0)) {
         node.additionalProperties = true;
       }
     } else if (node.type === "object" && !("additionalProperties" in node)) {
-      node.additionalProperties = true; // default permissive
+      node.additionalProperties = true;
     }
 
     // Normalize nullable fields (common MCP servers use nullable without union)
@@ -70,7 +69,6 @@ function coerceToOpenAIToolParams(schema: any): any {
   return copy;
 }
 
-// Minimal JSON Schema -> Zod converter for common primitive/object cases
 function jsonSchemaToZod(schema: any): any {
   if (!schema || typeof schema !== 'object') return z.any();
   if (schema.type === 'string') return z.string();
@@ -84,7 +82,7 @@ function jsonSchemaToZod(schema: any): any {
     const shape: Record<string, any> = {};
     for (const [key, propSchema] of Object.entries(schema.properties || {})) {
       const zProp = jsonSchemaToZod(propSchema);
-      let finalProp = zProp; // force required
+      let finalProp = zProp;
       const desc = (propSchema as any)?.description;
       if (typeof desc === 'string') finalProp = finalProp.describe(desc);
       shape[key] = finalProp;
@@ -102,80 +100,57 @@ export function transformMCPToolsForResponsesAPI(tools: Record<string, any>): Re
   const transformedTools: Record<string, any> = {};
 
   for (const [name, tool] of Object.entries(tools)) {
-    let transformedParameters = tool.parameters;
+    // Handle the nested structure where the actual schema is in tool.parameters.jsonSchema
+    let schemaToTransform = tool.parameters;
     
-    // If the tool has the nested jsonSchema structure, we need to transform that
+    // If there's a nested jsonSchema, transform that instead
     if (tool.parameters?.jsonSchema) {
-      // Use original jsonSchema to build a strict Zod schema so OpenAI sees additionalProperties: false
       try {
-        transformedParameters = jsonSchemaToZod(tool.parameters.jsonSchema);
-        (transformedParameters as any).__originalJSONSchema = tool.parameters.jsonSchema;
-      } catch {
-        const transformedJsonSchema = coerceToOpenAIToolParams(tool.parameters.jsonSchema);
-        transformedParameters = transformedJsonSchema;
-      }
-    } else {
-      // If it's a flat structure and looks like JSON schema, attempt conversion
-      if (tool.parameters && (tool.parameters.properties || tool.parameters.type)) {
-        try {
-          transformedParameters = jsonSchemaToZod(tool.parameters);
-          (transformedParameters as any).__originalJSONSchema = tool.parameters;
-        } catch {
-          transformedParameters = coerceToOpenAIToolParams(tool.parameters);
-        }
-      } else {
-        transformedParameters = coerceToOpenAIToolParams(tool.parameters);
-      }
-    }
-    
-    // AI SDK internally expects a Zod schema (accesses parameters._def.typeName). If we replaced
-    // the original Zod schema with plain JSON, it triggers the "Cannot read properties of undefined (reading 'typeName')" error.
-    // To avoid this while still loosening validation for GPT-5 Responses API, wrap in a permissive Zod schema.
-    if (!transformedParameters || typeof transformedParameters !== 'object' || !('_def' in transformedParameters)) {
-      const originalJSONSchema = transformedParameters;
-      transformedParameters = z.object({}).strict();
-      (transformedParameters as any).__originalJSONSchema = originalJSONSchema;
+        schemaToTransform = tool.parameters.jsonSchema;
+        const zodSchema = jsonSchemaToZod(schemaToTransform);
+        (zodSchema as any).__originalJSONSchema = schemaToTransform;
+        transformedTools[name] = { ...tool, parameters: zodSchema };
+        continue;
+      } catch {/* fallback below */}
     }
 
-    // Special handling: GraphQL tools need arbitrary variable keys. Replace variables property with catchall.
+    // Fallback path
+    const transformedSchema = coerceToOpenAIToolParams(schemaToTransform);
+    let parameters: any = transformedSchema;
+    if (!parameters || typeof parameters !== 'object' || !('_def' in parameters)) {
+      const originalJSONSchema = parameters;
+      parameters = z.object({}).strict();
+      (parameters as any).__originalJSONSchema = originalJSONSchema;
+    }
+
     if (name.endsWith('_graphql_query')) {
-      transformedParameters = z.object({
+      parameters = z.object({
         query: z.string().describe('GraphQL query string'),
         variables_json: z.string().describe('JSON-encoded GraphQL variables object (use {} if none)')
       }).strict();
-
-      // Wrap underlying execution to convert variables_json -> variables
       const adaptArgs = (args: any) => {
         if (args && typeof args === 'object') {
-          // Backward compatibility: if variables already provided, leave
           if (!args.variables && typeof args.variables_json === 'string') {
-            try {
-              const parsed = JSON.parse(args.variables_json);
-              if (parsed && typeof parsed === 'object') {
-                args = { ...args, variables: parsed };
-              }
-            } catch {}
+            try { const parsed = JSON.parse(args.variables_json); if (parsed && typeof parsed === 'object') args = { ...args, variables: parsed }; } catch {}
           }
-          // Allow empty/missing variables_json despite being listed required (model may supply empty string)
           if (args.variables_json === undefined) args.variables_json = '{}';
         }
         return args;
       };
   type AnyToolFn = (args: any) => Promise<any> | any;
-  const wrapCallable = (fn?: AnyToolFn) => fn ? (async (args: any) => fn(adaptArgs(args))) : undefined;
-      const wrapped: any = { ...tool, parameters: transformedParameters };
-      // Common possible method names
+  const wrapCallable = (fn?: AnyToolFn) => fn ? (async (a: any) => fn(adaptArgs(a))) : undefined;
+      const wrapped: any = { ...tool, parameters };
       if (tool.call) wrapped.call = wrapCallable(tool.call);
       if (tool.execute) wrapped.execute = wrapCallable(tool.execute);
       if (tool.run) wrapped.run = wrapCallable(tool.run);
       if (tool.invoke) wrapped.invoke = wrapCallable(tool.invoke);
       transformedTools[name] = wrapped;
-      continue; // already pushed
+      continue;
     }
 
     transformedTools[name] = {
       ...tool,
-      parameters: transformedParameters,
+      parameters,
     };
   }
 

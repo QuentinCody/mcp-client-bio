@@ -113,7 +113,7 @@ export default function Chat() {
         chatId: chatId || generatedChatId, // Use generated ID if no chatId in URL
         userId,
       },
-      experimental_throttle: 100,
+      experimental_throttle: 16, // ~60fps for smoother streaming
       onFinish: () => {
         // Invalidate the chats query to refresh the sidebar
         if (userId) {

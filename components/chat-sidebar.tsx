@@ -64,6 +64,7 @@ import { Label } from "@/components/ui/label";
 import { useMCP } from "@/lib/context/mcp-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnimatePresence, motion } from "motion/react";
+import { isServerLocked } from "@/lib/utils";
 
 export function ChatSidebar() {
   const router = useRouter();
@@ -75,6 +76,12 @@ export function ChatSidebar() {
   const isCollapsed = state === "collapsed";
   const [editUserIdOpen, setEditUserIdOpen] = useState(false);
   const [newUserId, setNewUserId] = useState("");
+  const [locked, setLocked] = useState(false);
+
+  // Check if servers are locked
+  useEffect(() => {
+    setLocked(isServerLocked());
+  }, []);
 
   // Get MCP server data from context
   const {
@@ -321,42 +328,78 @@ export function ChatSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={() => setMcpSettingsOpen(true)}
-                  className={cn(
-                    "w-full flex items-center gap-2 transition-all",
-                    "hover:bg-secondary/50 active:bg-secondary/70"
-                  )}
-                  tooltip={isCollapsed ? "MCP Servers" : undefined}
-                >
-                  <ServerIcon
+              {!locked && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => setMcpSettingsOpen(true)}
                     className={cn(
-                      "h-4 w-4 flex-shrink-0",
-                      activeServersCount > 0
-                        ? "text-primary"
-                        : "text-muted-foreground"
+                      "w-full flex items-center gap-2 transition-all",
+                      "hover:bg-secondary/50 active:bg-secondary/70"
                     )}
-                  />
-                  {!isCollapsed && (
-                    <span className="flex-grow text-sm text-foreground/80">
-                      MCP Servers
-                    </span>
-                  )}
-                  {activeServersCount > 0 && !isCollapsed ? (
-                    <Badge
-                      variant="secondary"
-                      className="ml-auto text-[10px] px-1.5 py-0 h-5 bg-secondary/80"
-                    >
-                      {activeServersCount}
-                    </Badge>
-                  ) : activeServersCount > 0 && isCollapsed ? (
-                    <SidebarMenuBadge className="bg-secondary/80 text-secondary-foreground">
-                      {activeServersCount}
-                    </SidebarMenuBadge>
-                  ) : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                    tooltip={isCollapsed ? "MCP Servers" : undefined}
+                  >
+                    <ServerIcon
+                      className={cn(
+                        "h-4 w-4 flex-shrink-0",
+                        activeServersCount > 0
+                          ? "text-primary"
+                          : "text-muted-foreground"
+                      )}
+                    />
+                    {!isCollapsed && (
+                      <span className="flex-grow text-sm text-foreground/80">
+                        MCP Servers
+                      </span>
+                    )}
+                    {activeServersCount > 0 && !isCollapsed ? (
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto text-[10px] px-1.5 py-0 h-5 bg-secondary/80"
+                      >
+                        {activeServersCount}
+                      </Badge>
+                    ) : activeServersCount > 0 && isCollapsed ? (
+                      <SidebarMenuBadge className="bg-secondary/80 text-secondary-foreground">
+                        {activeServersCount}
+                      </SidebarMenuBadge>
+                    ) : null}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              {locked && (
+                <SidebarMenuItem>
+                  <div className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2",
+                    isCollapsed ? "justify-center" : ""
+                  )}>
+                    <ServerIcon
+                      className={cn(
+                        "h-4 w-4 flex-shrink-0",
+                        activeServersCount > 0
+                          ? "text-primary"
+                          : "text-muted-foreground"
+                      )}
+                    />
+                    {!isCollapsed && (
+                      <span className="flex-grow text-sm text-foreground/80">
+                        MCP Servers
+                      </span>
+                    )}
+                    {activeServersCount > 0 && !isCollapsed ? (
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto text-[10px] px-1.5 py-0 h-5 bg-secondary/80"
+                      >
+                        {activeServersCount}
+                      </Badge>
+                    ) : activeServersCount > 0 && isCollapsed ? (
+                      <SidebarMenuBadge className="bg-secondary/80 text-secondary-foreground">
+                        {activeServersCount}
+                      </SidebarMenuBadge>
+                    ) : null}
+                  </div>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -465,15 +508,17 @@ export function ChatSidebar() {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setMcpSettingsOpen(true);
-                  }}
-                >
-                  <Settings className="mr-2 h-4 w-4 hover:text-sidebar-accent" />
-                  MCP Settings
-                </DropdownMenuItem>
+                {!locked && (
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setMcpSettingsOpen(true);
+                    }}
+                  >
+                    <Settings className="mr-2 h-4 w-4 hover:text-sidebar-accent" />
+                    MCP Settings
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onSelect={(e) => {
                     e.preventDefault();
