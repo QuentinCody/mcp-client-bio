@@ -173,7 +173,7 @@ Response format: Markdown supported. Use tools to answer questions.`;
     : messages;
 
   // Always use the selected model - no automatic fallbacks
-  let effectiveModel = selectedModel;
+  const effectiveModel = selectedModel;
 
   // For GPT-5 models using Responses API, we need different configuration
   const isGPT5Model = effectiveModel.startsWith('gpt-5');
