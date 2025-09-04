@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Servers Configuration",
+  "description": "Configuration schema for MCP servers auto-loading",
+  "type": "object",
+  "properties": {
+    "servers": {
+      "type": "array",
+      "description": "List of MCP servers to auto-load",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "url"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name for the MCP server"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["streamable-http", "sse", "http"],
+            "description": "Transport type for the MCP server"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL endpoint for the MCP server"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description of the server's capabilities"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["servers"],
+  "additionalProperties": false
+}
