@@ -61,10 +61,26 @@ export function ToolInvocation({
           const parsed = JSON.parse(content);
           return JSON.stringify(parsed, null, 2);
         } catch {
+          // Check if it looks like JSON but failed to parse, try to format it anyway
+          if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
+            return content;
+          }
           return content;
         }
       }
-      return JSON.stringify(content, null, 2);
+      // Always pretty print with 2-space indentation
+      let formatted = JSON.stringify(content, (key, value) => {
+        // Handle special formatting for better readability
+        return value;
+      }, 2);
+      
+      // Clean up escaped characters for better readability
+      formatted = formatted
+        .replace(/\\n/g, '\n')      // Convert \n to actual newlines
+        .replace(/\\"/g, '"')      // Convert \" to regular quotes
+        .replace(/\\\\/g, '\\');   // Convert \\ to single backslash
+        
+      return formatted;
     } catch {
       return String(content);
     }
@@ -129,6 +145,15 @@ export function ToolInvocation({
               >
                 {formatContent(args)}
               </pre>
+            </div>
+          )}
+
+          {state === "call" && isLatestMessage && status !== "ready" && !result && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
+                <Loader2 className="animate-spin h-3 w-3" />
+                <span className="font-medium">Running...</span>
+              </div>
             </div>
           )}
 

@@ -1,5 +1,7 @@
 import { createGroq } from "@ai-sdk/groq";
 import { createXai } from "@ai-sdk/xai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 
 import {
   customProvider,
@@ -42,7 +44,21 @@ const xaiClient = createXai({
   apiKey: getApiKey('XAI_API_KEY'),
 });
 
+const anthropicClient = createAnthropic({
+  apiKey: getApiKey('ANTHROPIC_API_KEY'),
+});
+
+const openaiClient = createOpenAI({
+  apiKey: getApiKey('OPENAI_API_KEY'),
+});
+
 const languageModels = {
+  "claude-sonnet-4": anthropicClient("claude-sonnet-4-20250514"),
+  "gpt-5": openaiClient.responses("gpt-5"),
+  "gpt-5-mini": openaiClient.responses("gpt-5-mini"), 
+  "gpt-5-nano": openaiClient.responses("gpt-5-nano"),
+  "gpt-4o": openaiClient("gpt-4o"),
+  "gpt-4o-mini": openaiClient("gpt-4o-mini"),
   "qwen3-32b": wrapLanguageModel(
     {
       model: groqClient('qwen/qwen3-32b'),
@@ -55,6 +71,48 @@ const languageModels = {
 };
 
 export const modelDetails: Record<keyof typeof languageModels, ModelInfo> = {
+  "claude-sonnet-4": {
+    provider: "Anthropic",
+    name: "Claude Sonnet 4",
+    description: "High-performance model with exceptional reasoning capabilities and fast response times.",
+    apiVersion: "claude-sonnet-4-20250514",
+    capabilities: ["Reasoning", "Analysis", "Agentic", "Tools", "Fast"]
+  },
+  "gpt-5": {
+    provider: "OpenAI",
+    name: "GPT-5",
+    description: "OpenAI's most advanced model with state-of-the-art performance across coding, math, writing, health, and visual perception.",
+    apiVersion: "gpt-5",
+    capabilities: ["Reasoning", "Analysis", "Coding", "Writing", "Health", "Vision", "Tools"]
+  },
+  "gpt-5-mini": {
+    provider: "OpenAI", 
+    name: "GPT-5 Mini",
+    description: "A faster, cheaper version of GPT-5 for well-defined tasks while maintaining high quality.",
+    apiVersion: "gpt-5-mini",
+    capabilities: ["Reasoning", "Analysis", "Coding", "Writing", "Tools", "Fast"]
+  },
+  "gpt-5-nano": {
+    provider: "OpenAI",
+    name: "GPT-5 Nano", 
+    description: "The fastest, cheapest version of GPT-5—great for summarization and classification tasks.",
+    apiVersion: "gpt-5-nano",
+    capabilities: ["Analysis", "Classification", "Summarization", "Fast"]
+  },
+  "gpt-4o": {
+    provider: "OpenAI",
+    name: "GPT-4o",
+    description: "GPT-4 Omni with multimodal capabilities including text, images, and audio.",
+    apiVersion: "gpt-4o",
+    capabilities: ["Reasoning", "Analysis", "Vision", "Audio", "Tools"]
+  },
+  "gpt-4o-mini": {
+    provider: "OpenAI",
+    name: "GPT-4o Mini",
+    description: "Faster, more affordable version of GPT-4o for simpler tasks.",
+    apiVersion: "gpt-4o-mini", 
+    capabilities: ["Analysis", "Vision", "Tools", "Fast"]
+  },
   "kimi-k2": {
     provider: "Groq",
     name: "Kimi K2",
@@ -103,4 +161,4 @@ export type modelID = keyof typeof languageModels;
 
 export const MODELS = Object.keys(languageModels);
 
-export const defaultModel: modelID = "kimi-k2";
+export const defaultModel: modelID = "gpt-5";

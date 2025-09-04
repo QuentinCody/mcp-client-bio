@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useRef } from "react";
 import { useLocalStorage } from "@/lib/hooks/use-local-storage";
+import { isServerLocked } from "@/lib/utils";
 
 export interface KeyValuePair {
   key: string;
@@ -91,15 +92,33 @@ async function checkServerHealth(
 }
 
 export function MCPProvider({ children }: { children: React.ReactNode }) {
-  const [mcpServers, setMcpServers] = useLocalStorage<MCPServer[]>(
+  const [mcpServers, setMcpServersInternal] = useLocalStorage<MCPServer[]>(
     STORAGE_KEYS.MCP_SERVERS,
     []
   );
 
-  const [selectedMcpServers, setSelectedMcpServers] = useLocalStorage<string[]>(
+  const [selectedMcpServers, setSelectedMcpServersInternal] = useLocalStorage<string[]>(
     STORAGE_KEYS.SELECTED_MCP_SERVERS,
     []
   );
+
+  // Wrapper function that checks lock status before allowing changes
+  const setMcpServers = (servers: MCPServer[] | ((prev: MCPServer[]) => MCPServer[])) => {
+    if (isServerLocked()) {
+      console.warn("Cannot modify MCP servers - demo is locked to preset servers");
+      return;
+    }
+    setMcpServersInternal(servers);
+  };
+
+  // Wrapper function that checks lock status before allowing changes
+  const setSelectedMcpServers = (serverIds: string[] | ((prev: string[]) => string[])) => {
+    if (isServerLocked()) {
+      console.warn("Cannot modify selected MCP servers - demo is locked to preset servers");
+      return;
+    }
+    setSelectedMcpServersInternal(serverIds);
+  };
 
   // Create a ref to track active servers and avoid unnecessary re-renders
   const activeServersRef = useRef<Record<string, boolean>>({});
@@ -115,7 +134,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     status: ServerStatus,
     errorMessage?: string
   ) => {
-    setMcpServers((currentServers) =>
+    setMcpServersInternal((currentServers) =>
       currentServers.map((server) =>
         server.id === serverId
           ? { ...server, status, errorMessage: errorMessage || undefined }
@@ -130,7 +149,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     tools: MCPTool[],
     status: ServerStatus = "connected"
   ) => {
-    setMcpServers((currentServers) =>
+    setMcpServersInternal((currentServers) =>
       currentServers.map((server) =>
         server.id === serverId
           ? { ...server, tools, status, errorMessage: undefined }
@@ -160,6 +179,23 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     if (!server) {
       console.error(`[startServer] Server not found for ID: ${serverId}`);
       return false;
+    }
+
+    // Check allowlist if in locked mode
+    if (isServerLocked()) {
+      try {
+        const presetServers = JSON.parse(localStorage.getItem(STORAGE_KEYS.MCP_SERVERS) || "[]");
+        const allowedUrls = new Set(presetServers.map((s: MCPServer) => s.url));
+        if (!allowedUrls.has(server.url)) {
+          console.error(`[startServer] Server URL not in allowlist: ${server.url}`);
+          updateServerStatus(serverId, "error", "This demo is locked to preset MCP servers.");
+          return false;
+        }
+      } catch (error) {
+        console.error(`[startServer] Error checking allowlist:`, error);
+        updateServerStatus(serverId, "error", "Error validating server allowlist");
+        return false;
+      }
     }
 
     console.log(
@@ -217,7 +253,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       delete activeServersRef.current[serverId];
 
       // Update server status and clear tools
-      setMcpServers((currentServers) =>
+      setMcpServersInternal((currentServers) =>
         currentServers.map((s) =>
           s.id === serverId
             ? { ...s, status: "disconnected", tools: undefined, errorMessage: undefined }
