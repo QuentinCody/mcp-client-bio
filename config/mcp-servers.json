@@ -51,7 +51,8 @@
     {
       "name": "DGIdb",
       "type": "streamable-http",
-      "url": "https://dgidb-mcp-server.quentincody.workers.dev/mcp"
+      "url": "https://dgidb-mcp-server.quentincody.workers.dev/mcp",
+      "description": "Drug-Gene Interaction Database"
     },
     {
       "name": "ZincBind",
