@@ -183,7 +183,7 @@ export function ChatSidebar() {
             >
               <Image
                 src="/scira.png"
-                alt="Scira Logo"
+                alt="Bio MCP Chat Logo"
                 width={24}
                 height={24}
                 className="absolute transform scale-75"
