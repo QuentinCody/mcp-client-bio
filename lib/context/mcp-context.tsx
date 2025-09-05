@@ -113,17 +113,15 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapped, setBootstrapped] = useState(false);
   useEffect(() => {
     if (bootstrapped) return;
-    if (mcpServers.length > 0) {
-      setBootstrapped(true);
-      return;
-    }
     try {
       const preset = (mcpServersConfig as any).servers || [];
       if (!preset.length) {
         setBootstrapped(true);
         return;
       }
-      const servers: MCPServer[] = preset.map((server: any, index: number) => ({
+
+      // Always derive config servers (stable) so production picks up new additions.
+      const configServers: MCPServer[] = preset.map((server: any, index: number) => ({
         id: `config-${index}`,
         name: server.name,
         type: server.type === 'streamable-http' || server.type === 'http' ? 'http' : 'sse',
@@ -132,21 +130,32 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         description: server.description,
         status: 'disconnected'
       }));
-      setMcpServersInternal(servers);
-      setSelectedMcpServersInternal(servers.map(s => s.id));
-      const lockSetting = process.env.MCP_LOCK_SERVERS;
-      if (lockSetting === '1') {
+
+      if (mcpServers.length === 0) {
+        // Fresh load: just use config servers
+        setMcpServersInternal(configServers);
+        setSelectedMcpServersInternal(configServers.map(s => s.id));
+      } else {
+        // Merge: add any config server whose URL is not already present
+        const existingUrls = new Set(mcpServers.map(s => s.url));
+        const newOnes = configServers.filter(s => !existingUrls.has(s.url));
+        if (newOnes.length > 0) {
+          setMcpServersInternal(current => [...current, ...newOnes]);
+          setSelectedMcpServersInternal(current => [...current, ...newOnes.map(s => s.id)]);
+        }
+      }
+
+      // Optional lock via env (does NOT control which servers appear; list is ONLY from JSON)
+      if (process.env.MCP_LOCK_SERVERS === '1') {
         localStorage.setItem('mcp:locked', '1');
       }
-      console.log('[MCPProvider] Bootstrapped servers from config:', servers.map(s => s.name));
     } catch (err) {
-      console.error('[MCPProvider] Failed to bootstrap config servers:', err);
+      console.error('[MCPProvider] Failed to process config servers:', err);
     } finally {
       setBootstrapped(true);
     }
-    // Dependencies intentionally limited to avoid re-running bootstrap after setters defined.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapped, mcpServers.length]);
+  }, [bootstrapped, mcpServers]);
 
   const [selectedMcpServers, setSelectedMcpServersInternal] = useLocalStorage<string[]>(
     STORAGE_KEYS.SELECTED_MCP_SERVERS,
