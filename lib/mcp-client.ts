@@ -153,6 +153,18 @@ function sanitizeToolParameters(tool: any): any {
   // Common nested locations: inputSchema, parameters, schema
   if (t.inputSchema) t.inputSchema = sanitizeSchema(t.inputSchema);
   if (t.parameters) t.parameters = sanitizeSchema(t.parameters);
+  // Some MCP servers supply a nested parameters.jsonSchema object that is never
+  // passed through sanitizeSchema above. This is the raw schema we later feed
+  // into transformMCPToolsForResponsesAPI. If its properties contain entries
+  // without a "type" (e.g. { description: "..." } only), OpenAI will reject
+  // the tool with: "Invalid schema ... schema must have a 'type' key". We fix
+  // that here so downstream conversion (to Zod or coercion) always sees a
+  // well-formed schema.
+  if (t.parameters?.jsonSchema) {
+    try {
+      t.parameters.jsonSchema = sanitizeSchema(t.parameters.jsonSchema);
+    } catch {}
+  }
   // Unify to 'parameters' if only inputSchema exists
   if (!t.parameters && t.inputSchema) t.parameters = t.inputSchema;
   return t;
@@ -194,11 +206,62 @@ function wrapWithTimeout(fn: any, name: string, timeoutMs: number) {
 function attachTimeoutsToTool(toolName: string, toolDef: any, timeoutMs: number) {
   const copy = { ...toolDef };
   const candidateFns = ['call', 'execute', 'run', 'invoke'];
+  // Capture a schema reference (original JSON schema if available) for arg adaptation
+  const paramSchema: any = (toolDef.parameters && (toolDef.parameters.jsonSchema || (toolDef.parameters.__originalJSONSchema))) || toolDef.parameters;
+
+  // Helper: adapt arguments coming from model before validation/execution
+  function adaptArgsForSchema(args: any[]): any[] {
+    if (!args || !Array.isArray(args) || args.length === 0) return args;
+    const first = args[0];
+    if (!first || typeof first !== 'object' || Array.isArray(first)) return args;
+    if (!paramSchema || typeof paramSchema !== 'object') return args;
+
+    const required: string[] = Array.isArray(paramSchema.required) ? paramSchema.required : [];
+    const properties: Record<string, any> = (paramSchema.properties && typeof paramSchema.properties === 'object') ? paramSchema.properties : {};
+
+    for (const key of Object.keys(first)) {
+      const val = (first as any)[key];
+      if (val === '') {
+        const prop = properties[key];
+        if (prop && typeof prop === 'object') {
+          let enums: any[] | undefined = undefined;
+          if (Array.isArray(prop.enum)) enums = prop.enum;
+          // Basic extraction from oneOf/anyOf of const literals
+          if (!enums && Array.isArray(prop.oneOf)) {
+            const lits = prop.oneOf.map((o: any) => o?.const).filter((v: any) => v !== undefined);
+            if (lits.length) enums = lits;
+          }
+            if (!enums && Array.isArray(prop.anyOf)) {
+              const lits = prop.anyOf.map((o: any) => o?.const).filter((v: any) => v !== undefined);
+              if (lits.length) enums = lits;
+            }
+          if (enums && enums.length) {
+            if (required.includes(key)) {
+              // Provide deterministic default (first enum) instead of empty string
+              (first as any)[key] = enums[0];
+            } else {
+              // Omit optional empty enum field entirely
+              delete (first as any)[key];
+            }
+          } else {
+            // No enum constraint known; drop empty strings to reduce invalid arg noise
+            delete (first as any)[key];
+          }
+        } else {
+          // No schema info; drop empty string
+          delete (first as any)[key];
+        }
+      }
+    }
+    return args;
+  }
   for (const key of candidateFns) {
     if (copy[key]) {
       const original = wrapWithTimeout(copy[key], toolName, timeoutMs);
       // Wrap again to record metrics & invocation details
       copy[key] = async (...args: any[]) => {
+  // Sanitize / adapt arguments (e.g., remove empty-string enum values)
+  try { args = adaptArgsForSchema(args); } catch {}
         const startedAt = Date.now();
         const batchEntry: { tool: string; startedAt: number; durationMs?: number; status?: 'success' | 'error' | 'timeout'; error?: string } = { tool: toolName, startedAt };
         currentInvocationBatch.push(batchEntry);
@@ -210,7 +273,39 @@ function attachTimeoutsToTool(toolName: string, toolDef: any, timeoutMs: number)
         metric.count += 1;
         metric.lastInvokedAt = startedAt;
         try {
-          const result = await original(...args);
+          let result;
+          let attempted = false;
+          const invoke = async () => await original(...args);
+          try {
+            result = await invoke();
+          } catch (err: any) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // Retry once if invalid enum value errors and we can auto-fill from schema
+            if (!attempted && /invalid_enum_value/i.test(msg) && paramSchema?.properties && Array.isArray(args) && args[0] && typeof args[0] === 'object') {
+              attempted = true;
+              const obj = args[0];
+              for (const [propName, propDef] of Object.entries(paramSchema.properties)) {
+                if (obj[propName] === '' && propDef && typeof propDef === 'object' && Array.isArray((propDef as any).enum) && (propDef as any).enum.length) {
+                  obj[propName] = (propDef as any).enum[0];
+                }
+              }
+              // second attempt
+              try {
+                result = await invoke();
+              } catch (err2) {
+                // If still failing, surface structured error as result to satisfy AI SDK
+                const finalMsg = err2 instanceof Error ? err2.message : String(err2);
+                result = { error: finalMsg };
+              }
+            } else {
+              // Non enum validation errors propagate as structured result (avoid missing tool result)
+              result = { error: msg };
+            }
+          }
+          if (result === undefined) {
+            // Provide a placeholder to ensure a tool result message exists
+            result = { ok: true };
+          }
           const duration = Date.now() - startedAt;
             metric.success += 1;
             metric.totalMs += duration;
