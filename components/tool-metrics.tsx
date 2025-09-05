@@ -37,7 +37,6 @@ export function ToolMetricsPanel() {
     // Dynamically import to avoid SSR issues
     (async () => {
       try {
-        // @ts-ignore use globalThis hack: we expose a lazy import hook by calling a dynamic import
         const mod = await import('@/lib/mcp-client');
         if (mod.getMCPMetrics) {
           const payload = mod.getMCPMetrics({ includeInvocations: true });

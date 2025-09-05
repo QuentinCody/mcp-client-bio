@@ -144,6 +144,8 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setBootstrapped(true);
     }
+    // Dependencies intentionally limited to avoid re-running bootstrap after setters defined.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapped, mcpServers.length]);
 
   const [selectedMcpServers, setSelectedMcpServersInternal] = useLocalStorage<string[]>(
