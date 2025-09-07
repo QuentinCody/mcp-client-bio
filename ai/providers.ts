@@ -59,9 +59,9 @@ const googleClient = createGoogleGenerativeAI({
 
 const languageModels = {
   "claude-sonnet-4": anthropicClient("claude-sonnet-4-20250514"),
-  "gpt-5": openaiClient.responses("gpt-5"),
-  "gpt-5-mini": openaiClient.responses("gpt-5-mini"), 
-  "gpt-5-nano": openaiClient.responses("gpt-5-nano"),
+  "gpt-5": openaiClient("gpt-5"),
+  "gpt-5-mini": openaiClient("gpt-5-mini"), 
+  "gpt-5-nano": openaiClient("gpt-5-nano"),
   "gpt-4o": openaiClient("gpt-4o"),
   "gpt-4o-mini": openaiClient("gpt-4o-mini"),
   "qwen3-32b": wrapLanguageModel(

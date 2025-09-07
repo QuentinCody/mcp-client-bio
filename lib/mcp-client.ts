@@ -11,6 +11,8 @@ export interface MCPServerConfig {
   url: string;
   type: 'sse' | 'http';
   headers?: KeyValuePair[];
+  /** Optional per-server tool invocation timeout override (ms) */
+  toolTimeoutMs?: number;
 }
 
 export interface MCPClientManager {
@@ -85,7 +87,8 @@ if (typeof globalThis !== 'undefined' && !(globalThis as any).__mcpClientCacheCl
 
 function cacheKey(server: MCPServerConfig) {
   const headersSig = (server.headers || []).map(h => `${h.key}=${h.value}`).sort().join('&');
-  return `${server.type}:${server.url}?${headersSig}`;
+  // Include timeout in key so changing timeout in config forces re-wrap of tools
+  return `${server.type}:${server.url}?${headersSig}&to=${server.toolTimeoutMs || 'def'}`;
 }
 
 // Robust schema sanitizer: ensure every object property has a type; default to string or object
@@ -324,6 +327,8 @@ function attachTimeoutsToTool(toolName: string, toolDef: any, timeoutMs: number)
             metric.timeout += 1;
             metric.lastStatus = 'timeout';
             batchEntry.status = 'timeout';
+            // Surface diagnostic to help identify chronic 30s stalls
+            console.warn(`[MCP] Tool timeout: ${toolName} after ${timeoutMs}ms`);
           } else {
             metric.error += 1;
             metric.lastStatus = 'error';
@@ -556,9 +561,12 @@ export async function initializeMCPClients(
       const rawTools = await client.tools();
       // Sanitize + wrap each tool with timeout
       const sanitizedTools: Record<string, any> = {};
+      const perServerTimeout = (typeof server.toolTimeoutMs === 'number' && server.toolTimeoutMs > 0)
+        ? server.toolTimeoutMs
+        : DEFAULT_TOOL_TIMEOUT_MS;
       for (const [toolName, toolDef] of Object.entries(rawTools)) {
         const sanitized = sanitizeToolParameters(toolDef);
-        sanitizedTools[toolName] = attachTimeoutsToTool(toolName, sanitized, DEFAULT_TOOL_TIMEOUT_MS);
+        sanitizedTools[toolName] = attachTimeoutsToTool(toolName, sanitized, perServerTimeout);
       }
       clientCache.set(key, { client, tools: sanitizedTools, lastUsed: Date.now() });
       aggregatedTools = { ...aggregatedTools, ...sanitizedTools };

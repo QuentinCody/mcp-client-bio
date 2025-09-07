@@ -28,6 +28,11 @@
           "description": {
             "type": "string",
             "description": "Optional description of the server's capabilities"
+            },
+            "toolTimeoutMs": {
+              "type": "number",
+              "minimum": 1000,
+              "description": "Override per-tool timeout in milliseconds (defaults to 30000 if unset)"
           }
         },
         "additionalProperties": false
