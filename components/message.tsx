@@ -134,7 +134,8 @@ export function ReasoningMessagePart({
         </button>
       )}
 
-      {isExpanded && (
+  {/* Show expandable block only after reasoning (streaming) phase ends to avoid duplication */}
+  {!isReasoning && isExpanded && (
         <div
           className={cn(
             "text-sm text-muted-foreground flex flex-col gap-2",

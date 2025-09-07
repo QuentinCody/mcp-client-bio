@@ -141,67 +141,106 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
   const systemPrompt = isComplexQuery ? fullSystemPrompt : shortSystemPrompt;
 
-  // Add cache control to tools if it's an object (which it should be for AI SDK)
+  // Always use the selected model - no automatic fallbacks (moved earlier for ordering)
+  const effectiveModel = selectedModel;
+  // Detect if we are using an Anthropic model for prompt caching specific logic
+  const isAnthropicModel = effectiveModel.startsWith('claude');
+
+  // Build structured system blocks for Anthropic prompt caching to avoid re-sending large static instructions counting toward ITPM.
+  // We separate static (cacheable) and dynamic (date) parts so that the changing date does not invalidate the cached prefix.
+  // NOTE: Attempted structured system blocks for Anthropic caching caused AI SDK error (system must be a string).
+  // Keeping system as plain string to satisfy streamText validation.
+  // (Future enhancement: leverage providerOptions to pass structured blocks if SDK adds support.)
+
+  // Add cache control to ALL tools (not just last) when using Anthropic to maximize prefix cache hits
   let toolsWithCache = tools;
-  if (tools && typeof tools === 'object' && !Array.isArray(tools)) {
-    // For AI SDK, tools is an object where each key is a tool name
-    const toolKeys = Object.keys(tools);
-    if (toolKeys.length > 0) {
-      // Add cache control to the last tool (most likely to be reused)
-      const lastToolKey = toolKeys[toolKeys.length - 1];
-      toolsWithCache = {
-        ...tools,
-        [lastToolKey]: {
-          ...tools[lastToolKey as keyof typeof tools],
-          providerOptions: {
-            anthropic: {
-              cacheControl: { type: 'ephemeral' }
-            }
+  if (isAnthropicModel && tools && typeof tools === 'object' && !Array.isArray(tools)) {
+    const enriched: Record<string, any> = {};
+    for (const [k, v] of Object.entries(tools)) {
+      enriched[k] = {
+        ...v,
+        providerOptions: {
+          ...(v as any)?.providerOptions,
+          anthropic: {
+            ...(v as any)?.providerOptions?.anthropic,
+            cacheControl: { type: 'ephemeral', ttl: '1h' }
           }
         }
       };
     }
+    toolsWithCache = enriched;
   }
 
   // Truncate conversation history to manage token usage
-  const maxHistoryLength = 10; // Keep only last 10 messages
-  const truncatedMessages = messages.length > maxHistoryLength 
-    ? [
-        messages[0], // Keep first message for context
-        ...messages.slice(-maxHistoryLength + 1) // Keep recent messages
-      ]
-    : messages;
-
-  // Always use the selected model - no automatic fallbacks
-  const effectiveModel = selectedModel;
-
-  // For GPT-5 models using Responses API, we need different configuration
-  const isGPT5Model = effectiveModel.startsWith('gpt-5');
-  
-  // Transform tools for GPT-5 Responses API if needed
-  let finalTools = toolsWithCache;
-  if (isGPT5Model && tools && typeof tools === 'object') {
-    finalTools = transformMCPToolsForResponsesAPI(toolsWithCache);
+  // First sanitize older history to strip high-token reasoning and verbose tool results
+  const SANITIZE_KEEP_LAST = 6; // always keep last N messages verbatim
+  function sanitizeHistory(msgs: UIMessage[]) {
+    if (msgs.length <= SANITIZE_KEEP_LAST + 2) return msgs; // small chats unchanged
+    const keepTail = msgs.slice(-SANITIZE_KEEP_LAST);
+    const head = msgs.slice(0, -SANITIZE_KEEP_LAST).map((m, idx) => {
+      // Preserve very first user message intact for context
+      if (idx === 0) return m;
+      if (!('parts' in m) || !Array.isArray((m as any).parts)) return m;
+      const newParts: any[] = [];
+      for (const part of (m as any).parts) {
+        if (part.type === 'reasoning') {
+          // Drop historical reasoning to save tokens
+          continue;
+        }
+        if (part.type === 'tool-invocation') {
+          const toolName = part.toolInvocation?.toolName || 'tool';
+            const state = part.toolInvocation?.state;
+            let summary = `⧉ ${toolName}`;
+            if (state) summary += ` (${state})`;
+            if ('result' in part.toolInvocation && part.toolInvocation.result) {
+              const textResult = typeof part.toolInvocation.result === 'string'
+                ? part.toolInvocation.result
+                : JSON.stringify(part.toolInvocation.result);
+              // Include a truncated preview (max 140 chars)
+              summary += ': ' + textResult.slice(0, 140).replace(/\s+/g, ' ');
+              if (textResult.length > 140) summary += '…';
+            }
+          newParts.push({ type: 'text', text: summary });
+          continue;
+        }
+        if (part.type === 'text') {
+          // Optionally compress long past text
+          const text: string = part.text || '';
+          if (text.length > 1200) {
+            newParts.push({ type: 'text', text: text.slice(0, 600) + ' …(truncated older content)… ' + text.slice(-200) });
+          } else {
+            newParts.push(part);
+          }
+          continue;
+        }
+        // Pass through any other part types
+        newParts.push(part);
+      }
+      return { ...m, parts: newParts } as UIMessage;
+    });
+    return [...head, ...keepTail];
   }
-  
+
+  const sanitizedMessages = sanitizeHistory(messages);
+
+  const maxHistoryLength = 10; // target maximum messages after sanitization
+  const truncatedMessages = sanitizedMessages.length > maxHistoryLength 
+    ? [
+        sanitizedMessages[0], // Keep first message for context
+        ...sanitizedMessages.slice(-maxHistoryLength + 1) // Keep recent messages
+      ]
+    : sanitizedMessages;
+
   // Base configuration for all models
   const baseConfig = {
     model: model.languageModel(effectiveModel),
-    system: systemPrompt,
+    system: systemPrompt, // must remain a string for AI SDK
     messages: truncatedMessages,
-    tools: finalTools,
+    tools: toolsWithCache,
     maxSteps: isComplexQuery ? 20 : 10, // Reduce steps for simple queries
+    temperature: 1, // Use temperature: 1 for all models
+    maxTokens: isComplexQuery ? 4000 : 2000, // Standard token limits for all models
   };
-
-  // Add temperature: GPT-5 only supports temperature: 1, others use 0
-  const configWithTemperature = isGPT5Model 
-    ? { ...baseConfig, temperature: 1 } // GPT-5 only supports temperature: 1
-    : { ...baseConfig, temperature: 0 };
-
-  // Add maxTokens only for non-GPT-5 models  
-  const configWithTokens = isGPT5Model
-    ? configWithTemperature
-    : { ...configWithTemperature, maxTokens: isComplexQuery ? 4000 : 2000 };
 
   // Helper function to create fallback tools with permissive schema
   const createFallbackTools = (originalTools: Record<string, any>) => {
@@ -220,63 +259,16 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
   // Helper function to attempt streamText with retry on schema errors
   const attemptStreamText = async (config: any, retryOnSchemaError = true) => {
-    // Diagnostic: serialize tool schemas (Zod -> simplified JSON) before first attempt for GPT-5
-    if (isGPT5Model && config?.tools && !config.__loggedSchemas) {
-      const serialize = (schema: any): any => {
-        if (!schema || typeof schema !== 'object') return schema;
-        if (schema._def?.typeName === 'ZodObject') {
-          const shape = schema._def.shape ? schema._def.shape() : {};
-            const properties: Record<string, any> = {};
-            for (const [k, v] of Object.entries(shape)) {
-              if (v && typeof v === 'object' && (v as any)._def) {
-                const tn = (v as any)._def.typeName;
-                if (tn === 'ZodString') properties[k] = { type: 'string' };
-                else if (tn === 'ZodNumber') properties[k] = { type: 'number' };
-                else if (tn === 'ZodBoolean') properties[k] = { type: 'boolean' };
-                else if (tn === 'ZodObject') properties[k] = serialize(v);
-                else if (tn === 'ZodArray') properties[k] = { type: 'array' };
-                else properties[k] = { type: 'any' };
-              } else {
-                properties[k] = { type: 'any' };
-              }
-            }
-            return {
-              type: 'object',
-              properties,
-              additionalProperties: schema._def.unknownKeys === 'passthrough'
-                ? true
-                : false
-            };
-        }
-        return schema;
-      };
-      try {
-        const debugTools: Record<string, any> = {};
-        for (const [tName, t] of Object.entries(config.tools)) {
-          debugTools[tName] = {
-            description: (t as any).description,
-            serializedParameters: serialize((t as any).parameters)
-          };
-        }
-        // Debug logging removed for performance
-        config.__loggedSchemas = true;
-      } catch (e) {
-        console.warn('Failed to serialize tool schemas for debug:', e);
-      }
-    }
     try {
       const result = await streamText(config);
-      
-      // Optimized for streaming performance
-      
       return result;
     } catch (error: any) {
       console.error("StreamText error:", error);
       console.error("Error name:", error.name);
       console.error("Error message:", error.message);
       
-      // Check if it's a schema validation error for GPT-5 models
-      if (isGPT5Model && retryOnSchemaError && error?.statusCode === 400 && 
+      // Check if it's a schema validation error and retry with permissive schema
+      if (retryOnSchemaError && error?.statusCode === 400 && 
           /invalid_function_parameters/i.test(error?.responseBody ?? "")) {
         
         console.log("Schema validation error detected, retrying with permissive schema...");
@@ -296,15 +288,8 @@ Response format: Markdown supported. Use tools to answer questions.`;
   };
 
   const result = await attemptStreamText({
-    ...configWithTokens,
+    ...baseConfig,
     providerOptions: {
-      ...(isGPT5Model ? {
-        openai: {
-          maxCompletionTokens: isComplexQuery ? 4000 : 2000,
-          store: false, // Don't store for privacy
-          serviceTier: 'auto' // Let OpenAI choose the best tier
-        }
-      } : {}),
       google: {
         thinkingConfig: {
           thinkingBudget: 2048,
@@ -362,8 +347,6 @@ Response format: Markdown supported. Use tools to answer questions.`;
     }
   });
 
-  result.consumeStream()
-  
   // Add chat ID to response headers so client can know which chat was created
   try {
     // Stream response optimized for speed
@@ -487,13 +470,13 @@ Response format: Markdown supported. Use tools to answer questions.`;
   } catch (responseError: any) {
     console.error("Error creating data stream response:", responseError);
     
-    // If it's the typeName error and we're using GPT-5, try a fallback approach
-    if (isGPT5Model && responseError.message && responseError.message.includes('typeName')) {
-      console.log("Detected typeName error with GPT-5, attempting fallback...");
+    // If it's a typeName error, handle gracefully
+    if (responseError.message && responseError.message.includes('typeName')) {
+      console.log("Detected typeName error, attempting fallback...");
       
       // Return a simple error response for now
       return new Response(
-        JSON.stringify({ error: "GPT-5 response processing error. This is a known issue being investigated." }),
+        JSON.stringify({ error: "Response processing error. This is a known issue being investigated." }),
         {
           status: 500,
           headers: {
