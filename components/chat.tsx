@@ -2,6 +2,9 @@
 
 import { defaultModel, type modelID } from "@/ai/providers";
 import { Message, useChat } from "@ai-sdk/react";
+import { findTokens } from "@/lib/mcp/prompts/token";
+import { promptRegistry } from "@/lib/mcp/prompts/singleton";
+import { renderPrompt } from "@/lib/mcp/prompts/renderer";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Textarea } from "./textarea";
 import { ProjectOverview } from "./project-overview";
@@ -15,7 +18,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { convertToUIMessages } from "@/lib/chat-store";
 import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
-import { useMCP } from "@/lib/context/mcp-context";
 import { ToolMetricsPanel } from "./tool-metrics";
 
 // Type for chat data from DB
@@ -145,8 +147,18 @@ export default function Chat() {
     });
     
   // Custom submit handler
-  const handleFormSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // Expand slash-prompt tokens into concrete text before submitting (server prompts resolved via API)
+    try {
+      const maybeExpanded = await expandInputWithPrompts(input);
+      if (maybeExpanded !== input) {
+        const fakeEvent = { target: { value: maybeExpanded } } as any;
+        handleInputChange(fakeEvent);
+      }
+    } catch (err) {
+      console.error('Slash prompt expansion failed:', err);
+    }
     
     if (!chatId && generatedChatId && input.trim()) {
       // If this is a new conversation, redirect to the chat page with the generated ID
@@ -161,7 +173,7 @@ export default function Chat() {
       // Normal submission for existing chats
       handleSubmit(e);
     }
-  }, [chatId, generatedChatId, input, handleSubmit, router]);
+  }, [chatId, generatedChatId, input, handleSubmit, handleInputChange, router]);
 
   const isLoading = status === "streaming" || status === "submitted" || isLoadingChat;
 
@@ -209,4 +221,32 @@ export default function Chat() {
       )}
     </div>
   );
+}
+
+// Lightweight expansion helper; client-owned prompts are loaded in Textarea, but we also try here to catch button submits.
+
+import { useMCP } from "@/lib/context/mcp-context";
+
+async function expandInputWithPrompts(text: string) {
+  const tokens = findTokens(text);
+  if (!tokens.length) return text;
+  const blocks: string[] = [];
+  // Cannot use hook here; expansion in Textarea covers Enter; this is a fallback that only expands template prompts.
+  for (const t of tokens) {
+    const def = promptRegistry.getByNamespaceName(t.namespace, t.name);
+    if (!def) continue;
+    const saved = JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
+    if (def.mode === "template" && def.template) {
+      const rendered = renderPrompt(def, saved);
+      const asText = rendered
+        .map((m) => {
+          const tag = m.role === "system" ? "assistant" : (m as any).role;
+          return `[${tag}] ${m.content}`;
+        })
+        .join("\n");
+      blocks.push(asText);
+    }
+  }
+  if (!blocks.length) return text;
+  return `${blocks.join("\n\n")}\n\n${text}`;
 }

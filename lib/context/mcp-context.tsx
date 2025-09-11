@@ -4,6 +4,8 @@ import { createContext, useContext, useRef, useEffect, useCallback, useState } f
 import mcpServersConfig from "@/config/mcp-servers.json";
 import { useLocalStorage } from "@/lib/hooks/use-local-storage";
 import { isServerLocked } from "@/lib/utils";
+import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
+import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
 
 export interface KeyValuePair {
   key: string;
@@ -28,6 +30,19 @@ export interface MCPTool {
   inputSchema?: any;
 }
 
+export interface MCPPromptArg {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface MCPPromptDef {
+  name: string;
+  title?: string;
+  description?: string;
+  arguments?: MCPPromptArg[];
+}
+
 export interface MCPServer {
   id: string;
   name: string;
@@ -41,6 +56,7 @@ export interface MCPServer {
   status?: ServerStatus;
   errorMessage?: string;
   tools?: MCPTool[];
+  prompts?: MCPPromptDef[];
 }
 
 export interface MCPServerApi {
@@ -73,7 +89,7 @@ async function checkServerHealth(
   headers?: KeyValuePair[],
   timeoutMs: number = 8000, // allow more time for cold starts
   preferredType?: 'sse' | 'http'
-): Promise<{ ready: boolean; tools?: MCPTool[]; error?: string }> {
+): Promise<{ ready: boolean; tools?: MCPTool[]; prompts?: MCPPromptDef[]; error?: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -207,12 +223,13 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const updateServerWithTools = useCallback((
     serverId: string,
     tools: MCPTool[],
-    status: ServerStatus = "connected"
+    status: ServerStatus = "connected",
+    prompts?: MCPPromptDef[]
   ) => {
     setMcpServersInternal((currentServers) =>
       currentServers.map((server) =>
         server.id === serverId
-          ? { ...server, tools, status, errorMessage: undefined }
+          ? { ...server, tools, prompts, status, errorMessage: undefined }
           : server
       )
     );
@@ -285,7 +302,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       
       if (healthResult.ready) {
         // Allow empty tool list (store empty array) so connection still counts
-        updateServerWithTools(serverId, healthResult.tools || [], "connected");
+        updateServerWithTools(serverId, healthResult.tools || [], "connected", healthResult.prompts || []);
         activeServersRef.current[serverId] = true;
         // logging suppressed
         return true;
@@ -363,7 +380,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
             server.type
         );
         if (health.ready) {
-          updateServerWithTools(server.id, health.tools || [], 'connected');
+          updateServerWithTools(server.id, health.tools || [], 'connected', health.prompts || []);
         } else {
           updateServerStatus(server.id, 'error', health.error || 'Could not connect');
         }
@@ -371,6 +388,41 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       })();
     });
   }, [bootstrapped, mcpServers, selectedMcpServers, setMcpServersInternal, updateServerStatus, updateServerWithTools]);
+
+  // Reflect connected server prompts into the slash-prompt registry
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!isPromptsLoaded()) await ensurePromptsLoaded();
+        const base = promptRegistry.getAll();
+        const serverDefs: SlashPromptDef[] = [];
+        for (const s of mcpServers) {
+          if (s.status !== 'connected' || !s.prompts?.length) continue;
+          const ns = (s.name || s.url).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-import';
+          for (const p of s.prompts) {
+            const id = `${ns}/${p.name}`;
+            serverDefs.push({
+              id,
+              namespace: ns,
+              name: p.name,
+              title: p.title || p.name,
+              description: p.description,
+              origin: 'server-import',
+              sourceServerId: s.id,
+              mode: 'server',
+              args: p.arguments?.map(a => ({ name: a.name, description: a.description, required: a.required })) || []
+            });
+          }
+        }
+        // Deduplicate by id, prefer serverDefs to override older ones
+        const map = new Map(base.map(d => [d.id, d] as const));
+        for (const d of serverDefs) map.set(d.id, d);
+        promptRegistry.load(Array.from(map.values()));
+      } catch {
+        // ignore
+      }
+    })();
+  }, [mcpServers]);
 
   return (
     <MCPContext.Provider

@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "prompts": [
+    {
+      "id": "client/summarize",
+      "namespace": "client",
+      "name": "summarize",
+      "title": "Summarize Selection",
+      "description": "TL;DR with key bullets",
+      "origin": "client",
+      "mode": "template",
+      "args": [{ "name": "text", "required": true, "placeholder": "Paste text…" }],
+      "template": {
+        "messages": [
+          { "role": "system", "text": "You are a careful summarizer." },
+          { "role": "user", "text": "Summarize the following:\n\n{{text}}" }
+        ]
+      },
+      "updatedAt": "2025-09-11T00:00:00Z"
+    }
+  ]
+}
+

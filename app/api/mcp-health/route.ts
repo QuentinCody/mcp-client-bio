@@ -140,6 +140,14 @@ export async function POST(req: NextRequest) {
 
     try {
       const tools = await Promise.race([toolsPromise, timeoutPromise]);
+      // Also attempt to list prompts (soft-fail if unsupported)
+      let prompts: any = { prompts: [] };
+      try {
+        const promptsTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Prompt listing timeout')), 4000));
+        prompts = await Promise.race([client.listPrompts(), promptsTimeout]).catch(() => ({ prompts: [] }));
+      } catch {
+        prompts = { prompts: [] };
+      }
       const connectionTime = Date.now() - startTime;
       
   // logging suppressed
@@ -148,6 +156,7 @@ export async function POST(req: NextRequest) {
       connectionPool.set(poolKey, { client, lastUsed: Date.now() });
 
       const listed = tools?.tools || [];
+      const promptList = Array.isArray(prompts?.prompts) ? prompts.prompts : [];
       return NextResponse.json({
         ready: true,
         transport: transportType,
@@ -157,6 +166,12 @@ export async function POST(req: NextRequest) {
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema
+        })),
+        prompts: promptList.map((p: any) => ({
+          name: p.name,
+          title: p.title,
+          description: p.description,
+          arguments: p.arguments || []
         }))
       });
     } catch (toolsError) {

@@ -811,10 +811,28 @@ export const MCPServerManager = ({
                               {getServerDisplayUrl(server)}
                             </p>
 
-                            {/* Tools List */}
+                            {/* Tools & Prompts */}
                             {server.status === "connected" && (
-                              <div className="mb-2.5">
+                              <div className="mb-2.5 space-y-2">
                                 <ToolsList tools={server.tools} />
+                                {server.prompts && server.prompts.length > 0 && (
+                                  <div>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1">Prompts</div>
+                                    <div className="grid grid-cols-1 gap-1">
+                                      {server.prompts.slice(0, 8).map((p) => (
+                                        <div key={p.name} className="text-xs border rounded-md px-2 py-1 bg-muted/30">
+                                          <span className="font-medium">{p.title || p.name}</span>
+                                          {p.description && (
+                                            <span className="text-muted-foreground"> — {p.description}</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {server.prompts.length > 8 && (
+                                        <div className="text-xs text-muted-foreground">+{server.prompts.length - 8} more…</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
 
