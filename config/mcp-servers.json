@@ -1,5 +1,11 @@
 {
   "servers": [
+    { "name": "ClinicalTrials",
+      "type": "streamable-http",
+      "url": "https://clinicaltrialsgov-mcp-server.quentincody.workers.dev/mcp",
+      "description": "Access to the ClinicalTrials.gov database of clinical studies"
+
+    },
     {
       "name": "OpenTargets",
       "type": "streamable-http",
