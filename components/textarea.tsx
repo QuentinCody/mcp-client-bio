@@ -4,7 +4,7 @@ import { ArrowUp, Loader2, Hash, Info, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ensurePromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
+import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
 import { SlashPromptMenu } from "@/components/prompts/slash-prompt-menu";
 import { toToken, findTokens } from "@/lib/mcp/prompts/token";
 import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
@@ -12,6 +12,8 @@ import { renderPrompt } from "@/lib/mcp/prompts/renderer";
 import { PromptArgsSheet } from "@/components/prompts/prompt-args-sheet";
 import { ArgsPanel } from "@/components/prompts/args-panel";
 import { useMCP } from "@/lib/context/mcp-context";
+import { resolvePromptsForInput, type ResolvedPromptContext } from "@/lib/mcp/prompts/resolve";
+import { ResolvedPromptPreview } from "@/components/prompts/resolved-preview";
 
 interface InputProps {
   input: string;
@@ -42,12 +44,86 @@ export const Textarea = ({
   const { mcpServers } = useMCP();
   const requiredMissing = !!(args && (args.def.args || []).some(a => a.required && !((args.vals[a.name] ?? "").trim().length)));
   const [activeIndex, setActiveIndex] = useState(0);
+  const [resolved, setResolved] = useState<ResolvedPromptContext | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [promptsLoaded, setPromptsLoaded] = useState(false);
+  const [previewInserted, setPreviewInserted] = useState(false);
+  const previewOriginalRef = useRef<string>("");
 
   useEffect(() => {
-    ensurePromptsLoaded();
+    let mounted = true;
+    (async () => {
+      try {
+        await ensurePromptsLoaded();
+      } finally {
+        if (mounted) setPromptsLoaded(isPromptsLoaded());
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
   const items = useMemo(() => promptRegistry.search(query), [query]);
+
+  // Live-resolve prompt content for preview when tokens are present or args change
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const hasToken = /\/[a-z0-9-]+\/[a-z0-9-_]+\b/i.test(input);
+      if (!hasToken) { setResolved(null); return; }
+      setResolving(true);
+      try {
+        const ctx = await resolvePromptsForInput(input, args, { mcpServers });
+        if (!cancelled) setResolved(ctx);
+      } catch {
+        if (!cancelled) setResolved(null);
+      } finally {
+        if (!cancelled) setResolving(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [input, args, mcpServers]);
+
+  // Close parameter panel with Escape
+  useEffect(() => {
+    if (!args) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setArgs(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [args]);
+
+  // Helper: strip slash tokens from text
+  function stripTokensFromText(text: string) {
+    return text.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').replace(/\s+/g, ' ').trim();
+  }
+
+  // When in preview mode, keep the input replaced with the expanded prompt so user can review before sending
+  useEffect(() => {
+    (async () => {
+      if (!previewInserted) return;
+      try {
+        const ctx = await resolvePromptsForInput(input, args, { mcpServers });
+        if (!ctx || !ctx.flattened?.length) {
+          try { console.log('[UI/PREVIEW] No resolved messages; keeping current input'); } catch {}
+          return;
+        }
+        const serialized = ctx.flattened.map(m => `[${m.role}] ${m.text}`).join('\n');
+        const original = previewOriginalRef.current || input;
+        const remaining = stripTokensFromText(original);
+        const next = remaining ? `${serialized}\n\n${remaining}` : serialized;
+        if (next !== input) {
+          try { console.log('[UI/PREVIEW] Updating input with expanded prompt. chars=', next.length); } catch {}
+          const ev = { target: { value: next } } as any;
+          handleInputChange(ev);
+          try { localStorage.setItem('last-message-expanded', next); } catch {}
+        }
+      } catch (err) {
+        try { console.warn('[UI/PREVIEW] Failed to resolve preview:', err); } catch {}
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [args, mcpServers, previewInserted]);
 
   async function onKeyDownEnhanced(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const before = input.slice(0, (e.currentTarget.selectionStart ?? 0));
@@ -94,59 +170,11 @@ export const Textarea = ({
 
     if (e.key === "Enter" && !e.shiftKey && !isLoading && input.trim()) {
       e.preventDefault();
-      // Expand tokens inline before submit
-      const expanded = await expandInputWithPrompts(input, args);
-      if (expanded !== input) {
-        // Update chat hook input state before submitting
-        const fakeEvent = { target: { value: expanded } } as any;
-        handleInputChange(fakeEvent);
-      }
       e.currentTarget.form?.requestSubmit();
     }
   }
 
-  async function expandInputWithPrompts(text: string, argState: { def: SlashPromptDef; vals: Record<string, string> } | null) {
-    const tokens = findTokens(text);
-    if (!tokens.length) return text;
-    const prefixBlocks: string[] = [];
-    for (const t of tokens) {
-      const def = promptRegistry.getByNamespaceName(t.namespace, t.name);
-      if (!def) continue;
-      const vars = argState?.def.id === def.id ? argState.vals : JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
-      if (def.mode === "template" && def.template) {
-        const rendered = renderPrompt(def, vars);
-        const asText = rendered
-          .map((m) => {
-            const tag = m.role === "system" ? "assistant" : m.role;
-            return `[${tag}] ${m.content}`;
-          })
-          .join("\n");
-        prefixBlocks.push(asText);
-      } else if (def.mode === 'server') {
-        // Resolve via server prompts/get through our API
-        try {
-          const server = mcpServers.find(s => s.id === def.sourceServerId);
-          if (server) {
-            const res = await fetch('/api/mcp-prompts/get', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: server.url, type: server.type === 'http' ? 'http' : 'sse', headers: server.headers, name: def.name, args: vars })
-            });
-            if (res.ok) {
-              const data = await res.json();
-              const msgs: Array<{ role: string; text: string }> = data.messages || [];
-              const asText = msgs.map(m => `[${m.role === 'system' ? 'assistant' : m.role}] ${m.text || ''}`).join('\n');
-              if (asText) prefixBlocks.push(asText);
-            }
-          }
-        } catch {
-          // swallow
-        }
-      }
-    }
-    if (!prefixBlocks.length) return text;
-    return `${prefixBlocks.join("\n\n")}\n\n${text}`;
-  }
+  // No inline expansion here; resolution handled in Chat and previewed below
 
   function insertPrompt(def: SlashPromptDef) {
     // Replace the current "/partial" with canonical token
@@ -157,10 +185,25 @@ export const Textarea = ({
     const fakeEvent = { target: { value: replaced } } as any;
     handleInputChange(fakeEvent);
     setMenuOpen(false);
+    try {
+      const raw = localStorage.getItem("prompt:recent");
+      const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+      const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+      existing.set(def.id, Date.now());
+      const next = Array.from(existing.entries())
+        .map(([id, ts]) => ({ id, ts }))
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 8);
+      localStorage.setItem("prompt:recent", JSON.stringify(next));
+    } catch {}
     if (def.args?.length) {
       const saved = JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
       setArgs({ def, vals: saved });
     }
+    // Enter preview mode so the input shows the full expanded prompt prior to send
+    try { console.log('[UI/PREVIEW] Prompt inserted; preview mode enabled for', def.id); } catch {}
+    previewOriginalRef.current = replaced;
+    setPreviewInserted(true);
   }
 
   return (
@@ -247,23 +290,70 @@ export const Textarea = ({
             onClose={() => { setMenuOpen(false); setIsTypingSlash(false); }}
             activeIndex={activeIndex}
             setActiveIndex={setActiveIndex}
+            loading={!promptsLoaded}
           />
         </div>
       )}
+      {resolved?.flattened?.length ? (
+        <ResolvedPromptPreview messages={resolved.flattened} />
+      ) : null}
       {args && (
-        <ArgsPanel
-          title={args.def.title}
-          namespace={args.def.namespace}
-          args={args.def.args ?? []}
-          values={args.vals}
-          onChange={(k, v) => {
-            setArgs((s) => (s ? { def: s.def, vals: { ...s.vals, [k]: v } } : s));
-            const next = { ...((args?.vals as any) || {}), [k]: v };
-            localStorage.setItem(`prompt:${args?.def.id}:args`, JSON.stringify(next));
-          }}
-          onClose={() => setArgs(null)}
-        />
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 w-[min(90vw,40rem)] pointer-events-auto">
+          <div className="relative">
+            <ArgsPanel
+              title={args.def.title}
+              namespace={args.def.namespace}
+              args={args.def.args ?? []}
+              values={args.vals}
+              onChange={(k, v) => {
+                setArgs((s) => (s ? { def: s.def, vals: { ...s.vals, [k]: v } } : s));
+                const next = { ...((args?.vals as any) || {}), [k]: v };
+                localStorage.setItem(`prompt:${args?.def.id}:args`, JSON.stringify(next));
+              }}
+              onClose={() => {
+                // Close the parameters panel without altering the user's current input.
+                // This keeps the expanded prompt text in the textbox (intuitive slash client behavior).
+                try { console.log('[UI/PREVIEW] Closing params; preserving current input'); } catch {}
+                setPreviewInserted(false);
+                setArgs(null);
+              }}
+            />
+            <div className="mt-2 flex justify-between gap-2 text-xs text-muted-foreground">
+              <div className="px-2 py-1 rounded bg-muted/30 border border-border/30">
+                Preview inserted into the input; edit and press Send when ready.
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Re-run preview manually
+                    setPreviewInserted(true);
+                    try { console.log('[UI/PREVIEW] Manual refresh requested'); } catch {}
+                  }}
+                  className="px-2 py-1 rounded border bg-white hover:bg-gray-50"
+                >
+                  Refresh Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Revert to original text but keep panel open
+                    try { console.log('[UI/PREVIEW] Reverting input to original, keeping panel open'); } catch {}
+                    const ev = { target: { value: previewOriginalRef.current || input } } as any;
+                    handleInputChange(ev);
+                    setPreviewInserted(false);
+                  }}
+                  className="px-2 py-1 rounded border bg-white hover:bg-gray-50"
+                >
+                  Revert
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
+      
+      {/* Preview handled by ResolvedPromptPreview above */}
     </div>
   );
 };

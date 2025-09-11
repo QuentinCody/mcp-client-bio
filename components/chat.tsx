@@ -2,9 +2,8 @@
 
 import { defaultModel, type modelID } from "@/ai/providers";
 import { Message, useChat } from "@ai-sdk/react";
-import { findTokens } from "@/lib/mcp/prompts/token";
-import { promptRegistry } from "@/lib/mcp/prompts/singleton";
-import { renderPrompt } from "@/lib/mcp/prompts/renderer";
+import type { UIMessage } from 'ai';
+import { resolvePromptsForInput, type ResolvedPromptContext } from "@/lib/mcp/prompts/resolve";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Textarea } from "./textarea";
 import { ProjectOverview } from "./project-overview";
@@ -19,6 +18,7 @@ import { convertToUIMessages } from "@/lib/chat-store";
 import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { ToolMetricsPanel } from "./tool-metrics";
+import { useMCP } from "@/lib/context/mcp-context";
 
 // Type for chat data from DB
 interface ChatData {
@@ -39,7 +39,8 @@ export default function Chat() {
   const [generatedChatId, setGeneratedChatId] = useState<string>('');
   
   // Get MCP server data from context
-  const { mcpServersForApi } = useMCP();
+  const { mcpServersForApi, mcpServers } = useMCP();
+  const [lastResolvedContext, setLastResolvedContext] = useState<ResolvedPromptContext | null>(null);
   
   // Initialize userId
   useEffect(() => {
@@ -106,16 +107,41 @@ export default function Chat() {
     } as Message));
   }, [chatData]);
   
-  const { messages, input, handleInputChange, handleSubmit, status, stop } =
+  const { messages, input, handleInputChange, handleSubmit, status, stop, setMessages } =
     useChat({
       id: chatId || generatedChatId, // Use generated ID if no chatId in URL
       initialMessages,
       maxSteps: 20,
+      headers: {
+        'x-model-id': selectedModel,
+      },
       body: {
         selectedModel,
-        mcpServers: mcpServersForApi,
+        // Fallback: if no servers are selected, include all configured servers for this request
+        mcpServers: (mcpServersForApi && (mcpServersForApi as any).length > 0)
+          ? mcpServersForApi
+          : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers })),
         chatId: chatId || generatedChatId, // Use generated ID if no chatId in URL
         userId,
+      },
+      experimental_prepareRequestBody: ({ id, messages, requestData, requestBody }) => {
+        const fromData = (requestData as any) || {};
+        const computedPromptContext = fromData.promptContext ?? (lastResolvedContext
+          ? { entries: lastResolvedContext.entries, flattened: lastResolvedContext.flattened }
+          : undefined);
+        // Recompute servers at send-time to avoid stale closure
+        const servers = (mcpServersForApi as any)?.length > 0
+          ? mcpServersForApi
+          : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers }));
+        try { console.log('[CHAT] prepare body servers len=', (servers as any)?.length || 0); } catch {}
+        return {
+          id,
+          messages,
+          ...(requestBody as any),
+          ...(fromData || {}),
+          promptContext: computedPromptContext,
+          mcpServers: servers,
+        };
       },
       experimental_throttle: 16, // ~60fps for smoother streaming
       onFinish: () => {
@@ -149,33 +175,85 @@ export default function Chat() {
   // Custom submit handler
   const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Expand slash-prompt tokens into concrete text before submitting (server prompts resolved via API)
+    // Resolve prompt tokens to MCP messages for this submit
+    let resolved: ResolvedPromptContext | null = null;
     try {
-      const maybeExpanded = await expandInputWithPrompts(input);
-      if (maybeExpanded !== input) {
-        const fakeEvent = { target: { value: maybeExpanded } } as any;
-        handleInputChange(fakeEvent);
+      resolved = await resolvePromptsForInput(input, null, { mcpServers: mcpServers as any });
+      setLastResolvedContext(resolved);
+    } catch (err) {
+      console.error('Prompt resolution failed:', err);
+    }
+    console.log('[CHAT] Submit with model=', selectedModel, 'serversForApiLen=', (mcpServersForApi as any)?.length || 0, 'serversLen=', (mcpServers as any)?.length || 0, 'resolvedMsgs=', resolved?.flattened?.length || 0);
+    // Store a UI-only expansion preview so the sent user message shows what ran
+    try {
+      if (resolved && resolved.flattened?.length) {
+        const serialized = resolved.flattened.map(m => `[${m.role}] ${m.text}`).join('\n');
+        const userWithoutTokens = input.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').trim();
+        const expandedForDisplay = userWithoutTokens ? `${serialized}\n\n${userWithoutTokens}` : serialized;
+        localStorage.setItem('last-message-original', input);
+        localStorage.setItem('last-message-expanded', expandedForDisplay);
+        // Also annotate the user message so expansion is visible even after assistant replies
+        setTimeout(() => {
+          try {
+            setMessages((prev) => {
+              if (!Array.isArray(prev) || prev.length === 0) return prev as any;
+              let lastUserIndex = -1;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const r = (prev[i] as any).role;
+                if (r === 'user') { lastUserIndex = i; break; }
+              }
+              if (lastUserIndex === -1) return prev as any;
+              const clone: any[] = [...(prev as any[])];
+              const msg = { ...(clone[lastUserIndex] as any) };
+              msg.annotations = { ...(msg.annotations || {}), promptExpanded: expandedForDisplay };
+              clone[lastUserIndex] = msg;
+              console.log('[CHAT] Annotated user message with promptExpanded; chars=', expandedForDisplay.length);
+              return clone as any;
+            });
+          } catch (err) {
+            console.warn('[CHAT] Failed to annotate user message with promptExpanded:', err);
+          }
+        }, 50);
+      } else {
+        console.log('[CHAT] No prompt resolution; nothing to annotate');
       }
     } catch (err) {
-      console.error('Slash prompt expansion failed:', err);
+      console.warn('[CHAT] Error preparing UI expansion preview:', err);
     }
+    // Keep the input unchanged; preview shows exact text. Structured messages are sent via promptContext.
     
     if (!chatId && generatedChatId && input.trim()) {
       // If this is a new conversation, redirect to the chat page with the generated ID
       const effectiveChatId = generatedChatId;
       
-      // Submit the form
-      handleSubmit(e);
+      // Submit the form with prompt context
+      handleSubmit(e, { data: { promptContext: resolved || undefined } as any });
       
       // Redirect to the chat page with the generated ID
       router.push(`/chat/${effectiveChatId}`);
     } else {
       // Normal submission for existing chats
-      handleSubmit(e);
+      handleSubmit(e, { data: { promptContext: resolved || undefined } as any });
     }
-  }, [chatId, generatedChatId, input, handleSubmit, handleInputChange, router]);
+  }, [chatId, generatedChatId, input, handleSubmit, handleInputChange, router, mcpServersForApi, mcpServers]);
 
   const isLoading = status === "streaming" || status === "submitted" || isLoadingChat;
+
+  // Ensure messages always have parts so the renderer displays user messages
+  const displayMessages: UIMessage[] = useMemo(() => {
+    return messages.map((m) => {
+      if (m.parts && m.parts.length > 0) return m;
+      let text = '';
+      const anyContent: any = (m as any).content;
+      if (typeof anyContent === 'string') text = anyContent;
+      else if (Array.isArray(anyContent)) text = anyContent.map((x) => String(x ?? '')).join('\n');
+      else if (anyContent && typeof anyContent.toString === 'function') text = anyContent.toString();
+      return {
+        ...m,
+        parts: [{ type: 'text', text } as any],
+      } as unknown as UIMessage;
+    });
+  }, [messages]);
 
   return (
     <div className="h-dvh flex flex-col justify-center w-full max-w-[430px] sm:max-w-3xl mx-auto px-4 sm:px-6 py-3">
@@ -201,7 +279,7 @@ export default function Chat() {
       ) : (
         <>
           <div className="flex-1 overflow-y-auto min-h-0 pb-2">
-            <Messages messages={messages} isLoading={isLoading} status={status} />
+            <Messages messages={displayMessages} isLoading={isLoading} status={status} />
           </div>
           <form
             onSubmit={handleFormSubmit}
@@ -221,32 +299,4 @@ export default function Chat() {
       )}
     </div>
   );
-}
-
-// Lightweight expansion helper; client-owned prompts are loaded in Textarea, but we also try here to catch button submits.
-
-import { useMCP } from "@/lib/context/mcp-context";
-
-async function expandInputWithPrompts(text: string) {
-  const tokens = findTokens(text);
-  if (!tokens.length) return text;
-  const blocks: string[] = [];
-  // Cannot use hook here; expansion in Textarea covers Enter; this is a fallback that only expands template prompts.
-  for (const t of tokens) {
-    const def = promptRegistry.getByNamespaceName(t.namespace, t.name);
-    if (!def) continue;
-    const saved = JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
-    if (def.mode === "template" && def.template) {
-      const rendered = renderPrompt(def, saved);
-      const asText = rendered
-        .map((m) => {
-          const tag = m.role === "system" ? "assistant" : (m as any).role;
-          return `[${tag}] ${m.content}`;
-        })
-        .join("\n");
-      blocks.push(asText);
-    }
-  }
-  if (!blocks.length) return text;
-  return `${blocks.join("\n\n")}\n\n${text}`;
 }
