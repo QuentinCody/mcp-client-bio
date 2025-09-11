@@ -4,13 +4,8 @@ import { checkBotId } from "botid/server";
 
 export async function GET(request: Request) {
   try {
-    const userId = request.headers.get('x-user-id');
-
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
-    }
-
-    const chats = await getChats(userId);
+    const effectiveUserId = request.headers.get('x-user-id') || 'anon';
+    const chats = await getChats(effectiveUserId);
     return NextResponse.json(chats);
   } catch (error) {
     console.error("Error fetching chats:", error);

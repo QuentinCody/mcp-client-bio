@@ -12,21 +12,28 @@ import { generateTitle } from '@/app/actions';
 import { checkBotId } from "botid/server";
 
 export async function POST(req: Request) {
-  const {
-    messages,
-    chatId,
-    selectedModel,
-    userId,
-    mcpServers = [],
-  }: {
-    messages: UIMessage[];
-    chatId?: string;
-    selectedModel: modelID;
-    userId: string;
-    mcpServers?: MCPServerConfig[];
-  } = await req.json();
+  const body = await req.json().catch(() => ({}));
+  const messages: UIMessage[] = Array.isArray((body as any).messages) ? (body as any).messages : [];
+  const chatId: string | undefined = (body as any).chatId;
+  const headerModel = (req.headers as any).get?.('x-model-id') || undefined;
+  const selectedModel: modelID = (body as any).selectedModel || headerModel;
+  const userId: string = (body as any).userId;
+  const mcpServers: MCPServerConfig[] = Array.isArray((body as any).mcpServers) ? (body as any).mcpServers : [];
+  const promptContext: {
+    entries?: Array<{ id: string; namespace: string; name: string; title?: string; origin?: string; sourceServerId?: string; version?: string; args?: Record<string, string>; messages?: Array<{ role: string; text: string }> }>;
+    flattened?: Array<{ role: string; text: string }>;
+  } | undefined = (body as any).promptContext;
 
   const { isBot, isGoodBot } = await checkBotId();
+  try {
+    console.log('[API /chat] incoming model=', selectedModel, 'headerModel=', headerModel, 'messagesIn=', Array.isArray(messages) ? messages.length : 'N/A');
+    if (promptContext) {
+      console.log('[API /chat] promptContext entries=', (promptContext.entries || []).length, 'flattened=', (promptContext.flattened || []).length);
+      if ((promptContext.entries || []).length) {
+        console.log('[API /chat] prompt[0]=', promptContext.entries![0]);
+      }
+    }
+  } catch {}
 
   if (isBot && !isGoodBot) {
     return new Response(
@@ -35,12 +42,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!userId) {
-    return new Response(
-      JSON.stringify({ error: "User ID is required" }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
-  }
+  const effectiveUserId = userId || (req.headers as any).get?.('x-user-id') || 'anon';
 
   const id = chatId || nanoid();
 
@@ -52,7 +54,7 @@ export async function POST(req: Request) {
       const existingChat = await db.query.chats.findFirst({
         where: and(
           eq(chats.id, chatId),
-          eq(chats.userId, userId)
+          eq(chats.userId, effectiveUserId)
         )
       });
       isNewChat = !existingChat;
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
       // Save the chat immediately so it appears in the sidebar
       await saveChat({
         id,
-        userId,
+        userId: effectiveUserId,
         title,
         messages: [],
       });
@@ -93,7 +95,11 @@ export async function POST(req: Request) {
   }
 
   // Initialize MCP clients using the already running persistent HTTP/SSE servers
+  try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
   const { tools, cleanup } = await initializeMCPClients(mcpServers, req.signal);
+  try {
+    console.log('[API /chat] initialized tools keys=', tools ? Object.keys(tools) : 'none');
+  } catch {}
 
   // Removed verbose logging for better performance
 
@@ -142,9 +148,11 @@ Response format: Markdown supported. Use tools to answer questions.`;
   const systemPrompt = isComplexQuery ? fullSystemPrompt : shortSystemPrompt;
 
   // Always use the selected model - no automatic fallbacks (moved earlier for ordering)
-  const effectiveModel = selectedModel;
+  // Ensure we always have a model id
+  const { defaultModel } = await import('@/ai/providers');
+  const effectiveModel = (selectedModel as any) || (defaultModel as any);
   // Detect if we are using an Anthropic model for prompt caching specific logic
-  const isAnthropicModel = effectiveModel.startsWith('claude');
+  const isAnthropicModel = typeof effectiveModel === 'string' && effectiveModel.startsWith('claude');
 
   // Build structured system blocks for Anthropic prompt caching to avoid re-sending large static instructions counting toward ITPM.
   // We separate static (cacheable) and dynamic (date) parts so that the changing date does not invalidate the cached prefix.
@@ -223,13 +231,70 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
   const sanitizedMessages = sanitizeHistory(messages);
 
+  // Build prompt injection messages (resolved from MCP prompts) to prepend to LLM context
+  const promptInjectedMessages: UIMessage[] = [];
+  const promptAuditMessage: UIMessage | null = (() => {
+    try {
+      if (!promptContext || (!promptContext.entries && !promptContext.flattened)) return null;
+      // Push the flattened messages for LLM consumption with preserved roles
+      for (const m of promptContext.flattened || []) {
+        const role = (m.role === 'system' || m.role === 'assistant' || m.role === 'user') ? m.role : 'user';
+        promptInjectedMessages.push({
+          id: nanoid(),
+          role,
+          content: m.text,
+          parts: [{ type: 'text', text: m.text }],
+        } as any);
+      }
+      // Create a compact audit record for observability
+      const audit = {
+        type: 'prompt-context',
+        at: new Date().toISOString(),
+        entries: (promptContext.entries || []).map((e) => ({
+          id: e.id,
+          namespace: e.namespace,
+          name: e.name,
+          title: e.title,
+          origin: e.origin,
+          sourceServerId: e.sourceServerId,
+          version: e.version,
+          args: e.args || {},
+          messageCount: e.messages?.length || 0,
+          messages: (e.messages || []).map(m => ({ role: m.role, text: m.text })),
+        })),
+      };
+      return {
+        id: nanoid(),
+        role: 'system',
+        content: '',
+        parts: [audit as any],
+      } as any as UIMessage;
+    } catch {
+      return null;
+    }
+  })();
+
   const maxHistoryLength = 10; // target maximum messages after sanitization
-  const truncatedMessages = sanitizedMessages.length > maxHistoryLength 
+  // Strip raw slash prompt tokens like "/ns/name" from user-visible messages
+  const stripTokens = (text: string) => text.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').replace(/\s+/g, ' ').trim();
+  const normalizeToParts = (m: UIMessage): UIMessage => {
+    if ((m as any).parts && Array.isArray((m as any).parts)) return m;
+    const content: any = (m as any).content;
+    const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map((x) => String(x ?? '')).join('\n') : '';
+    return { ...m, parts: [{ type: 'text', text }] as any } as UIMessage;
+  };
+  const baseClientMessages = sanitizedMessages.map((m) => {
+    const msg = normalizeToParts(m);
+    if (msg.role !== 'user') return msg;
+    const newParts = (msg as any).parts.map((p: any) => (p?.type === 'text' ? { ...p, text: stripTokens(String(p.text ?? '')) } : p));
+    return { ...msg, parts: newParts } as any;
+  });
+  const truncatedMessages = baseClientMessages.length > maxHistoryLength 
     ? [
-        sanitizedMessages[0], // Keep first message for context
-        ...sanitizedMessages.slice(-maxHistoryLength + 1) // Keep recent messages
+        baseClientMessages[0], // Keep first message for context
+        ...baseClientMessages.slice(-maxHistoryLength + 1) // Keep recent messages
       ]
-    : sanitizedMessages;
+    : baseClientMessages;
 
   // Base configuration for all models
   const baseConfig = {
@@ -287,8 +352,11 @@ Response format: Markdown supported. Use tools to answer questions.`;
     }
   };
 
+  console.log('[API /chat] tools count=', tools ? Object.keys(tools).length : 0, 'model=', effectiveModel);
   const result = await attemptStreamText({
     ...baseConfig,
+    // Prepend prompt-injected messages (if any) to the current context
+    messages: [...promptInjectedMessages, ...truncatedMessages],
     providerOptions: {
       google: {
         thinkingConfig: {
@@ -315,14 +383,26 @@ Response format: Markdown supported. Use tools to answer questions.`;
     },
     async onFinish({ response }: { response: any }) {
       responseCompleted = true;
+      try {
+        const outMsgs = (response as any)?.messages || [];
+        let toolParts = 0;
+        for (const m of outMsgs) {
+          const parts = (m as any)?.parts || [];
+          for (const p of parts) if (p?.type === 'tool-invocation') toolParts++;
+        }
+        console.log('[API /chat] response messages=', outMsgs.length, 'toolParts=', toolParts);
+      } catch (err) {
+        console.warn('[API /chat] logging response failed:', err);
+      }
+      const seedMessages = promptAuditMessage ? [promptAuditMessage, ...messages] : messages;
       const allMessages = appendResponseMessages({
-        messages,
+        messages: seedMessages,
         responseMessages: response.messages,
       });
 
       await saveChat({
         id,
-        userId,
+        userId: effectiveUserId,
         messages: allMessages,
       });
 
