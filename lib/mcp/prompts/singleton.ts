@@ -7,6 +7,35 @@ export const promptRegistry = new PromptRegistry();
 let loaded = false;
 let loading: Promise<void> | null = null;
 
+function normalizeSegment(value: string | undefined | null, fallback: string): string {
+  const safe = (value ?? fallback).trim().toLowerCase();
+  const normalized = safe
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function normalizePrompt(def: SlashPromptDef): SlashPromptDef {
+  const baseNamespace = def.namespace || "client";
+  const baseName = def.name || "prompt";
+  const serverSlug = def.origin === "server-import"
+    ? def.sourceServerSlug || normalizeSegment(def.sourceServerName, baseNamespace)
+    : undefined;
+  const namespaceSegment = def.origin === "server-import"
+    ? `mcp.${serverSlug}`
+    : normalizeSegment(baseNamespace.replace(/\//g, "."), baseNamespace);
+  const nameSegment = normalizeSegment(baseName, baseName);
+  const trigger = def.trigger
+    ? def.trigger
+    : `${namespaceSegment}.${nameSegment}`;
+
+  return {
+    ...def,
+    trigger,
+    sourceServerSlug: serverSlug ?? def.sourceServerSlug,
+  };
+}
+
 export async function ensurePromptsLoaded(): Promise<void> {
   if (loaded) return;
   if (loading) return loading;
@@ -15,7 +44,10 @@ export async function ensurePromptsLoaded(): Promise<void> {
       const res = await fetch("/slash-prompts.json", { cache: "no-store" });
       if (!res.ok) return;
       const data: { version: string; prompts: SlashPromptDef[] } = await res.json();
-      promptRegistry.load(data.prompts || []);
+      const normalized = Array.isArray(data.prompts)
+        ? data.prompts.map((p) => normalizePrompt(p))
+        : [];
+      promptRegistry.load(normalized);
       loaded = true;
     } catch {
       // ignore load failures; menu will simply be empty
@@ -29,4 +61,3 @@ export async function ensurePromptsLoaded(): Promise<void> {
 export function isPromptsLoaded() {
   return loaded;
 }
-

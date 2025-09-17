@@ -3,6 +3,7 @@
   "prompts": [
     {
       "id": "client/summarize",
+      "trigger": "client.summarize",
       "namespace": "client",
       "name": "summarize",
       "title": "Summarize Selection",
@@ -20,4 +21,3 @@
     }
   ]
 }
-

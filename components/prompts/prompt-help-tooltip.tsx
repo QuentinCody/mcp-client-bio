@@ -143,12 +143,12 @@ export function PromptHelpPanel({
     {
       icon: <Hash className="w-4 h-4 text-blue-500" />,
       title: 'Slash Commands',
-      description: 'Type / followed by keywords to search and insert MCP prompts'
+      description: 'Type / to browse commands; MCP prompts use /mcp.<server>.<prompt> format'
     },
     {
       icon: <Zap className="w-4 h-4 text-green-500" />,
       title: 'Smart Search',
-      description: 'Search by prompt name, title, description, or namespace'
+      description: 'Search by server, trigger, title, or description with fuzzy matching'
     },
     {
       icon: <Info className="w-4 h-4 text-purple-500" />,

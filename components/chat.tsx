@@ -3,7 +3,6 @@
 import { defaultModel, type modelID } from "@/ai/providers";
 import { Message, useChat } from "@ai-sdk/react";
 import type { UIMessage } from 'ai';
-import { resolvePromptsForInput, type ResolvedPromptContext } from "@/lib/mcp/prompts/resolve";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Textarea } from "./textarea";
 import { ProjectOverview } from "./project-overview";
@@ -19,6 +18,17 @@ import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { ToolMetricsPanel } from "./tool-metrics";
 import { useMCP } from "@/lib/context/mcp-context";
+import type { SlashCommandMeta } from "@/lib/slash/types";
+import { slashRegistry } from "@/lib/slash";
+import type { PromptMessage } from "@/lib/context/mcp-context";
+import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
+import {
+  createResolvedPromptContext,
+  createResolvedPromptEntry,
+  normalizePromptMessages,
+  type ResolvedPromptContext,
+  type ResolvedPromptEntry,
+} from "@/lib/mcp/prompts/resolve";
 
 // Type for chat data from DB
 interface ChatData {
@@ -37,10 +47,17 @@ export default function Chat() {
   const [selectedModel, setSelectedModel] = useLocalStorage<modelID>("selectedModel", defaultModel);
   const [userId, setUserId] = useState<string>('');
   const [generatedChatId, setGeneratedChatId] = useState<string>('');
+  const [promptPreview, setPromptPreview] = useState<{
+    def: SlashPromptDef;
+    args: Record<string, string>;
+    entry: ResolvedPromptEntry;
+    context: ResolvedPromptContext;
+    resources: { uri: string; name?: string }[];
+    rawMessages: PromptMessage[];
+  } | null>(null);
   
   // Get MCP server data from context
   const { mcpServersForApi, mcpServers } = useMCP();
-  const [lastResolvedContext, setLastResolvedContext] = useState<ResolvedPromptContext | null>(null);
   
   // Initialize userId
   useEffect(() => {
@@ -123,13 +140,10 @@ export default function Chat() {
           : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers })),
         chatId: chatId || generatedChatId, // Use generated ID if no chatId in URL
         userId,
+        promptContext: promptPreview?.context,
       },
       experimental_prepareRequestBody: ({ id, messages, requestData, requestBody }) => {
         const fromData = (requestData as any) || {};
-        const computedPromptContext = fromData.promptContext ?? (lastResolvedContext
-          ? { entries: lastResolvedContext.entries, flattened: lastResolvedContext.flattened }
-          : undefined);
-        // Recompute servers at send-time to avoid stale closure
         const servers = (mcpServersForApi as any)?.length > 0
           ? mcpServersForApi
           : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers }));
@@ -139,8 +153,8 @@ export default function Chat() {
           messages,
           ...(requestBody as any),
           ...(fromData || {}),
-          promptContext: computedPromptContext,
           mcpServers: servers,
+          promptContext: promptPreview?.context,
         };
       },
       experimental_throttle: 16, // ~60fps for smoother streaming
@@ -175,69 +189,179 @@ export default function Chat() {
   // Custom submit handler
   const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Resolve prompt tokens to MCP messages for this submit
-    let resolved: ResolvedPromptContext | null = null;
-    try {
-      resolved = await resolvePromptsForInput(input, null, { mcpServers: mcpServers as any });
-      setLastResolvedContext(resolved);
-    } catch (err) {
-      console.error('Prompt resolution failed:', err);
-    }
-    console.log('[CHAT] Submit with model=', selectedModel, 'serversForApiLen=', (mcpServersForApi as any)?.length || 0, 'serversLen=', (mcpServers as any)?.length || 0, 'resolvedMsgs=', resolved?.flattened?.length || 0);
-    // Store a UI-only expansion preview so the sent user message shows what ran
-    try {
-      if (resolved && resolved.flattened?.length) {
-        const serialized = resolved.flattened.map(m => `[${m.role}] ${m.text}`).join('\n');
-        const userWithoutTokens = input.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').trim();
-        const expandedForDisplay = userWithoutTokens ? `${serialized}\n\n${userWithoutTokens}` : serialized;
-        localStorage.setItem('last-message-original', input);
-        localStorage.setItem('last-message-expanded', expandedForDisplay);
-        // Also annotate the user message so expansion is visible even after assistant replies
-        setTimeout(() => {
-          try {
-            setMessages((prev) => {
-              if (!Array.isArray(prev) || prev.length === 0) return prev as any;
-              let lastUserIndex = -1;
-              for (let i = prev.length - 1; i >= 0; i--) {
-                const r = (prev[i] as any).role;
-                if (r === 'user') { lastUserIndex = i; break; }
-              }
-              if (lastUserIndex === -1) return prev as any;
-              const clone: any[] = [...(prev as any[])];
-              const msg = { ...(clone[lastUserIndex] as any) };
-              msg.annotations = { ...(msg.annotations || {}), promptExpanded: expandedForDisplay };
-              clone[lastUserIndex] = msg;
-              console.log('[CHAT] Annotated user message with promptExpanded; chars=', expandedForDisplay.length);
-              return clone as any;
-            });
-          } catch (err) {
-            console.warn('[CHAT] Failed to annotate user message with promptExpanded:', err);
-          }
-        }, 50);
-      } else {
-        console.log('[CHAT] No prompt resolution; nothing to annotate');
-      }
-    } catch (err) {
-      console.warn('[CHAT] Error preparing UI expansion preview:', err);
-    }
-    // Keep the input unchanged; preview shows exact text. Structured messages are sent via promptContext.
-    
+    console.log('[CHAT] Submit with model=', selectedModel, 'serversForApiLen=', (mcpServersForApi as any)?.length || 0, 'serversLen=', (mcpServers as any)?.length || 0);
+
     if (!chatId && generatedChatId && input.trim()) {
-      // If this is a new conversation, redirect to the chat page with the generated ID
       const effectiveChatId = generatedChatId;
-      
-      // Submit the form with prompt context
-      handleSubmit(e, { data: { promptContext: resolved || undefined } as any });
-      
-      // Redirect to the chat page with the generated ID
+      handleSubmit(e);
       router.push(`/chat/${effectiveChatId}`);
     } else {
-      // Normal submission for existing chats
-      handleSubmit(e, { data: { promptContext: resolved || undefined } as any });
+      handleSubmit(e);
     }
-  }, [chatId, generatedChatId, input, handleSubmit, handleInputChange, router, mcpServersForApi, mcpServers]);
+  }, [chatId, generatedChatId, input, handleSubmit, router, mcpServersForApi, mcpServers, selectedModel]);
+
+  const runSlashCommand = useCallback(async (
+    command: SlashCommandMeta,
+    args: Record<string, string> | string[] | undefined = undefined
+  ) => {
+    slashRegistry.markUsed(command.id);
+    const controller = new AbortController();
+    const toastId = toast.loading(`Running /${command.name}…`);
+    let messageId: string | null = null;
+    try {
+      const response = await fetch("/api/commands/execute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: command.name, args }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Command failed");
+        throw new Error(errorText || `Failed to run /${command.name}`);
+      }
+
+      const newMessageId = `slash-${command.id}-${Date.now()}`;
+      messageId = newMessageId;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: newMessageId,
+          role: "assistant",
+          content: "",
+        } as Message,
+      ]);
+
+      if (!response.body) {
+        throw new Error("Command response missing body");
+      }
+
+      const decoder = new TextDecoder();
+      const reader = response.body.getReader();
+      let accumulated = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          accumulated += decoder.decode(value, { stream: true });
+          const snapshot = accumulated;
+          const currentId = messageId;
+          if (!currentId) continue;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === currentId
+                ? { ...msg, content: snapshot }
+                : msg
+            )
+          );
+        }
+      }
+      accumulated += decoder.decode();
+      const finalText = accumulated.trim();
+      const finalId = messageId;
+      if (finalId) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === finalId ? { ...msg, content: finalText } : msg
+          )
+        );
+      }
+      toast.success(`/${command.name} completed`, { id: toastId });
+    } catch (err) {
+      console.error('Slash command failed', err);
+      if (messageId) {
+        const errorText = err instanceof Error ? err.message : 'Unknown error executing command';
+        const failedId = messageId;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === failedId
+              ? { ...msg, content: `Error: ${errorText}` }
+              : msg
+          )
+        );
+      }
+      toast.error(`/${command.name} failed`, {
+        id: toastId,
+        description: err instanceof Error ? err.message : 'Unknown error executing command',
+      });
+    } finally {
+      controller.abort();
+    }
+  }, [setMessages]);
 
   const isLoading = status === "streaming" || status === "submitted" || isLoadingChat;
+
+  const handlePromptResolved = useCallback((payload: {
+    def: SlashPromptDef;
+    serverId?: string;
+    args: Record<string, string>;
+    result: { messages: PromptMessage[]; description?: string };
+  }) => {
+    const entry = createResolvedPromptEntry(payload.def, payload.args, payload.result.messages as any);
+    const context = createResolvedPromptContext(entry);
+    const normalized = normalizePromptMessages(payload.result.messages as any);
+    const previewText = normalized
+      .map((message) => message.text)
+      .filter(Boolean)
+      .join("\n\n");
+    const resources = entry.messages
+      .flatMap((message) => message.content || [])
+      .filter((item) => item?.type === 'resource')
+      .map((item) => {
+        const uri = item.resource?.uri ?? (item as any).uri ?? "";
+        const name = item.resource?.name ?? (item as any).name;
+        return { uri, name };
+      })
+      .filter((resource) => resource.uri);
+    setPromptPreview({
+      def: payload.def,
+      args: payload.args,
+      entry,
+      context,
+      resources,
+      rawMessages: payload.result.messages,
+    });
+    handleInputChange({ target: { value: previewText } } as any);
+  }, [handleInputChange]);
+
+  const cancelPromptPreview = useCallback(() => {
+    setPromptPreview(null);
+    handleInputChange({ target: { value: "" } } as any);
+  }, [handleInputChange]);
+
+  const removePromptResource = useCallback((uri: string) => {
+    setPromptPreview((current) => {
+      if (!current) return null;
+      let changed = false;
+      const filteredRaw = current.rawMessages.map((message) => {
+        const contentArray = Array.isArray(message.content) ? [...message.content] : [];
+        const nextContent = contentArray.filter((item) => {
+          const itemUri = item?.resource?.uri ?? (item as any)?.uri;
+          if (!itemUri) return true;
+          if (itemUri === uri) {
+            changed = true;
+            return false;
+          }
+          return true;
+        });
+        if (!changed) return message;
+        return { ...message, content: nextContent } as PromptMessage;
+      });
+      if (!changed) return current;
+      const filteredResources = current.resources.filter((resource) => resource.uri !== uri);
+      const entry = createResolvedPromptEntry(current.def, current.args, filteredRaw as any);
+      const context = createResolvedPromptContext(entry);
+      return { ...current, entry, context, resources: filteredResources, rawMessages: filteredRaw };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (promptPreview && (status === "submitted" || status === "streaming")) {
+      setPromptPreview(null);
+    }
+  }, [promptPreview, status]);
 
   // Ensure messages always have parts so the renderer displays user messages
   const displayMessages: UIMessage[] = useMemo(() => {
@@ -256,15 +380,16 @@ export default function Chat() {
   }, [messages]);
 
   return (
-    <div className="h-dvh flex flex-col justify-center w-full max-w-[430px] sm:max-w-3xl mx-auto px-4 sm:px-6 py-3">
-  <ToolMetricsPanel />
-      {messages.length === 0 && !isLoadingChat ? (
-        <div className="max-w-xl mx-auto w-full">
-          <ProjectOverview />
-          <form
-            onSubmit={handleFormSubmit}
-            className="mt-4 w-full mx-auto"
-          >
+    <>
+      <div className="h-dvh flex flex-col justify-center w-full max-w-[430px] sm:max-w-3xl mx-auto px-4 sm:px-6 py-3">
+        <ToolMetricsPanel />
+        {messages.length === 0 && !isLoadingChat ? (
+          <div className="max-w-xl mx-auto w-full">
+            <ProjectOverview />
+            <form
+              onSubmit={handleFormSubmit}
+              className="mt-4 w-full mx-auto"
+            >
             <Textarea
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
@@ -273,18 +398,23 @@ export default function Chat() {
               isLoading={isLoading}
               status={status}
               stop={stop}
+              onRunCommand={runSlashCommand}
+              onPromptResolved={handlePromptResolved}
+              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isLoading } : null}
+              onPromptPreviewCancel={cancelPromptPreview}
+              onPromptPreviewResourceRemove={removePromptResource}
             />
-          </form>
-        </div>
-      ) : (
-        <>
-          <div className="flex-1 overflow-y-auto min-h-0 pb-2">
-            <Messages messages={displayMessages} isLoading={isLoading} status={status} />
+            </form>
           </div>
-          <form
-            onSubmit={handleFormSubmit}
-            className="mt-2 w-full mx-auto"
-          >
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto min-h-0 pb-2">
+              <Messages messages={displayMessages} isLoading={isLoading} status={status} />
+            </div>
+            <form
+              onSubmit={handleFormSubmit}
+              className="mt-2 w-full mx-auto"
+            >
             <Textarea
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
@@ -293,10 +423,16 @@ export default function Chat() {
               isLoading={isLoading}
               status={status}
               stop={stop}
+              onRunCommand={runSlashCommand}
+              onPromptResolved={handlePromptResolved}
+              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isLoading } : null}
+              onPromptPreviewCancel={cancelPromptPreview}
+              onPromptPreviewResourceRemove={removePromptResource}
             />
-          </form>
-        </>
-      )}
-    </div>
+            </form>
+          </>
+        )}
+      </div>
+    </>
   );
 }

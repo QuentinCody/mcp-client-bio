@@ -1,19 +1,24 @@
 import { modelID } from "@/ai/providers";
 import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
-import { ArrowUp, Loader2, Hash, Info, Sparkles, Zap } from "lucide-react";
+import { ArrowUp, Loader2, Hash, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
 import { SlashPromptMenu } from "@/components/prompts/slash-prompt-menu";
-import { toToken, findTokens } from "@/lib/mcp/prompts/token";
+import { toToken } from "@/lib/mcp/prompts/token";
 import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
-import { renderPrompt } from "@/lib/mcp/prompts/renderer";
-import { PromptArgsSheet } from "@/components/prompts/prompt-args-sheet";
-import { ArgsPanel } from "@/components/prompts/args-panel";
+import { slashRegistry } from "@/lib/slash";
+import type { SlashCommandMeta, SlashCommandSuggestion } from "@/lib/slash/types";
+import type { MCPServer, PromptMessage } from "@/lib/context/mcp-context";
+import type { PromptSummary } from "@/lib/mcp/transport/http";
 import { useMCP } from "@/lib/context/mcp-context";
-import { resolvePromptsForInput, type ResolvedPromptContext } from "@/lib/mcp/prompts/resolve";
-import { ResolvedPromptPreview } from "@/components/prompts/resolved-preview";
+import { PromptArgDialog } from "@/components/mcp/PromptArgDialog";
+import { ResourceChip } from "@/components/mcp/ResourceChip";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+type MenuItem = SlashPromptDef & { commandMeta?: SlashCommandMeta };
 
 interface InputProps {
   input: string;
@@ -23,6 +28,19 @@ interface InputProps {
   stop: () => void;
   selectedModel: modelID;
   setSelectedModel: (model: modelID) => void;
+  onRunCommand: (command: SlashCommandMeta, args?: Record<string, string> | string[]) => void;
+  onPromptResolved: (payload: {
+    def: SlashPromptDef;
+    serverId?: string;
+    args: Record<string, string>;
+    result: { messages: PromptMessage[]; description?: string };
+  }) => void;
+  promptPreview?: {
+    resources: { uri: string; name?: string }[];
+    sending?: boolean;
+  } | null;
+  onPromptPreviewCancel: () => void;
+  onPromptPreviewResourceRemove: (uri: string) => void;
 }
 
 export const Textarea = ({
@@ -33,22 +51,33 @@ export const Textarea = ({
   stop,
   selectedModel,
   setSelectedModel,
+  onRunCommand,
+  onPromptResolved,
+  promptPreview,
+  onPromptPreviewCancel,
+  onPromptPreviewResourceRemove,
 }: InputProps) => {
   const isStreaming = status === "streaming" || status === "submitted";
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [args, setArgs] = useState<{ def: SlashPromptDef; vals: Record<string, string> } | null>(null);
   const [showingSlashHint, setShowingSlashHint] = useState(false);
   const [isTypingSlash, setIsTypingSlash] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const { mcpServers } = useMCP();
-  const requiredMissing = !!(args && (args.def.args || []).some(a => a.required && !((args.vals[a.name] ?? "").trim().length)));
+  const {
+    mcpServers,
+    ensureAllPromptsLoaded,
+    fetchPromptMessages,
+    completePromptArgument,
+  } = useMCP();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [resolved, setResolved] = useState<ResolvedPromptContext | null>(null);
-  const [resolving, setResolving] = useState(false);
   const [promptsLoaded, setPromptsLoaded] = useState(false);
-  const [previewInserted, setPreviewInserted] = useState(false);
-  const previewOriginalRef = useRef<string>("");
+  const [registryRevision, setRegistryRevision] = useState(0);
+  const [argDialog, setArgDialog] = useState<{
+    open: boolean;
+    server?: MCPServer;
+    prompt?: PromptSummary;
+    def?: MenuItem;
+  }>({ open: false });
 
   useEffect(() => {
     let mounted = true;
@@ -62,70 +91,131 @@ export const Textarea = ({
     return () => { mounted = false; };
   }, []);
 
-  const items = useMemo(() => promptRegistry.search(query), [query]);
-
-  // Live-resolve prompt content for preview when tokens are present or args change
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const hasToken = /\/[a-z0-9-]+\/[a-z0-9-_]+\b/i.test(input);
-      if (!hasToken) { setResolved(null); return; }
-      setResolving(true);
-      try {
-        const ctx = await resolvePromptsForInput(input, args, { mcpServers });
-        if (!cancelled) setResolved(ctx);
-      } catch {
-        if (!cancelled) setResolved(null);
-      } finally {
-        if (!cancelled) setResolving(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [input, args, mcpServers]);
+    const unsubscribe = slashRegistry.listen(() => setRegistryRevision((rev) => rev + 1));
+    return unsubscribe;
+  }, []);
 
-  // Close parameter panel with Escape
   useEffect(() => {
-    if (!args) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setArgs(null);
+    if (!menuOpen) return;
+    void ensureAllPromptsLoaded();
+  }, [menuOpen, ensureAllPromptsLoaded]);
+
+  const commandSuggestions = useMemo<SlashCommandSuggestion[]>(() => {
+    void registryRevision;
+    return slashRegistry
+      .list(query)
+      .filter((suggestion) => suggestion.kind === "local");
+  }, [query, registryRevision]);
+
+  const commandItems = useMemo<MenuItem[]>(() => {
+    return commandSuggestions.map((suggestion) => ({
+      id: `command/${suggestion.id}`,
+      trigger: suggestion.name,
+      namespace: suggestion.sourceId ? `command-${suggestion.sourceId}` : "commands",
+      name: suggestion.name,
+      title: suggestion.title || suggestion.name,
+      description: suggestion.description,
+      origin: "client",
+      mode: "command",
+      args: suggestion.arguments?.map((arg) => ({
+        name: arg.name,
+        description: arg.description,
+        required: arg.required,
+      })),
+      commandMetaId: suggestion.id,
+      commandMeta: suggestion,
+    }));
+  }, [commandSuggestions]);
+
+  const promptItems = useMemo<MenuItem[]>(() => {
+    void mcpServers;
+    return promptRegistry.search(query).map((def) => ({ ...def } as MenuItem));
+  }, [query, mcpServers]);
+
+  const items = useMemo<MenuItem[]>(() => {
+    return [...commandItems, ...promptItems];
+  }, [commandItems, promptItems]);
+
+  function toPromptSummary(def: MenuItem): PromptSummary {
+    return {
+      name: def.name,
+      title: def.title,
+      description: def.description,
+      arguments: (def.args ?? []).map((arg) => ({
+        name: arg.name,
+        description: arg.description,
+        required: arg.required,
+      })),
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [args]);
-
-  // Helper: strip slash tokens from text
-  function stripTokensFromText(text: string) {
-    return text.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').replace(/\s+/g, ' ').trim();
   }
 
-  // When in preview mode, keep the input replaced with the expanded prompt so user can review before sending
-  useEffect(() => {
-    (async () => {
-      if (!previewInserted) return;
-      try {
-        const ctx = await resolvePromptsForInput(input, args, { mcpServers });
-        if (!ctx || !ctx.flattened?.length) {
-          try { console.log('[UI/PREVIEW] No resolved messages; keeping current input'); } catch {}
-          return;
-        }
-        const serialized = ctx.flattened.map(m => `[${m.role}] ${m.text}`).join('\n');
-        const original = previewOriginalRef.current || input;
-        const remaining = stripTokensFromText(original);
-        const next = remaining ? `${serialized}\n\n${remaining}` : serialized;
-        if (next !== input) {
-          try { console.log('[UI/PREVIEW] Updating input with expanded prompt. chars=', next.length); } catch {}
-          const ev = { target: { value: next } } as any;
-          handleInputChange(ev);
-          try { localStorage.setItem('last-message-expanded', next); } catch {}
-        }
-      } catch (err) {
-        try { console.warn('[UI/PREVIEW] Failed to resolve preview:', err); } catch {}
+  async function resolveServerPrompt(
+    server: MCPServer,
+    def: MenuItem,
+    args: Record<string, string>
+  ) {
+    setMenuOpen(false);
+    setIsTypingSlash(false);
+    try {
+      const result = await fetchPromptMessages(server.id, def.name, args);
+      if (!result) {
+        throw new Error("Prompt resolution failed");
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [args, mcpServers, previewInserted]);
+      onPromptResolved({
+        def,
+        serverId: server.id,
+        args,
+        result,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Prompt resolution failed";
+      toast.error(message);
+    }
+  }
+
+  const handlePreviewSend = () => {
+    const form = textareaRef.current?.form;
+    form?.requestSubmit();
+  };
+
+  useEffect(() => {
+    const onGlobalShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        const el = textareaRef.current;
+        if (!el) return;
+        const start = el.selectionStart ?? input.length;
+        const end = el.selectionEnd ?? input.length;
+        let nextValue = input;
+        if (!input.slice(0, start).endsWith('/')) {
+          nextValue = `${input.slice(0, start)}/${input.slice(end)}`;
+          const fakeEvent = { target: { value: nextValue } } as any;
+          handleInputChange(fakeEvent);
+          requestAnimationFrame(() => {
+            const node = textareaRef.current;
+            if (node) {
+              const caret = start + 1;
+              node.setSelectionRange(caret, caret);
+            }
+          });
+        }
+        textareaRef.current?.focus();
+        setMenuOpen(true);
+        setQuery('');
+        setActiveIndex(0);
+      }
+    };
+    window.addEventListener('keydown', onGlobalShortcut);
+    return () => window.removeEventListener('keydown', onGlobalShortcut);
+  }, [handleInputChange, input]);
 
   async function onKeyDownEnhanced(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.defaultPrevented) {
+      if (menuOpen) setMenuOpen(false);
+      setIsTypingSlash(false);
+      return;
+    }
     const before = input.slice(0, (e.currentTarget.selectionStart ?? 0));
     const slashCtx = /(^|\s)\/([^\s/]*)$/.exec(before);
     
@@ -176,12 +266,63 @@ export const Textarea = ({
 
   // No inline expansion here; resolution handled in Chat and previewed below
 
-  function insertPrompt(def: SlashPromptDef) {
+  function insertPrompt(def: MenuItem) {
+    if (def.mode === 'command' && def.commandMeta) {
+      setMenuOpen(false);
+      setIsTypingSlash(false);
+      try {
+        const raw = localStorage.getItem("prompt:recent");
+        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+        existing.set(def.id, Date.now());
+        const next = Array.from(existing.entries())
+          .map(([id, ts]) => ({ id, ts }))
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 8);
+        localStorage.setItem("prompt:recent", JSON.stringify(next));
+      } catch {}
+      onRunCommand(def.commandMeta, Array.isArray(def.commandMeta.arguments) && def.commandMeta.arguments.length === 0 ? [] : undefined);
+      return;
+    }
+
+    if (def.origin === 'server-import') {
+      const server = mcpServers.find((entry) => entry.id === def.sourceServerId) ??
+        mcpServers.find((entry) => entry.name === def.sourceServerId) ??
+        undefined;
+      if (!server) {
+        toast.error('MCP server unavailable for this prompt');
+        return;
+      }
+      const summary = toPromptSummary(def);
+      const hasArgs = (summary.arguments ?? []).length > 0;
+      setMenuOpen(false);
+      setIsTypingSlash(false);
+      try {
+        const raw = localStorage.getItem("prompt:recent");
+        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+        existing.set(def.id, Date.now());
+        const next = Array.from(existing.entries())
+          .map(([id, ts]) => ({ id, ts }))
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 8);
+        localStorage.setItem("prompt:recent", JSON.stringify(next));
+      } catch {}
+
+      if (hasArgs) {
+        setArgDialog({ open: true, server, prompt: summary, def });
+        return;
+      }
+
+      void resolveServerPrompt(server, def, {});
+      return;
+    }
+
     // Replace the current "/partial" with canonical token
     const selStart = textareaRef.current?.selectionStart ?? input.length;
     const before = input.slice(0, selStart);
     const after = input.slice(selStart);
-    const replaced = before.replace(/(^|\s)\/([^\s/]*)$/, `$1${toToken(def.namespace, def.name)}`) + after;
+    const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
     const fakeEvent = { target: { value: replaced } } as any;
     handleInputChange(fakeEvent);
     setMenuOpen(false);
@@ -196,14 +337,6 @@ export const Textarea = ({
         .slice(0, 8);
       localStorage.setItem("prompt:recent", JSON.stringify(next));
     } catch {}
-    if (def.args?.length) {
-      const saved = JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
-      setArgs({ def, vals: saved });
-    }
-    // Enter preview mode so the input shows the full expanded prompt prior to send
-    try { console.log('[UI/PREVIEW] Prompt inserted; preview mode enabled for', def.id); } catch {}
-    previewOriginalRef.current = replaced;
-    setPreviewInserted(true);
   }
 
   return (
@@ -222,17 +355,17 @@ export const Textarea = ({
         
         <ShadcnTextarea
           className={cn(
-            "resize-none bg-background/50 dark:bg-muted/50 backdrop-blur-sm w-full rounded-2xl pr-12 pt-4 pb-16 border-input focus-visible:ring-ring placeholder:text-muted-foreground transition-all duration-200",
-            menuOpen && "border-blue-300 shadow-lg",
-            args && "border-amber-300 shadow-amber-100"
+            "max-h-[45vh] min-h-[10rem] overflow-auto resize-none bg-background/50 dark:bg-muted/50 backdrop-blur-sm w-full rounded-2xl pr-12 pt-4 pb-16 border-input focus-visible:ring-ring placeholder:text-muted-foreground transition-all duration-200",
+            menuOpen && "border-blue-300 shadow-lg"
           )}
           value={input}
           autoFocus
-          placeholder={menuOpen ? "Continue typing to filter prompts..." : args ? "Fill parameters above, then send your message..." : "Send a message or type / for prompts..."}
+          placeholder={menuOpen ? "Continue typing to filter prompts..." : "Send a message or type / for prompts..."}
           onChange={handleInputChange}
           onKeyDown={onKeyDownEnhanced}
           ref={textareaRef}
           aria-autocomplete="list"
+          data-command-target="chat-input"
         />
         <ModelPicker
           setSelectedModel={setSelectedModel}
@@ -240,13 +373,6 @@ export const Textarea = ({
         />
         {/* Enhanced send button with status indicators */}
         <div className="absolute right-2 bottom-2 flex items-center gap-2">
-          {args && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-lg">
-              <Info className="w-3 h-3" />
-              <span>{args.def.args?.filter(a => a.required && !args.vals[a.name]?.trim()).length || 0} required</span>
-            </div>
-          )}
-          
           {menuOpen && (
             <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg">
               <Hash className="w-3 h-3" />
@@ -259,14 +385,13 @@ export const Textarea = ({
             onClick={isStreaming ? stop : undefined}
             disabled={
               (!isStreaming && !input.trim()) ||
-              (!!args && requiredMissing) ||
               (isStreaming && status === "submitted")
             }
             className={cn(
               "rounded-full p-2 transition-all duration-200 shadow-lg",
               isStreaming 
                 ? "bg-red-500 hover:bg-red-600 text-white" 
-                : (!input.trim() || (args && requiredMissing))
+                : (!input.trim())
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                   : "bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-xl hover:scale-105"
             )}
@@ -294,66 +419,42 @@ export const Textarea = ({
           />
         </div>
       )}
-      {resolved?.flattened?.length ? (
-        <ResolvedPromptPreview messages={resolved.flattened} />
-      ) : null}
-      {args && (
-        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 w-[min(90vw,40rem)] pointer-events-auto">
-          <div className="relative">
-            <ArgsPanel
-              title={args.def.title}
-              namespace={args.def.namespace}
-              args={args.def.args ?? []}
-              values={args.vals}
-              onChange={(k, v) => {
-                setArgs((s) => (s ? { def: s.def, vals: { ...s.vals, [k]: v } } : s));
-                const next = { ...((args?.vals as any) || {}), [k]: v };
-                localStorage.setItem(`prompt:${args?.def.id}:args`, JSON.stringify(next));
-              }}
-              onClose={() => {
-                // Close the parameters panel without altering the user's current input.
-                // This keeps the expanded prompt text in the textbox (intuitive slash client behavior).
-                try { console.log('[UI/PREVIEW] Closing params; preserving current input'); } catch {}
-                setPreviewInserted(false);
-                setArgs(null);
-              }}
+
+      {promptPreview?.resources?.length ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {promptPreview.resources.map((resource) => (
+            <ResourceChip
+              key={resource.uri}
+              uri={resource.uri}
+              name={resource.name}
+              onRemove={() => onPromptPreviewResourceRemove(resource.uri)}
             />
-            <div className="mt-2 flex justify-between gap-2 text-xs text-muted-foreground">
-              <div className="px-2 py-1 rounded bg-muted/30 border border-border/30">
-                Preview inserted into the input; edit and press Send when ready.
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Re-run preview manually
-                    setPreviewInserted(true);
-                    try { console.log('[UI/PREVIEW] Manual refresh requested'); } catch {}
-                  }}
-                  className="px-2 py-1 rounded border bg-white hover:bg-gray-50"
-                >
-                  Refresh Preview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Revert to original text but keep panel open
-                    try { console.log('[UI/PREVIEW] Reverting input to original, keeping panel open'); } catch {}
-                    const ev = { target: { value: previewOriginalRef.current || input } } as any;
-                    handleInputChange(ev);
-                    setPreviewInserted(false);
-                  }}
-                  className="px-2 py-1 rounded border bg-white hover:bg-gray-50"
-                >
-                  Revert
-                </button>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
-      
-      {/* Preview handled by ResolvedPromptPreview above */}
+      ) : null}
+
+      <PromptArgDialog
+        open={argDialog.open}
+        onOpenChange={(open) => setArgDialog((state) => ({ ...state, open }))}
+        serverId={argDialog.def?.sourceServerSlug ?? argDialog.server?.id ?? "server"}
+        prompt={argDialog.prompt ?? { name: "", arguments: [] }}
+        onResolve={async (values) => {
+          if (!argDialog.server || !argDialog.def) return;
+          await resolveServerPrompt(argDialog.server, argDialog.def, values);
+          setArgDialog({ open: false });
+        }}
+        onCompleteArgument={async (argumentName, value, context) => {
+          if (!argDialog.server || !argDialog.def) return [];
+          const result = await completePromptArgument({
+            serverId: argDialog.server.id,
+            promptName: argDialog.def.name,
+            argumentName,
+            value,
+            contextArgs: context,
+          });
+          return result?.values ?? [];
+        }}
+      />
     </div>
   );
 };

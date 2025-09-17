@@ -275,8 +275,8 @@ Response format: Markdown supported. Use tools to answer questions.`;
   })();
 
   const maxHistoryLength = 10; // target maximum messages after sanitization
-  // Strip raw slash prompt tokens like "/ns/name" from user-visible messages
-  const stripTokens = (text: string) => text.replace(/\/[a-z0-9-]+\/[a-z0-9-_]+\b/gi, '').replace(/\s+/g, ' ').trim();
+  // Strip raw slash prompt tokens like "/mcp.server.prompt" from user-visible messages
+  const stripTokens = (text: string) => text.replace(/\/[a-z0-9][a-z0-9._-]*\.[a-z0-9][a-z0-9._-]*/gi, '').replace(/\s+/g, ' ').trim();
   const normalizeToParts = (m: UIMessage): UIMessage => {
     if ((m as any).parts && Array.isArray((m as any).parts)) return m;
     const content: any = (m as any).content;
@@ -304,7 +304,7 @@ Response format: Markdown supported. Use tools to answer questions.`;
     tools: toolsWithCache,
     maxSteps: isComplexQuery ? 20 : 10, // Reduce steps for simple queries
     temperature: 1, // Use temperature: 1 for all models
-    maxTokens: isComplexQuery ? 4000 : 2000, // Standard token limits for all models
+    maxOutputTokens: isComplexQuery ? 4000 : 2000, // Standard token limits for all models
   };
 
   // Helper function to create fallback tools with permissive schema

@@ -123,10 +123,10 @@ export function EnhancedPromptPreview({
               
               <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
                 <code className="px-2 py-0.5 bg-gray-100 rounded font-mono text-xs">
-                  /{prompt.name}
+                  /{prompt.trigger}
                 </code>
                 <span>·</span>
-                <span className="font-medium">{prompt.namespace}</span>
+                <span className="font-medium">{prompt.sourceServerName || prompt.namespace}</span>
                 {prompt.version && (
                   <>
                     <span>·</span>

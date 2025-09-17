@@ -19,6 +19,7 @@
 - Full integration with [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers to expand available tools and capabilities.
 - HTTP and SSE transport types for connecting to various MCP tool providers.
 - Built-in tool integration for extending AI capabilities.
+- VS Code-style slash commands that surface MCP prompts as `/mcp.<server>.<prompt>` with argument dialogs, live completions, and preview controls.
 - Reasoning model support.
 - [shadcn/ui](https://ui.shadcn.com/) components for a modern, responsive UI powered by [Tailwind CSS](https://tailwindcss.com).
 - Built with the latest [Next.js](https://nextjs.org) App Router.
