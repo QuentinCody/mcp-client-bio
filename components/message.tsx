@@ -13,7 +13,6 @@ import {
 import { SpinnerIcon } from "./icons";
 import { ToolInvocation } from "./tool-invocation";
 import { CopyButton } from "./copy-button";
-import { MessagePromptExpansion } from "./prompts/message-prompt-expansion";
 
 interface ReasoningPart {
   type: "reasoning";
@@ -190,32 +189,7 @@ const PurePreviewMessage = ({
   };
 
   // Check if this is an expanded message
-  const getExpansionData = () => {
-    if (message.role !== "user") return null;
-    // Prefer explicit annotation baked into the message
-    const ann: any = (message as any).annotations;
-    if (ann && typeof ann.promptExpanded === 'string' && ann.promptExpanded.length > 0) {
-      return { original: '', expanded: ann.promptExpanded };
-    }
-    // Fallback to last-message-* only for latest message to avoid repeating old previews
-    if (!isLatestMessage) return null;
-    try {
-      const original = localStorage.getItem('last-message-original');
-      const expanded = localStorage.getItem('last-message-expanded');
-      if (expanded && expanded.length > 0) {
-        // Do not clear here; allow bubble fallback and other renders during streaming
-        return { original: original || '', expanded };
-      }
-    } catch (e) {
-      console.warn('Failed to retrieve expansion data:', e);
-    }
-    return null;
-  };
-
-  const expansionData = getExpansionData();
-  if (expansionData) {
-    console.log('[UI] Showing expansion preview for user message; expanded chars=', expansionData.expanded?.length || 0);
-  }
+  const expansionData = null;
 
   // Only show copy button if the message is from the assistant and not currently streaming
   const shouldShowCopyButton =
@@ -237,14 +211,6 @@ const PurePreviewMessage = ({
         )}
       >
         <div className="flex flex-col w-full space-y-3">
-          {/* Show prompt expansion for user messages */}
-          {expansionData && (
-            <MessagePromptExpansion
-              originalMessage={expansionData.original}
-              expandedMessage={expansionData.expanded}
-            />
-          )}
-          
           {message.parts?.map((part, i) => {
             switch (part.type) {
               case "text":
@@ -269,21 +235,6 @@ const PurePreviewMessage = ({
                   } catch (err) {
                     // ignore parse errors
                   }
-                  // If this is the user's message and an expanded prompt annotation exists, override text with expansion.
-                  // Fallback: if annotation missing (e.g., streaming replaced local message object), use last-message-expanded from localStorage for latest message.
-                  let expanded: string | null = null;
-                  try {
-                    const ann: any = (message as any).annotations;
-                    if (ann && typeof ann.promptExpanded === 'string' && ann.promptExpanded.length > 0) {
-                      expanded = ann.promptExpanded as string;
-                    } else if (message.role === 'user' && isLatestMessage && typeof window !== 'undefined') {
-                      const ls = window.localStorage.getItem('last-message-expanded');
-                      if (ls && ls.trim().length > 0) {
-                        expanded = ls;
-                        console.log('[UI] Using last-message-expanded fallback for user bubble; chars=', ls.length);
-                      }
-                    }
-                  } catch {}
                   const isStreamingText = isLatestMessage && status === "streaming" && i === message.parts.length - 1;
                   return (
                     <div
@@ -297,7 +248,7 @@ const PurePreviewMessage = ({
                         })}
                       >
                         <div className="relative">
-                          <Markdown>{message.role === 'user' && expanded ? expanded : part.text}</Markdown>
+                          <Markdown>{part.text}</Markdown>
                           {isStreamingText && (
                             <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1 align-text-bottom" />
                           )}

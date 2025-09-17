@@ -51,6 +51,7 @@ const anthropicClient = createAnthropic({
 
 const openaiClient = createOpenAI({
   apiKey: getApiKey('OPENAI_API_KEY'),
+  compatibility: 'strict',
 });
 
 const googleClient = createGoogleGenerativeAI({

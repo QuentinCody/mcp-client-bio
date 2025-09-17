@@ -126,13 +126,24 @@ export function PromptExpansionPreview({
 
         {/* Token summary */}
         <div className="mt-2 flex flex-wrap gap-1">
-          {tokens.map((token, index) => (
-            <div key={index} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100/80 text-blue-700 text-xs font-medium rounded-lg">
-              <span className="font-mono">/{token.name}</span>
-              <span className="text-blue-600">·</span>
-              <span>{token.namespace}</span>
-            </div>
-          ))}
+          {tokens.map((token, index) => {
+            const def = promptRegistry.getByTrigger(token.trigger);
+            const group = def?.sourceServerName || def?.namespace || token.trigger.split('.')[0];
+            return (
+              <div
+                key={`${token.trigger}-${index}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100/80 text-blue-700 text-xs font-medium rounded-lg"
+              >
+                <span className="font-mono">/{token.trigger}</span>
+                {group && (
+                  <>
+                    <span className="text-blue-600">·</span>
+                    <span>{group}</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -237,11 +248,11 @@ async function expandInputWithPrompts(
   let processedText = text;
   
   for (const token of tokens) {
-    const def = promptRegistry.getByNamespaceName(token.namespace, token.name);
+    const def = promptRegistry.getByTrigger(token.trigger);
     if (!def) continue;
-    
+
     const vars = argState?.def.id === def.id ? argState.vals : JSON.parse(localStorage.getItem(`prompt:${def.id}:args`) || "{}");
-    
+
     if (def.mode === "template" && def.template) {
       const rendered = renderPrompt(def, vars);
       const asText = rendered
@@ -255,7 +266,7 @@ async function expandInputWithPrompts(
       try {
         const server = mcpServers.find(s => s.id === def.sourceServerId);
         if (server) {
-          console.log(`Fetching server prompt ${def.name} from ${server.url}`);
+          console.log(`Fetching server prompt ${def.trigger} from ${server.url}`);
           const res = await fetch('/api/mcp-prompts/get', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -269,30 +280,38 @@ async function expandInputWithPrompts(
           });
           
           if (res.ok) {
-            const data = await res.json();
-            console.log(`Server prompt ${def.name} response:`, data);
-            const msgs: Array<{ role: string; text: string }> = data.messages || [];
+            const data = (await res.json().catch(() => ({}))) as {
+              messages?: Array<{ role?: string; text?: string }>;
+            };
+            console.log(`Server prompt ${def.trigger} response:`, data);
+            const msgs: Array<{ role: string; text: string }> = Array.isArray(data.messages)
+              ? data.messages.map((m) => ({
+                  role: m?.role ?? 'user',
+                  text: m?.text ?? '',
+                }))
+              : [];
             const asText = msgs.map(m => `[${m.role === 'system' ? 'system' : m.role}] ${m.text || ''}`).join('\n');
             if (asText) {
               prefixBlocks.push(asText);
-              console.log(`Added server prompt content for ${def.name}`);
+              console.log(`Added server prompt content for ${def.trigger}`);
             }
           } else {
-            console.warn(`Server prompt ${def.name} failed:`, res.status, res.statusText);
+          console.warn(`Server prompt ${def.trigger} failed:`, res.status, res.statusText);
             const errorData = await res.json().catch(() => ({}));
             console.warn('Error details:', errorData);
           }
         } else {
-          console.warn(`Server not found for prompt ${def.name}, sourceServerId: ${def.sourceServerId}`);
+          console.warn(`Server not found for prompt ${def.trigger}, sourceServerId: ${def.sourceServerId}`);
         }
       } catch (error) {
-        console.warn(`Failed to fetch server prompt ${def.name}:`, error);
+        console.warn(`Failed to fetch server prompt ${def.trigger}:`, error);
       }
     }
-    
+
     // Remove the token from the text
-    const tokenPattern = new RegExp(`\\b${token.namespace}/${token.name}\\b`, 'g');
-    processedText = processedText.replace(tokenPattern, '').trim();
+    const escaped = escapeRegExp(`/${token.trigger}`);
+    const tokenPattern = new RegExp(`${escaped}(?=\b|\s|$)`, 'gi');
+    processedText = processedText.replace(tokenPattern, ' ').replace(/\s+/g, ' ').trim();
   }
   
   if (!prefixBlocks.length) return text;
@@ -330,14 +349,19 @@ function parseExpandedMessages(expanded: string): Array<{ role: string; content:
   return messages;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+}
+
 function getUserMessage(expanded: string, original: string): string | null {
   const tokens = findTokens(original);
   if (!tokens.length) return null;
   
   let remaining = original;
   for (const token of tokens) {
-    const tokenPattern = new RegExp(`\\b${token.namespace}/${token.name}\\b`, 'g');
-    remaining = remaining.replace(tokenPattern, '').trim();
+    const escaped = escapeRegExp(`/${token.trigger}`);
+    const tokenPattern = new RegExp(`${escaped}(?=\b|\s|$)`, 'gi');
+    remaining = remaining.replace(tokenPattern, ' ').replace(/\s+/g, ' ').trim();
   }
   
   return remaining || null;

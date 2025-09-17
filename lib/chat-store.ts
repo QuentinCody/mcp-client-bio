@@ -39,13 +39,21 @@ export async function saveMessages({
     if (dbMessages.length > 0) {
       const chatId = dbMessages[0].chatId;
 
+      // Ensure message IDs are unique before persisting to avoid primary key conflicts
+      // Assign unique IDs for each message before inserting. This guards against collisions coming
+      // from the upstream SDK (duplicate ids across retries) and ensures primary key uniqueness.
+      const dedupedMessages: DBMessage[] = dbMessages.map((message) => ({
+        ...message,
+        id: nanoid(),
+      }));
+
       // First delete any existing messages for this chat
       await db
         .delete(messages)
         .where(eq(messages.chatId, chatId));
 
       // Then insert the new messages
-      return await db.insert(messages).values(dbMessages);
+      return await db.insert(messages).values(dedupedMessages);
     }
     return null;
   } catch (error) {
