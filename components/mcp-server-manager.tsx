@@ -493,15 +493,8 @@ export const MCPServerManager = ({
   // Editing support
   const startEditing = (server: MCPServer) => {
     setEditingServerId(server.id);
-    setNewServer({
-      name: server.name,
-      url: server.url,
-      type: server.type,
-      command: server.command,
-      args: server.args,
-      env: server.env,
-      headers: server.headers,
-    });
+    const { id: _ignoredId, ...rest } = server;
+    setNewServer({ ...rest });
     setView("add");
     // Reset sensitive value visibility states
     setShowSensitiveEnvValues({});
@@ -719,6 +712,11 @@ export const MCPServerManager = ({
                                 <h4 className="text-sm font-medium truncate max-w-[160px]">
                                   {server.name}
                                 </h4>
+                                {server.auth?.type === "oauth" && (
+                                  <span className="text-[10px] uppercase tracking-wide text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+                                    OAuth
+                                  </span>
+                                )}
                                 {hasAdvancedConfig(server) && (
                                   <span className="flex-shrink-0">
                                     <Cog className="h-3 w-3 text-muted-foreground" />

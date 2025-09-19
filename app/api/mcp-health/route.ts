@@ -19,6 +19,29 @@ setInterval(() => {
 
 let parseErrorCount = 0; // retained for logic but no logging
 
+type HeaderInput = Array<{ key?: string; value?: string }> | Record<string, string> | undefined;
+
+function normalizeHeaders(input: HeaderInput): Record<string, string> {
+  if (!input) return {};
+  if (Array.isArray(input)) {
+    const entries: Record<string, string> = {};
+    for (const header of input) {
+      if (!header?.key) continue;
+      entries[header.key] = header.value ?? "";
+    }
+    return entries;
+  }
+  if (typeof input === "object") {
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (!key) continue;
+      entries[key] = String(value ?? "");
+    }
+    return entries;
+  }
+  return {};
+}
+
 export async function POST(req: NextRequest) {
   let client: Client | undefined;
   const startTime = Date.now();
@@ -56,10 +79,12 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    const normalizedHeaders = normalizeHeaders(headers);
+
     // Check connection pool first
-    const poolKey = `${url}-${JSON.stringify(headers || {})}`;
+    const poolKey = `${url}-${JSON.stringify(normalizedHeaders)}`;
     const pooledConnection = connectionPool.get(poolKey);
-    
+
     if (pooledConnection) {
       connectionPool.set(poolKey, { ...pooledConnection, lastUsed: Date.now() });
   // logging suppressed
@@ -102,10 +127,20 @@ export async function POST(req: NextRequest) {
           version: '1.0.0'
         });
         if (attempt === 'streamable-http') {
-          const transport = new StreamableHTTPClientTransport(baseUrl);
+          const transport = new StreamableHTTPClientTransport(baseUrl, {
+            requestInit: {
+              headers: normalizedHeaders,
+              credentials: 'include',
+              mode: 'cors',
+            },
+          });
           await client.connect(transport);
         } else {
-          const sseTransport = new SSEClientTransport(baseUrl);
+          const sseTransport = new SSEClientTransport(baseUrl, {
+            requestInit: {
+              headers: normalizedHeaders,
+            },
+          });
           await client.connect(sseTransport);
         }
         transportType = attempt;

@@ -1,5 +1,18 @@
 {
   "servers": [
+    {
+      "name": "BioMCP Remote",
+      "type": "streamable-http",
+      "url": "https://remote.biomcp.org/mcp",
+      "description": "Genomoncology BioMCP remote server with hosted OAuth sign-in",
+      "auth": {
+        "type": "oauth",
+        "clientId": "biomcp-client",
+        "authorizationEndpoint": "https://remote.biomcp.org/authorize",
+        "tokenEndpoint": "https://remote.biomcp.org/token",
+        "scopes": ["openid", "profile", "email"]
+      }
+    },
     { "name": "ClinicalTrials",
       "type": "streamable-http",
       "url": "https://clinicaltrialsgov-mcp-server.quentincody.workers.dev/mcp",
