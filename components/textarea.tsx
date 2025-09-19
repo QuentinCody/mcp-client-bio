@@ -270,6 +270,8 @@ export const Textarea = ({
     if (def.mode === 'command' && def.commandMeta) {
       setMenuOpen(false);
       setIsTypingSlash(false);
+      const fakeEvent = { target: { value: "" } } as any;
+      handleInputChange(fakeEvent);
       try {
         const raw = localStorage.getItem("prompt:recent");
         const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];

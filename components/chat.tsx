@@ -3,7 +3,7 @@
 import { defaultModel, type modelID } from "@/ai/providers";
 import { Message, useChat } from "@ai-sdk/react";
 import type { UIMessage } from 'ai';
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Textarea } from "./textarea";
 import { ProjectOverview } from "./project-overview";
 import { Messages } from "./messages";
@@ -29,6 +29,7 @@ import {
   type ResolvedPromptContext,
   type ResolvedPromptEntry,
 } from "@/lib/mcp/prompts/resolve";
+import { setSlashRuntimeActions } from "@/lib/slash/runtime";
 
 // Type for chat data from DB
 interface ChatData {
@@ -185,7 +186,32 @@ export default function Chat() {
         }
       },
     });
-    
+
+  const messagesRef = useRef<Message[]>(messages);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    setSlashRuntimeActions({
+      clearChat: () => {
+        const hadMessages = messagesRef.current.length > 0;
+        if (hadMessages) {
+          setMessages([]);
+        }
+        setPromptPreview(null);
+        return {
+          cleared: hadMessages,
+          message: hadMessages ? undefined : "Conversation is already empty.",
+        };
+      },
+    });
+    return () => {
+      setSlashRuntimeActions({ clearChat: undefined });
+    };
+  }, [setMessages, setPromptPreview]);
+
   // Custom submit handler
   const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -208,71 +234,111 @@ export default function Chat() {
     const controller = new AbortController();
     const toastId = toast.loading(`Running /${command.name}…`);
     let messageId: string | null = null;
-    try {
-      const response = await fetch("/api/commands/execute", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: command.name, args }),
-        signal: controller.signal,
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "Command failed");
-        throw new Error(errorText || `Failed to run /${command.name}`);
+    const toStream = (value: unknown): ReadableStream<Uint8Array> => {
+      if (typeof ReadableStream !== "undefined" && value instanceof ReadableStream) {
+        return value;
       }
-
-      const newMessageId = `slash-${command.id}-${Date.now()}`;
-      messageId = newMessageId;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: newMessageId,
-          role: "assistant",
-          content: "",
-        } as Message,
-      ]);
-
-      if (!response.body) {
-        throw new Error("Command response missing body");
+      if (value instanceof Uint8Array) {
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(value);
+            controller.close();
+          },
+        });
       }
-
-      const decoder = new TextDecoder();
-      const reader = response.body.getReader();
-      let accumulated = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          accumulated += decoder.decode(value, { stream: true });
-          const snapshot = accumulated;
-          const currentId = messageId;
-          if (!currentId) continue;
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === currentId
-                ? { ...msg, content: snapshot }
-                : msg
-            )
-          );
+      const encoder = new TextEncoder();
+      let text = "";
+      if (typeof value === "string") {
+        text = value;
+      } else if (value == null) {
+        text = "";
+      } else {
+        try {
+          text = JSON.stringify(value, null, 2);
+        } catch {
+          text = String(value);
         }
       }
-      accumulated += decoder.decode();
-      const finalText = accumulated.trim();
-      const finalId = messageId;
-      if (finalId) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === finalId ? { ...msg, content: finalText } : msg
-          )
-        );
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(text));
+          controller.close();
+        },
+      });
+    };
+
+    const pipeStreamToMessage = async (stream: ReadableStream<Uint8Array>, targetId: string) => {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            accumulated += decoder.decode(value, { stream: true });
+            const snapshot = accumulated;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === targetId ? { ...msg, content: snapshot } : msg
+              )
+            );
+          }
+        }
+        accumulated += decoder.decode();
+      } finally {
+        reader.releaseLock?.();
       }
+      const finalText = accumulated.trim();
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === targetId ? { ...msg, content: finalText } : msg
+        )
+      );
+    };
+
+    try {
+      let stream: ReadableStream<Uint8Array>;
+      if (command.kind === "local") {
+        const result = await command.run({ args: args ?? [], signal: controller.signal });
+        stream = toStream(result);
+      } else {
+        const response = await fetch("/api/commands/execute", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name: command.name, args }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Command failed");
+          throw new Error(errorText || `Failed to run /${command.name}`);
+        }
+
+        if (!response.body) {
+          throw new Error("Command response missing body");
+        }
+
+        stream = response.body as ReadableStream<Uint8Array>;
+      }
+
+      messageId = `slash-${command.id}-${Date.now()}`;
+      const newMessage: Message = {
+        id: messageId,
+        role: "assistant",
+        content: "",
+      } as Message;
+      setMessages((prev) => [...prev, newMessage]);
+
+      await pipeStreamToMessage(stream, messageId);
       toast.success(`/${command.name} completed`, { id: toastId });
     } catch (err) {
-      console.error('Slash command failed', err);
+      console.error("Slash command failed", err);
       if (messageId) {
-        const errorText = err instanceof Error ? err.message : 'Unknown error executing command';
+        const errorText = err instanceof Error ? err.message : "Unknown error executing command";
         const failedId = messageId;
         setMessages((prev) =>
           prev.map((msg) =>
@@ -284,7 +350,7 @@ export default function Chat() {
       }
       toast.error(`/${command.name} failed`, {
         id: toastId,
-        description: err instanceof Error ? err.message : 'Unknown error executing command',
+        description: err instanceof Error ? err.message : "Unknown error executing command",
       });
     } finally {
       controller.abort();

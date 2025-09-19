@@ -65,6 +65,7 @@ import { useMCP } from "@/lib/context/mcp-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnimatePresence, motion } from "motion/react";
 import { isServerLocked } from "@/lib/utils";
+import { setSlashRuntimeActions } from "@/lib/slash/runtime";
 
 export function ChatSidebar() {
   const router = useRouter();
@@ -82,6 +83,13 @@ export function ChatSidebar() {
   useEffect(() => {
     setLocked(isServerLocked());
   }, []);
+
+  useEffect(() => {
+    setSlashRuntimeActions({ openServerManager: () => setMcpSettingsOpen(true) });
+    return () => {
+      setSlashRuntimeActions({ openServerManager: undefined });
+    };
+  }, [setMcpSettingsOpen]);
 
   // Get MCP server data from context
   const {
