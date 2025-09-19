@@ -10,6 +10,27 @@ interface PromptListRequest {
   cursor?: string | null;
 }
 
+function normalizeHeaders(headers?: Array<{ key?: string; value?: string }> | Record<string, string>) {
+  if (!headers) return {} as Record<string, string>;
+  if (Array.isArray(headers)) {
+    const normalized: Record<string, string> = {};
+    for (const header of headers) {
+      if (!header?.key) continue;
+      normalized[header.key] = header.value ?? '';
+    }
+    return normalized;
+  }
+  if (typeof headers === 'object') {
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (!key) continue;
+      normalized[key] = String(value ?? '');
+    }
+    return normalized;
+  }
+  return {} as Record<string, string>;
+}
+
 export async function POST(req: NextRequest) {
   let client: Client | undefined;
   try {
@@ -22,20 +43,16 @@ export async function POST(req: NextRequest) {
     const baseUrl = new URL(url);
     client = new Client({ name: 'mcp-prompt-list', version: '1.0.0' });
     if (type === 'http') {
-      const headerEntries: Record<string, string> = Array.isArray(headers)
-        ? headers.reduce<Record<string, string>>((acc, header) => {
-            if (header?.key) acc[header.key] = header.value ?? '';
-            return acc;
-          }, {})
-        : typeof headers === 'object' && headers
-          ? Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, String(v ?? '')]))
-          : {};
+      const headerEntries = normalizeHeaders(headers);
       const transport = new StreamableHTTPClientTransport(baseUrl, {
         requestInit: { headers: headerEntries },
       });
       await client.connect(transport);
     } else {
-      const transport = new SSEClientTransport(baseUrl);
+      const headerEntries = normalizeHeaders(headers);
+      const transport = new SSEClientTransport(baseUrl, {
+        requestInit: { headers: headerEntries },
+      });
       await client.connect(transport);
     }
 

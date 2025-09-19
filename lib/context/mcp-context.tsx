@@ -48,6 +48,20 @@ export interface MCPPromptDef {
   arguments?: MCPPromptArg[];
 }
 
+export interface MCPServerOAuthConfig {
+  type: "oauth";
+  clientId: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  scopes?: string[];
+}
+
+export interface MCPServerOAuthState {
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}
+
 export interface MCPServer {
   id: string;
   name: string;
@@ -67,6 +81,8 @@ export interface MCPServer {
     completions?: boolean;
   };
   instructions?: string;
+  auth?: MCPServerOAuthConfig;
+  authState?: MCPServerOAuthState;
 }
 
 export interface MCPServerApi {
@@ -112,6 +128,50 @@ export type PromptMessage = {
 };
 
 const MCPContext = createContext<MCPContextType | undefined>(undefined);
+
+const AUTH_CALLBACK_MESSAGE_TYPE = "mcp-oauth-callback";
+const OAUTH_DEFAULT_SCOPES = ["openid", "profile", "email"];
+
+interface PendingOAuthRequest {
+  serverId: string;
+  resolve: (payload: { code?: string; state?: string; provider?: string | null; error?: string | null }) => void;
+  reject: (error: Error) => void;
+  cleanup: () => void;
+}
+
+function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function createCodeVerifier(): string {
+  if (typeof window === "undefined" || !window.crypto?.getRandomValues) {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  const array = new Uint8Array(32);
+  window.crypto.getRandomValues(array);
+  return base64UrlEncode(array);
+}
+
+async function deriveCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return base64UrlEncode(digest);
+}
+
+function upsertAuthorizationHeader(headers: KeyValuePair[] = [], value: string): KeyValuePair[] {
+  const filtered = headers.filter((header) => header?.key?.toLowerCase() !== "authorization");
+  return [...filtered, { key: "Authorization", value }];
+}
+
+function removeAuthorizationHeader(headers: KeyValuePair[] = []): KeyValuePair[] {
+  return headers.filter((header) => header?.key?.toLowerCase() !== "authorization");
+}
 
 function normalizeSlug(value: string | undefined | null, fallback: string): string {
   const base = (value ?? fallback).toString().trim().toLowerCase();
@@ -166,6 +226,15 @@ function headerPairsToRecord(headers?: KeyValuePair[] | null): Record<string, st
     record[header.key] = header.value ?? "";
   }
   return record;
+}
+
+function isSameOrigin(url: string | undefined): boolean {
+  if (typeof window === "undefined" || !url) return false;
+  try {
+    return new URL(url).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 // Helper function to check server health with aggressive timeout
@@ -229,7 +298,19 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         url: server.url,
         headers: [],
         description: server.description,
-        status: 'disconnected'
+        status: 'disconnected',
+        auth: server.auth && server.auth.type === 'oauth'
+          ? {
+              type: 'oauth',
+              clientId: server.auth.clientId,
+              authorizationEndpoint: server.auth.authorizationEndpoint,
+              tokenEndpoint: server.auth.tokenEndpoint,
+              scopes: Array.isArray(server.auth.scopes)
+                ? server.auth.scopes.filter((scope: any) => typeof scope === 'string' && scope.trim().length > 0)
+                : undefined,
+            }
+          : undefined,
+        authState: undefined,
       }));
 
       if (mcpServers.length === 0) {
@@ -290,11 +371,51 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const promptFailureRef = useRef(new Set<string>());
   const healthFailureRef = useRef(new Set<string>());
   const promptsLoadedRef = useRef(new Set<string>());
+  const attemptedConnectionsRef = useRef(new Set<string>());
+  const pendingOAuthRef = useRef(new Map<string, PendingOAuthRequest>());
+  const oauthHandshakePromisesRef = useRef(new Map<string, Promise<string>>());
 
   // Helper to get a server by ID
   const getServerById = useCallback((serverId: string): MCPServer | undefined => {
     return mcpServers.find((server) => server.id === serverId);
   }, [mcpServers]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type !== AUTH_CALLBACK_MESSAGE_TYPE) return;
+
+      const state = typeof data.state === "string" ? data.state : undefined;
+      if (!state) return;
+
+      const pending = pendingOAuthRef.current.get(state);
+      if (!pending) return;
+
+      if (data.provider && typeof data.provider === "string" && data.provider !== pending.serverId) {
+        pendingOAuthRef.current.delete(state);
+        pending.reject(new Error("Authentication provider mismatch"));
+        return;
+      }
+
+      pendingOAuthRef.current.delete(state);
+      if (data.error) {
+        const errorMessage = typeof data.error === "string" ? data.error : "Authentication failed";
+        pending.reject(new Error(errorMessage));
+      } else if (data.code && typeof data.code === "string") {
+        pending.resolve({ code: data.code, state, provider: data.provider });
+      } else {
+        pending.reject(new Error("Authentication cancelled"));
+      }
+    };
+
+    window.addEventListener("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+    };
+  }, []);
 
   // Update server status
   const updateServerStatus = useCallback((
@@ -343,7 +464,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         const headers = headerPairsToRecord(server.headers);
         if (server.type === 'http') {
           const transport = new StreamableHTTPClientTransport(baseUrl, {
-            requestInit: { headers, credentials: 'include', mode: 'cors' },
+            requestInit: { headers, mode: 'cors' },
             reconnectionOptions: {
               initialReconnectionDelay: 1000,
               reconnectionDelayGrowFactor: 1.5,
@@ -394,75 +515,74 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     return connectPromise;
   }, [setMcpServersInternal]);
 
-  const fetchServerPrompts = useCallback(async (serverId: string, options?: { force?: boolean }) => {
+  const fetchServerPrompts = useCallback(async (
+    serverId: string,
+    options?: { force?: boolean; serverSnapshot?: MCPServer }
+  ) => {
     if (!options?.force) {
       if (promptsLoadedRef.current.has(serverId)) return;
       if (promptFailureRef.current.has(serverId)) return;
     }
     if (loadingPromptsRef.current.has(serverId)) return;
-    const server = getServerById(serverId);
+    const server = options?.serverSnapshot ?? getServerById(serverId);
     if (!server) return;
     loadingPromptsRef.current.add(serverId);
     try {
-      const client = await getOrCreateClient(server);
+      const supportsBrowserTransport = isSameOrigin(server.url);
+      const client = supportsBrowserTransport ? await getOrCreateClient(server) : null;
       if (!client) {
-        if (server.type === 'sse') {
-          // Fallback to API-based listing for SSE transports when direct connection fails in browser.
-          let cursor: string | null = null;
-          const collected: MCPPromptDef[] = [];
-          do {
-            const response = await fetch('/api/mcp-prompts/list', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                url: server.url,
-                type: server.type,
-                headers: server.headers,
-                cursor,
-              }),
-            });
-            if (!response.ok) {
-              console.warn(`[MCP] prompts/list fallback failed (${response.status}) for ${server.url}`);
-              promptFailureRef.current.add(serverId);
-              updateServerStatus(serverId, 'error', `Prompt list failed (${response.status})`);
-              setMcpServersInternal((current) =>
-                current.map((existing) =>
-                  existing.id === serverId ? { ...existing, prompts: [] } : existing
-                )
-              );
-              break;
-            }
+        let cursor: string | null = null;
+        const collected: MCPPromptDef[] = [];
+        do {
+          const response = await fetch('/api/mcp-prompts/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: server.url,
+              type: server.type,
+              headers: server.headers,
+              cursor,
+            }),
+          });
+          if (!response.ok) {
+            console.warn(`[MCP] prompts/list fallback failed (${response.status}) for ${server.url}`);
+            promptFailureRef.current.add(serverId);
+            updateServerStatus(serverId, 'error', `Prompt list failed (${response.status})`);
+            setMcpServersInternal((current) =>
+              current.map((existing) =>
+                existing.id === serverId ? { ...existing, prompts: [] } : existing
+              )
+            );
+            break;
+          }
           const data = await response.json().catch(() => ({})) as { prompts?: any[]; nextCursor?: string | null };
           const prompts = Array.isArray(data?.prompts) ? data.prompts : [];
-            for (const prompt of prompts) {
-              collected.push({
-                name: prompt?.name ?? 'unknown',
-                title: prompt?.title ?? prompt?.name ?? 'Prompt',
-                description: prompt?.description,
-                arguments: Array.isArray(prompt?.arguments)
-                  ? prompt.arguments.map((arg: any) => ({
-                      name: arg?.name ?? '',
-                      description: arg?.description,
-                      required: !!arg?.required,
-                    }))
-                  : [],
-              });
-            }
-            cursor = data?.nextCursor ?? null;
-          } while (cursor);
+          for (const prompt of prompts) {
+            collected.push({
+              name: prompt?.name ?? 'unknown',
+              title: prompt?.title ?? prompt?.name ?? 'Prompt',
+              description: prompt?.description,
+              arguments: Array.isArray(prompt?.arguments)
+                ? prompt.arguments.map((arg: any) => ({
+                    name: arg?.name ?? '',
+                    description: arg?.description,
+                    required: !!arg?.required,
+                  }))
+                : [],
+            });
+          }
+          cursor = data?.nextCursor ?? null;
+        } while (cursor);
 
-          setMcpServersInternal((currentServers) =>
-            currentServers.map((existing) => {
-              if (existing.id !== serverId) return existing;
-              const prevSignature = JSON.stringify(existing.prompts ?? []);
-              const nextSignature = JSON.stringify(collected);
-              if (prevSignature === nextSignature) return existing;
-              return { ...existing, prompts: collected };
-            })
-          );
-        } else {
-          console.warn(`[MCP] No client available for prompt listing on ${server.name || server.url}`);
-        }
+        setMcpServersInternal((currentServers) =>
+          currentServers.map((existing) => {
+            if (existing.id !== serverId) return existing;
+            const prevSignature = JSON.stringify(existing.prompts ?? []);
+            const nextSignature = JSON.stringify(collected);
+            if (prevSignature === nextSignature) return existing;
+            return { ...existing, prompts: collected };
+          })
+        );
         promptsLoadedRef.current.add(serverId);
         return;
       }
@@ -529,7 +649,8 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     const server = getServerById(serverId);
     if (!server) return null;
     try {
-      if (server.type === 'http') {
+      const supportsBrowserTransport = isSameOrigin(server.url);
+      if (supportsBrowserTransport && server.type === 'http') {
         const client = await getOrCreateClient(server);
         if (client) {
           const response = await client.getPrompt({ name: promptName, arguments: args });
@@ -579,7 +700,8 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     const server = getServerById(input.serverId);
     if (!server) return null;
     try {
-      if (server.type === 'http') {
+      const supportsBrowserTransport = isSameOrigin(server.url);
+      if (supportsBrowserTransport && server.type === 'http') {
         const client = await getOrCreateClient(server);
         if (client) {
           const result = await client.complete({
@@ -632,13 +754,17 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
 
   const getPromptClient = useCallback(async (serverId: string): Promise<Client | null> => {
     const server = getServerById(serverId);
-    if (!server) return null;
+    if (!server || !isSameOrigin(server.url)) return null;
     return await getOrCreateClient(server);
   }, [getOrCreateClient, getServerById]);
 
   const subscribeToPromptNotifications = useCallback(async (server: MCPServer | undefined) => {
     if (!server || !server.url) return;
     if (promptSubscriptionsRef.current.has(server.id)) return;
+    if (!isSameOrigin(server.url)) {
+      // Remote servers rely on API polling instead of browser subscriptions.
+      return;
+    }
     try {
       const client = await getOrCreateClient(server);
       if (!client) return;
@@ -655,7 +781,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       client.fallbackNotificationHandler = async (notification: any) => {
         if (notification?.method === 'notifications/prompts/list_changed') {
           promptsLoadedRef.current.delete(server.id);
-          await fetchServerPrompts(server.id, { force: true });
+          await fetchServerPrompts(server.id, { force: true, serverSnapshot: server });
         }
         if (typeof previousHandler === 'function') {
           await previousHandler(notification);
@@ -680,7 +806,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const ensureAllPromptsLoaded = useCallback(async (options?: { force?: boolean }) => {
     const connectedServers = mcpServers.filter((server) => server.status === 'connected');
     for (const server of connectedServers) {
-      await fetchServerPrompts(server.id, options);
+      await fetchServerPrompts(server.id, { ...options, serverSnapshot: server });
       if (!promptFailureRef.current.has(server.id)) {
         await subscribeToPromptNotifications(server);
       }
@@ -729,12 +855,274 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       }));
   };
 
+  const ensureOAuthToken = useCallback(async (server: MCPServer): Promise<string | null> => {
+    if (!server.auth || server.auth.type !== "oauth") return null;
+
+    const leewayMs = 60_000;
+    const existingState = server.authState;
+
+    if (existingState?.accessToken) {
+      const stillValid = !existingState.expiresAt || existingState.expiresAt - Date.now() > leewayMs;
+      if (stillValid) {
+        setMcpServersInternal((currentServers) =>
+          currentServers.map((s) =>
+            s.id === server.id
+              ? {
+                  ...s,
+                  headers: upsertAuthorizationHeader(s.headers ?? [], `Bearer ${existingState.accessToken}`),
+                }
+              : s
+          )
+        );
+        return existingState.accessToken;
+      }
+
+      // Expired token - clear existing credentials so we can request a new one
+      setMcpServersInternal((currentServers) =>
+        currentServers.map((s) =>
+          s.id === server.id
+            ? {
+                ...s,
+                headers: removeAuthorizationHeader(s.headers ?? []),
+                authState: undefined,
+              }
+            : s
+        )
+      );
+    }
+
+    const ongoing = oauthHandshakePromisesRef.current.get(server.id);
+    if (ongoing) {
+      return ongoing.catch((error) => {
+        throw error;
+      });
+    }
+
+    if (typeof window === "undefined") {
+      throw new Error("OAuth authentication requires a browser context");
+    }
+
+    const handshakePromise = (async () => {
+      const authConfig = server.auth!;
+
+      const redirectUri = `${window.location.origin}/oauth/callback?provider=${encodeURIComponent(server.id)}`;
+      const state = crypto.randomUUID();
+
+      const width = 500;
+      const height = 640;
+      const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+      const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+      const screenWidth = window.innerWidth ?? document.documentElement.clientWidth ?? screen.width;
+      const screenHeight = window.innerHeight ?? document.documentElement.clientHeight ?? screen.height;
+      const left = Math.max(dualScreenLeft + (screenWidth - width) / 2, 0);
+      const top = Math.max(dualScreenTop + (screenHeight - height) / 2, 0);
+      const popupFeatures = `popup=yes,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=${width},height=${height},top=${top},left=${left}`;
+
+      const popup = window.open("about:blank", `mcp-oauth-${server.id}`, popupFeatures);
+      if (!popup) {
+        throw new Error("Authentication popup was blocked. Please allow popups and try again.");
+      }
+
+      try {
+        popup.document.write("<html><head><title>BioMCP Sign-in</title></head><body style=\"font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100%;margin:0;\"><p>Opening BioMCP sign-in…</p></body></html>");
+        popup.document.close();
+      } catch {
+        // Ignore cross-origin writes (some browsers may block once navigation occurs)
+      }
+
+      const codeVerifier = createCodeVerifier();
+      let codeChallenge: string;
+      try {
+        codeChallenge = await deriveCodeChallenge(codeVerifier);
+      } catch (error) {
+        if (!popup.closed) {
+          popup.close();
+        }
+        throw new Error(
+          error instanceof Error
+            ? `Failed to prepare OAuth challenge: ${error.message}`
+            : "Failed to prepare OAuth challenge"
+        );
+      }
+
+      let authorizeUrl: URL;
+      try {
+        authorizeUrl = new URL(authConfig.authorizationEndpoint);
+      } catch {
+        if (!popup.closed) {
+          popup.close();
+        }
+        throw new Error("Invalid authorization endpoint URL");
+      }
+
+      authorizeUrl.searchParams.set("response_type", "code");
+      authorizeUrl.searchParams.set("client_id", authConfig.clientId);
+      authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      const scopes = authConfig.scopes?.length ? authConfig.scopes : OAUTH_DEFAULT_SCOPES;
+      authorizeUrl.searchParams.set("scope", scopes.join(" "));
+      authorizeUrl.searchParams.set("state", state);
+      authorizeUrl.searchParams.set("code_challenge", codeChallenge);
+      authorizeUrl.searchParams.set("code_challenge_method", "S256");
+
+      try {
+        popup.location.replace(authorizeUrl.toString());
+      } catch {
+        if (!popup.closed) {
+          popup.close();
+        }
+        throw new Error("Failed to open authentication window");
+      }
+
+      const code = await new Promise<string>((resolve, reject) => {
+        const pendingEntry: PendingOAuthRequest = {
+          serverId: server.id,
+          cleanup: () => {},
+          resolve: ({ code: resolvedCode }) => {
+            if (resolvedCode) {
+              resolve(resolvedCode);
+            } else {
+              reject(new Error("Authentication did not return a code"));
+            }
+          },
+          reject: (error) => {
+            reject(error);
+          },
+        };
+
+        // Wrap resolve/reject to ensure cleanup runs exactly once
+        const originalResolve = pendingEntry.resolve;
+        const originalReject = pendingEntry.reject;
+        pendingEntry.resolve = (payload) => {
+          pendingEntry.cleanup();
+          originalResolve(payload);
+        };
+        pendingEntry.reject = (error) => {
+          pendingEntry.cleanup();
+          originalReject(error);
+        };
+
+        pendingOAuthRef.current.set(state, pendingEntry);
+
+        const timeoutId = window.setTimeout(() => {
+          if (pendingOAuthRef.current.has(state)) {
+            pendingOAuthRef.current.delete(state);
+          }
+          pendingEntry.reject(new Error("Authentication timed out"));
+        }, 5 * 60 * 1000);
+
+        const pollInterval = window.setInterval(() => {
+          if (!pendingOAuthRef.current.has(state)) {
+            window.clearInterval(pollInterval);
+            return;
+          }
+          if (!popup || popup.closed) {
+            pendingOAuthRef.current.delete(state);
+            pendingEntry.reject(new Error("Authentication window was closed"));
+          }
+        }, 600);
+
+        pendingEntry.cleanup = () => {
+          window.clearTimeout(timeoutId);
+          window.clearInterval(pollInterval);
+          if (popup && !popup.closed) {
+            popup.close();
+          }
+        };
+      });
+
+      if (!code) {
+        throw new Error("Authentication did not provide a code");
+      }
+
+      let tokenUrl: URL;
+      try {
+        tokenUrl = new URL(authConfig.tokenEndpoint);
+      } catch {
+        throw new Error("Invalid token endpoint URL");
+      }
+
+      const tokenBody = new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        client_id: authConfig.clientId,
+        code_verifier: codeVerifier,
+      });
+
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(tokenUrl.toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+          body: tokenBody.toString(),
+        });
+      } catch (error) {
+        throw new Error(
+          error instanceof Error
+            ? `Token request failed: ${error.message}`
+            : "Token request failed"
+        );
+      }
+
+      let tokenData: any;
+      try {
+        tokenData = await tokenResponse.json();
+      } catch {
+        throw new Error("Failed to parse token response");
+      }
+
+      if (!tokenResponse.ok) {
+        const errorMessage = tokenData?.error_description || tokenData?.error || "OAuth token exchange failed";
+        throw new Error(errorMessage);
+      }
+
+      const accessToken = typeof tokenData.access_token === "string" ? tokenData.access_token : undefined;
+      if (!accessToken) {
+        throw new Error("Token response missing access token");
+      }
+
+      const refreshToken = typeof tokenData.refresh_token === "string" ? tokenData.refresh_token : undefined;
+      const expiresInRaw = typeof tokenData.expires_in === "number"
+        ? tokenData.expires_in
+        : Number(tokenData.expires_in);
+      const expiresIn = Number.isFinite(expiresInRaw) ? expiresInRaw : 3600;
+      const expiresAt = Date.now() + Math.max(expiresIn - 30, 30) * 1000;
+
+      setMcpServersInternal((currentServers) =>
+        currentServers.map((s) =>
+          s.id === server.id
+            ? {
+                ...s,
+                headers: upsertAuthorizationHeader(s.headers ?? [], `Bearer ${accessToken}`),
+                authState: {
+                  accessToken,
+                  refreshToken,
+                  expiresAt,
+                },
+              }
+            : s
+        )
+      );
+
+      return accessToken;
+    })();
+
+    oauthHandshakePromisesRef.current.set(server.id, handshakePromise);
+    try {
+      return await handshakePromise;
+    } finally {
+      oauthHandshakePromisesRef.current.delete(server.id);
+    }
+  }, [pendingOAuthRef, oauthHandshakePromisesRef, setMcpServersInternal]);
+
   // Start a server with isolated error handling and fast failure
   const startServer = useCallback(async (serverId: string): Promise<boolean> => {
     healthFailureRef.current.delete(serverId);
     promptFailureRef.current.delete(serverId);
     promptsLoadedRef.current.delete(serverId);
-    const server = getServerById(serverId);
+    // Clear attempted connection tracking when manually starting a server
+    attemptedConnectionsRef.current.delete(serverId);
+    let server = getServerById(serverId);
     if (!server) {
       console.error(`[startServer] Server not found for ID: ${serverId}`);
       return false;
@@ -768,6 +1156,27 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     updateServerStatus(serverId, "connecting");
 
     try {
+      server = getServerById(serverId);
+      if (!server) {
+        return false;
+      }
+
+      if (server.auth?.type === "oauth") {
+        try {
+          const token = await ensureOAuthToken(server);
+          if (token) {
+            server = {
+              ...server,
+              headers: upsertAuthorizationHeader(server.headers ?? [], `Bearer ${token}`),
+            };
+          }
+        } catch (oauthError) {
+          const message = oauthError instanceof Error ? oauthError.message : String(oauthError);
+          updateServerStatus(serverId, "error", message);
+          return false;
+        }
+      }
+
       if (!server.url) {
         console.error(`[startServer] No URL provided for ${server.type} server`);
         updateServerStatus(serverId, "error", "No URL provided");
@@ -787,7 +1196,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         updateServerWithTools(serverId, healthResult.tools || [], "connected", healthResult.prompts || [], undefined);
         activeServersRef.current[serverId] = true;
         // logging suppressed
-        fetchServerPrompts(serverId);
+        fetchServerPrompts(serverId, { serverSnapshot: server });
         subscribeToPromptNotifications(server);
         return true;
       } else {
@@ -805,7 +1214,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       updateServerStatus(serverId, "error", `Error: ${errorMessage}`);
       return false;
     }
-  }, [fetchServerPrompts, getServerById, subscribeToPromptNotifications, updateServerStatus, updateServerWithTools]);
+  }, [ensureOAuthToken, fetchServerPrompts, getServerById, subscribeToPromptNotifications, updateServerStatus, updateServerWithTools]);
 
   // Stop a server
   const stopServer = async (serverId: string): Promise<boolean> => {
@@ -852,41 +1261,57 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const connectingSetRef = useRef<Set<string>>(new Set());
 
   // Batched, single-attempt connection manager (one /api/mcp-health per server)
+  // Use a ref to store mcpServers to avoid re-running on every update
+  const mcpServersRef = useRef(mcpServers);
+  mcpServersRef.current = mcpServers;
+
   useEffect(() => {
     if (!bootstrapped) return;
-    if (mcpServers.length === 0 || selectedMcpServers.length === 0) return;
+
+    // Use the ref to get current servers without triggering re-runs
+    const currentServers = mcpServersRef.current;
+    if (currentServers.length === 0 || selectedMcpServers.length === 0) return;
 
     // Determine which servers we need to connect now
     const serversToConnect = selectedMcpServers
-      .map(id => mcpServers.find(s => s.id === id))
-      .filter((s): s is MCPServer => !!s && s.status === 'disconnected' && !connectingSetRef.current.has(s.id) && !healthFailureRef.current.has(s.id));
+      .map((id) => currentServers.find((s) => s.id === id))
+      .filter((s): s is MCPServer => {
+        if (!s) return false;
+        // Skip if already connected or connecting
+        if (s.status === "connected" || s.status === "connecting") return false;
+        // Skip if currently in a connection attempt
+        if (connectingSetRef.current.has(s.id)) return false;
+        // Skip if we've already tried and failed this session
+        if (healthFailureRef.current.has(s.id)) return false;
+        // Skip if we've already attempted connection for this server in this session
+        if (attemptedConnectionsRef.current.has(s.id)) return false;
+        // Skip OAuth servers that don't have tokens (they require user interaction)
+        if (s.auth?.type === "oauth" && !s.authState?.accessToken) return false;
+        return true;
+      });
 
     if (serversToConnect.length === 0) return;
 
-    // Mark them all as connecting in a single state update to avoid effect thrash
-    const idsToConnect = new Set(serversToConnect.map(s => s.id));
-    setMcpServersInternal(current => current.map(s => idsToConnect.has(s.id) ? { ...s, status: 'connecting' } : s));
-
-    // Launch connection attempts
-    serversToConnect.forEach(server => {
+    serversToConnect.forEach((server) => {
       connectingSetRef.current.add(server.id);
+      attemptedConnectionsRef.current.add(server.id);
       (async () => {
-        const health = await checkServerHealth(
-          server.url,
-            server.headers,
-            server.type === 'sse' ? 9000 : 7000,
-            server.type
-        );
-        if (health.ready) {
-          updateServerWithTools(server.id, health.tools || [], 'connected', health.prompts || [], undefined);
-        } else {
-          updateServerStatus(server.id, 'error', health.error || 'Could not connect');
+        const success = await startServer(server.id);
+        if (!success) {
           healthFailureRef.current.add(server.id);
+        } else {
+          healthFailureRef.current.delete(server.id);
         }
         connectingSetRef.current.delete(server.id);
       })();
     });
-  }, [bootstrapped, mcpServers, selectedMcpServers, setMcpServersInternal, updateServerStatus, updateServerWithTools, fetchServerPrompts, subscribeToPromptNotifications]);
+  }, [bootstrapped, selectedMcpServers, startServer]);
+
+  // Clear attempted connections when selected servers change
+  useEffect(() => {
+    attemptedConnectionsRef.current.clear();
+    healthFailureRef.current.clear();
+  }, [selectedMcpServers]);
 
   useEffect(() => {
     const connectedServerIds = new Set(mcpServers.filter((server) => server.status === 'connected').map((server) => server.id));
