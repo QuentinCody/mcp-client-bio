@@ -9,6 +9,8 @@ import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { setSlashRuntimeServers } from "@/lib/slash/runtime";
+import type { SlashRuntimeServer, SlashServerStatus } from "@/lib/slash/runtime";
 
 export interface KeyValuePair {
   key: string;
@@ -142,6 +144,18 @@ function getPromptSegments(server: MCPServer, prompt: MCPPromptDef) {
   const namespace = `mcp.${serverSlug}`;
   const trigger = `${namespace}.${promptSlug}`;
   return { serverSlug, promptSlug, namespace, trigger };
+}
+
+function mapServerStatus(status?: ServerStatus): SlashServerStatus {
+  switch (status) {
+    case "connected":
+    case "connecting":
+    case "disconnected":
+    case "error":
+      return status;
+    default:
+      return "unknown";
+  }
 }
 
 function headerPairsToRecord(headers?: KeyValuePair[] | null): Record<string, string> {
@@ -672,6 +686,33 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [mcpServers, fetchServerPrompts, subscribeToPromptNotifications]);
+
+  useEffect(() => {
+    const snapshot: SlashRuntimeServer[] = mcpServers.map((server) => ({
+      id: server.id,
+      name: server.name ?? "",
+      url: server.url,
+      type: server.type,
+      status: mapServerStatus(server.status),
+      active: selectedMcpServers.includes(server.id),
+      description: server.description,
+      errorMessage: server.errorMessage,
+      prompts: server.prompts?.map((prompt) => {
+        const segments = getPromptSegments(server, prompt);
+        return {
+          name: prompt.name,
+          title: prompt.title,
+          description: prompt.description,
+          trigger: segments.trigger,
+        };
+      }),
+      tools: server.tools?.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+      })),
+    }));
+    setSlashRuntimeServers(snapshot);
+  }, [mcpServers, selectedMcpServers]);
 
   // Get active servers formatted for API usage
   const getActiveServersForApi = (): MCPServerApi[] => {
