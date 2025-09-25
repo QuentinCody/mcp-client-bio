@@ -16,10 +16,23 @@ export function useMcpPrompts(transport: McpTransport, serverId: string) {
       try {
         const acc: PromptSummary[] = [];
         let cursor: string | undefined;
+        const seenCursors = new Set<string>(); // Prevent loop if the server keeps returning the same cursor.
         do {
           const result = await transport.listPrompts(serverId, cursor);
           acc.push(...(result.prompts ?? []));
-          cursor = result.nextCursor || undefined;
+          const rawNext = typeof result.nextCursor === "string" ? result.nextCursor : undefined;
+          const nextCursor = rawNext && rawNext.trim().length > 0 ? rawNext : undefined;
+          if (nextCursor) {
+            if (seenCursors.has(nextCursor)) {
+              console.warn(`[MCP] prompts/list returned duplicate cursor (${nextCursor}) for ${serverId}; terminating pagination to avoid a loop.`);
+              cursor = undefined;
+            } else {
+              seenCursors.add(nextCursor);
+              cursor = nextCursor;
+            }
+          } else {
+            cursor = undefined;
+          }
         } while (cursor);
         if (!cancelled) {
           setPrompts(acc);

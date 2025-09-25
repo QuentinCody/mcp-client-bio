@@ -17,6 +17,7 @@ import { convertToUIMessages } from "@/lib/chat-store";
 import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { ToolMetricsPanel } from "./tool-metrics";
+import { ChatSessionToolbar } from "./chat-session-toolbar";
 import { useMCP } from "@/lib/context/mcp-context";
 import type { SlashCommandMeta } from "@/lib/slash/types";
 import { slashRegistry } from "@/lib/slash";
@@ -29,7 +30,8 @@ import {
   type ResolvedPromptContext,
   type ResolvedPromptEntry,
 } from "@/lib/mcp/prompts/resolve";
-import { setSlashRuntimeActions } from "@/lib/slash/runtime";
+import { getSlashRuntimeActions, setSlashRuntimeActions } from "@/lib/slash/runtime";
+import { isServerLocked } from "@/lib/utils";
 
 // Type for chat data from DB
 interface ChatData {
@@ -58,7 +60,12 @@ export default function Chat() {
   } | null>(null);
   
   // Get MCP server data from context
-  const { mcpServersForApi, mcpServers } = useMCP();
+  const {
+    mcpServersForApi,
+    mcpServers,
+    selectedMcpServers,
+    setSelectedMcpServers,
+  } = useMCP();
   
   // Initialize userId
   useEffect(() => {
@@ -429,6 +436,44 @@ export default function Chat() {
     }
   }, [promptPreview, status]);
 
+  const toggleServerSelection = useCallback(
+    (serverId: string) => {
+      if (isServerLocked()) {
+        toast.info("MCP servers are locked in this environment.");
+        return;
+      }
+
+      const server = mcpServers.find((entry) => entry.id === serverId);
+      setSelectedMcpServers((prev) => {
+        const isSelected = prev.includes(serverId);
+        const next = isSelected
+          ? prev.filter((id) => id !== serverId)
+          : [...prev, serverId];
+        if (server) {
+          toast.success(
+            `${isSelected ? "Disabled" : "Enabled"} ${server.name} for this chat`
+          );
+        }
+        return next;
+      });
+    },
+    [mcpServers, setSelectedMcpServers]
+  );
+
+  const openServerManager = useCallback(() => {
+    const actions = getSlashRuntimeActions();
+    if (actions.openServerManager) {
+      actions.openServerManager();
+      return;
+    }
+    toast.info("Open the sidebar to manage MCP servers.");
+  }, []);
+
+  const handleToggleMetrics = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("tool-metrics:toggle"));
+  }, []);
+
   // Ensure messages always have parts so the renderer displays user messages
   const displayMessages: UIMessage[] = useMemo(() => {
     return messages.map((m) => {
@@ -445,42 +490,46 @@ export default function Chat() {
     });
   }, [messages]);
 
+  const showWelcomeState = messages.length === 0 && !isLoadingChat;
+
   return (
-    <>
-      <div className="h-dvh flex flex-col justify-center w-full max-w-[430px] sm:max-w-3xl mx-auto px-4 sm:px-6 py-3">
+    <div className="relative flex h-dvh w-full">
+      <div className="flex h-full w-full max-w-5xl flex-col gap-5 px-4 py-6 sm:px-8">
         <ToolMetricsPanel />
-        {messages.length === 0 && !isLoadingChat ? (
-          <div className="max-w-xl mx-auto w-full">
-            <ProjectOverview />
-            <form
-              onSubmit={handleFormSubmit}
-              className="mt-4 w-full mx-auto"
-            >
-            <Textarea
-              selectedModel={selectedModel}
-              setSelectedModel={setSelectedModel}
-              handleInputChange={handleInputChange}
-              input={input}
-              isLoading={isLoading}
-              status={status}
-              stop={stop}
-              onRunCommand={runSlashCommand}
-              onPromptResolved={handlePromptResolved}
-              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isLoading } : null}
-              onPromptPreviewCancel={cancelPromptPreview}
-              onPromptPreviewResourceRemove={removePromptResource}
-            />
-            </form>
+        <ChatSessionToolbar
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          servers={mcpServers}
+          selectedServerIds={selectedMcpServers}
+          onToggleServer={toggleServerSelection}
+          onOpenServers={openServerManager}
+          onToggleMetrics={handleToggleMetrics}
+        />
+        <div className="flex-1 min-h-0 flex flex-col gap-4">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {showWelcomeState ? (
+              <div className="h-full overflow-y-auto pr-1">
+                <ProjectOverview
+                  selectedModel={selectedModel}
+                  servers={mcpServers}
+                  activeServerIds={selectedMcpServers}
+                  onOpenServers={openServerManager}
+                  onToggleServer={toggleServerSelection}
+                  onToggleMetrics={handleToggleMetrics}
+                />
+              </div>
+            ) : (
+              <Messages
+                messages={displayMessages}
+                isLoading={isLoading}
+                status={status as "error" | "submitted" | "streaming" | "ready"}
+              />
+            )}
           </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto min-h-0 pb-2">
-              <Messages messages={displayMessages} isLoading={isLoading} status={status} />
-            </div>
-            <form
-              onSubmit={handleFormSubmit}
-              className="mt-2 w-full mx-auto"
-            >
+          <form
+            onSubmit={handleFormSubmit}
+            className="mx-auto w-full max-w-3xl"
+          >
             <Textarea
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
@@ -494,11 +543,11 @@ export default function Chat() {
               promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isLoading } : null}
               onPromptPreviewCancel={cancelPromptPreview}
               onPromptPreviewResourceRemove={removePromptResource}
+              showModelPicker={false}
             />
-            </form>
-          </>
-        )}
+          </form>
+        </div>
       </div>
-    </>
+    </div>
   );
 }

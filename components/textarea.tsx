@@ -28,6 +28,8 @@ interface InputProps {
   stop: () => void;
   selectedModel: modelID;
   setSelectedModel: (model: modelID) => void;
+  showModelPicker?: boolean;
+  modelPickerVariant?: "floating" | "inline";
   onRunCommand: (command: SlashCommandMeta, args?: Record<string, string> | string[]) => void;
   onPromptResolved: (payload: {
     def: SlashPromptDef;
@@ -51,6 +53,8 @@ export const Textarea = ({
   stop,
   selectedModel,
   setSelectedModel,
+  showModelPicker = true,
+  modelPickerVariant = "floating",
   onRunCommand,
   onPromptResolved,
   promptPreview,
@@ -369,10 +373,13 @@ export const Textarea = ({
           aria-autocomplete="list"
           data-command-target="chat-input"
         />
-        <ModelPicker
-          setSelectedModel={setSelectedModel}
-          selectedModel={selectedModel}
-        />
+        {showModelPicker && (
+          <ModelPicker
+            setSelectedModel={setSelectedModel}
+            selectedModel={selectedModel}
+            variant={modelPickerVariant}
+          />
+        )}
         {/* Enhanced send button with status indicators */}
         <div className="absolute right-2 bottom-2 flex items-center gap-2">
           {menuOpen && (

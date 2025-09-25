@@ -56,6 +56,24 @@ export function ToolMetricsPanel() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const toggle = () => setOpen((prev) => !prev);
+    const openHandler = () => setOpen(true);
+    const closeHandler = () => setOpen(false);
+
+    window.addEventListener('tool-metrics:toggle', toggle);
+    window.addEventListener('tool-metrics:open', openHandler);
+    window.addEventListener('tool-metrics:close', closeHandler);
+
+    return () => {
+      window.removeEventListener('tool-metrics:toggle', toggle);
+      window.removeEventListener('tool-metrics:open', openHandler);
+      window.removeEventListener('tool-metrics:close', closeHandler);
+    };
+  }, []);
+
   if (!data || data.metrics.length === 0) return null;
 
   return (
@@ -63,7 +81,7 @@ export function ToolMetricsPanel() {
       <button
         onClick={() => setOpen(o => !o)}
         className="px-2 py-1 rounded-md bg-muted/70 hover:bg-muted text-foreground shadow-sm border border-border/40"
-      >{open ? 'Hide' : 'Tools'}</button>
+      >{open ? 'Hide metrics' : 'Tool metrics'}</button>
       {open && (
         <div className="mt-2 w-[320px] max-h-[340px] overflow-auto rounded-md border border-border/50 bg-background/95 backdrop-blur p-2 shadow-lg space-y-3">
           <div className="font-medium text-foreground/90 mb-1">Tool Metrics</div>
