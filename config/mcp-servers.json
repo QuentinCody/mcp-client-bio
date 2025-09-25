@@ -10,7 +10,11 @@
         "clientId": "biomcp-client",
         "authorizationEndpoint": "https://remote.biomcp.org/authorize",
         "tokenEndpoint": "https://remote.biomcp.org/token",
-        "scopes": ["openid", "profile", "email"]
+        "scopes": ["openid", "profile", "email"],
+        "authorizationParams": {
+          "access_type": "offline",
+          "prompt": "select_account"
+        }
       }
     },
     { "name": "ClinicalTrials",

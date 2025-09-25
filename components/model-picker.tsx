@@ -29,14 +29,20 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
+type ModelPickerVariant = "floating" | "inline";
+
 interface ModelPickerProps {
   selectedModel: modelID;
   setSelectedModel: (model: modelID) => void;
+  variant?: ModelPickerVariant;
+  className?: string;
 }
 
 export const ModelPicker = ({
   selectedModel,
   setSelectedModel,
+  variant = "floating",
+  className,
 }: ModelPickerProps) => {
   const [hoveredModel, setHoveredModel] = useState<modelID | null>(null);
 
@@ -135,14 +141,28 @@ export const ModelPicker = ({
     }
   };
 
+  const isInline = variant === "inline";
+
   return (
-    <div className="absolute bottom-2 left-2 z-10">
+    <div
+      className={cn(
+        isInline ? "relative" : "absolute bottom-2 left-2 z-10",
+        className
+      )}
+    >
       <Select
         value={validModelId}
         onValueChange={handleModelChange}
         defaultValue={validModelId}
       >
-        <SelectTrigger className="max-w-[200px] sm:max-w-fit sm:w-56 px-2 sm:px-3 h-8 sm:h-9 rounded-full group border-primary/20 bg-primary/5 hover:bg-primary/10 dark:bg-primary/10 dark:hover:bg-primary/20 transition-all duration-200 ring-offset-background focus:ring-2 focus:ring-primary/30 focus:ring-offset-2">
+        <SelectTrigger
+          className={cn(
+            "px-2 sm:px-3 h-8 sm:h-9 rounded-full group border-primary/20 bg-primary/5 hover:bg-primary/10 dark:bg-primary/10 dark:hover:bg-primary/20 transition-all duration-200 ring-offset-background focus:ring-2 focus:ring-primary/30 focus:ring-offset-2",
+            "max-w-[200px] sm:max-w-fit sm:w-56",
+            isInline &&
+              "w-full max-w-none rounded-lg border-border/60 bg-background/80 hover:bg-muted/60 dark:bg-background/70 dark:hover:bg-muted/40"
+          )}
+        >
           <SelectValue
             placeholder="Select model"
             className="text-xs font-medium flex items-center gap-1 sm:gap-2 text-primary dark:text-primary-foreground"
@@ -157,7 +177,10 @@ export const ModelPicker = ({
         </SelectTrigger>
         <SelectContent
           align="start"
-          className="bg-background/95 dark:bg-muted/95 backdrop-blur-sm border-border/80 rounded-lg overflow-hidden p-0 w-[280px] sm:w-[350px] md:w-[515px]"
+          className={cn(
+            "bg-background/95 dark:bg-muted/95 backdrop-blur-sm border-border/80 rounded-lg overflow-hidden p-0 w-[280px] sm:w-[350px] md:w-[515px]",
+            isInline && "w-[300px] sm:w-[380px] md:w-[520px]"
+          )}
         >
           <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] md:grid-cols-[200px_1fr] items-start">
             {/* Model selector column */}

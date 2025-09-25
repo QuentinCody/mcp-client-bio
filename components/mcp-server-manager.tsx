@@ -347,20 +347,15 @@ export const MCPServerManager = ({
           server.status === "error"
         ) {
           updateServerStatus(server.id, "connecting");
-          startServer(id)
+          void startServer(server.id)
             .then((success) => {
-              if (success) {
-                console.log(`Server ${server.name} successfully connected`);
-              } else {
-                console.error(`Failed to connect server ${server.name}`);
+              if (!success) {
+                toast.error(`Failed to start server: ${server.name}`);
               }
             })
             .catch((error) => {
-              console.error(`Error connecting server ${server.name}:`, error);
-              updateServerStatus(
-                server.id,
-                "error",
-                `Failed to connect: ${
+              toast.error(
+                `Error starting server: ${
                   error instanceof Error ? error.message : String(error)
                 }`
               );
@@ -554,7 +549,7 @@ export const MCPServerManager = ({
     ) {
       try {
         updateServerStatus(server.id, "connecting");
-        const success = await startServer(server.id);
+        const success = await startServer(server.id, { force: true });
 
         if (success) {
           toast.success(`Started server: ${server.name}`);
@@ -604,7 +599,7 @@ export const MCPServerManager = ({
       // Then start it again (with delay to ensure proper cleanup)
       setTimeout(async () => {
         updateServerStatus(server.id, "connecting");
-        const success = await startServer(server.id);
+        const success = await startServer(server.id, { force: true });
 
         if (success) {
           toast.success(`Restarted server: ${server.name}`);

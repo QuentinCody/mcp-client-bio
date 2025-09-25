@@ -36,23 +36,21 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     if (!isBrowser) return;
 
     try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
+      setStoredValue((prev) => {
+        const valueToStore = value instanceof Function ? value(prev) : value;
 
-      // Save state
-      setStoredValue(valueToStore);
+        if (valueToStore === undefined) {
+          window.localStorage.removeItem(key);
+        } else {
+          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        }
 
-      // Save to localStorage
-      if (valueToStore === undefined) {
-        window.localStorage.removeItem(key);
-      } else {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
-      }
+        return valueToStore;
+      });
     } catch (error) {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
-  }, [key, storedValue, isBrowser]);
+  }, [key, isBrowser]);
 
   return [storedValue, setValue] as const;
 }

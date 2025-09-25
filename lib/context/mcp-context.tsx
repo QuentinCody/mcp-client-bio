@@ -54,6 +54,10 @@ export interface MCPServerOAuthConfig {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   scopes?: string[];
+  redirectUri?: string;
+  clientSecret?: string;
+  authorizationParams?: Record<string, string>;
+  tokenParams?: Record<string, string>;
 }
 
 export interface MCPServerOAuthState {
@@ -93,11 +97,11 @@ export interface MCPServerApi {
 
 interface MCPContextType {
   mcpServers: MCPServer[];
-  setMcpServers: (servers: MCPServer[]) => void;
+  setMcpServers: (servers: MCPServer[] | ((prev: MCPServer[]) => MCPServer[])) => void;
   selectedMcpServers: string[];
-  setSelectedMcpServers: (serverIds: string[]) => void;
+  setSelectedMcpServers: (serverIds: string[] | ((prev: string[]) => string[])) => void;
   mcpServersForApi: MCPServerApi[];
-  startServer: (serverId: string) => Promise<boolean>;
+  startServer: (serverId: string, options?: { force?: boolean }) => Promise<boolean>;
   stopServer: (serverId: string) => Promise<boolean>;
   updateServerStatus: (
     serverId: string,
@@ -131,6 +135,7 @@ const MCPContext = createContext<MCPContextType | undefined>(undefined);
 
 const AUTH_CALLBACK_MESSAGE_TYPE = "mcp-oauth-callback";
 const OAUTH_DEFAULT_SCOPES = ["openid", "profile", "email"];
+const MAX_AUTO_START_ATTEMPTS = 2;
 
 interface PendingOAuthRequest {
   serverId: string;
@@ -368,6 +373,8 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const loadingPromptsRef = useRef(new Set<string>());
   const clientPromisesRef = useRef(new Map<string, Promise<Client | null>>());
   const clientInstancesRef = useRef(new Map<string, Client>());
+  const startPromisesRef = useRef(new Map<string, Promise<boolean>>());
+  const startAttemptsRef = useRef(new Map<string, number>());
   const promptFailureRef = useRef(new Set<string>());
   const healthFailureRef = useRef(new Set<string>());
   const promptsLoadedRef = useRef(new Set<string>());
@@ -444,6 +451,16 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       currentServers.map((server) =>
         server.id === serverId
           ? { ...server, tools, prompts, status, capabilities: capabilities ?? server.capabilities, errorMessage: undefined }
+          : server
+      )
+    );
+  }, [setMcpServersInternal]);
+
+  const setServerErrorMessage = useCallback((serverId: string, message?: string) => {
+    setMcpServersInternal((currentServers) =>
+      currentServers.map((server) =>
+        server.id === serverId
+          ? { ...server, errorMessage: message || undefined }
           : server
       )
     );
@@ -532,6 +549,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       const client = supportsBrowserTransport ? await getOrCreateClient(server) : null;
       if (!client) {
         let cursor: string | null = null;
+        const seenCursors = new Set<string>(); // Prevent loop if server returns the same cursor repeatedly.
         const collected: MCPPromptDef[] = [];
         do {
           const response = await fetch('/api/mcp-prompts/list', {
@@ -547,7 +565,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
           if (!response.ok) {
             console.warn(`[MCP] prompts/list fallback failed (${response.status}) for ${server.url}`);
             promptFailureRef.current.add(serverId);
-            updateServerStatus(serverId, 'error', `Prompt list failed (${response.status})`);
+            setServerErrorMessage(serverId, `Prompt list failed (${response.status})`);
             setMcpServersInternal((current) =>
               current.map((existing) =>
                 existing.id === serverId ? { ...existing, prompts: [] } : existing
@@ -567,11 +585,23 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
                     name: arg?.name ?? '',
                     description: arg?.description,
                     required: !!arg?.required,
-                  }))
+                }))
                 : [],
             });
           }
-          cursor = data?.nextCursor ?? null;
+          const rawNext = typeof data?.nextCursor === 'string' ? data.nextCursor : null;
+          const nextCursor = rawNext && rawNext.trim().length > 0 ? rawNext : null;
+          if (nextCursor) {
+            if (seenCursors.has(nextCursor)) {
+              console.warn(`[MCP] prompts/list returned duplicate cursor (${nextCursor}) for ${server.url}; terminating pagination to avoid a loop.`);
+              cursor = null;
+            } else {
+              seenCursors.add(nextCursor);
+              cursor = nextCursor;
+            }
+          } else {
+            cursor = null;
+          }
         } while (cursor);
 
         setMcpServersInternal((currentServers) =>
@@ -600,6 +630,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       promptFailureRef.current.delete(serverId);
 
       let cursor: string | undefined = undefined;
+      const seenCursors = new Set<string>(); // Prevent loop if server returns the same cursor repeatedly.
       const collected: MCPPromptDef[] = [];
       do {
         const result = await client.listPrompts({ cursor });
@@ -614,11 +645,23 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
                   name: arg?.name ?? '',
                   description: arg?.description,
                   required: !!arg?.required,
-                }))
+            }))
               : [],
           });
         }
-        cursor = result?.nextCursor ?? undefined;
+        const rawNext = typeof result?.nextCursor === 'string' ? result.nextCursor : undefined;
+        const nextCursor = rawNext && rawNext.trim().length > 0 ? rawNext : undefined;
+        if (nextCursor) {
+          if (seenCursors.has(nextCursor)) {
+            console.warn(`[MCP] prompts/list returned duplicate cursor (${nextCursor}) for ${server.url}; terminating pagination to avoid a loop.`);
+            cursor = undefined;
+          } else {
+            seenCursors.add(nextCursor);
+            cursor = nextCursor;
+          }
+        } else {
+          cursor = undefined;
+        }
       } while (cursor);
 
       setMcpServersInternal((currentServers) =>
@@ -634,11 +677,11 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error(`[MCP] Failed to load prompts for server ${serverId}:`, error);
       promptFailureRef.current.add(serverId);
-      updateServerStatus(serverId, 'error', error instanceof Error ? error.message : 'Prompt listing failed');
+      setServerErrorMessage(serverId, error instanceof Error ? error.message : 'Prompt listing failed');
     } finally {
       loadingPromptsRef.current.delete(serverId);
     }
-  }, [getServerById, getOrCreateClient, setMcpServersInternal, updateServerStatus]);
+  }, [getServerById, getOrCreateClient, setMcpServersInternal, setServerErrorMessage]);
 
   const fetchPromptMessages = useCallback(async (
     serverId: string,
@@ -674,7 +717,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       if (!fallback.ok) {
         console.warn(`[MCP] prompts/get fallback failed (${fallback.status}) for ${server.url}`);
         promptFailureRef.current.add(serverId);
-        updateServerStatus(serverId, 'error', `Prompt fetch failed (${fallback.status})`);
+        setServerErrorMessage(serverId, `Prompt fetch failed (${fallback.status})`);
         return null;
       }
       const data = await fallback.json().catch(() => ({}));
@@ -684,10 +727,10 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error(`[MCP] prompts/get failed for ${promptName}@${server.name || server.url}:`, error);
       promptFailureRef.current.add(serverId);
-      updateServerStatus(serverId, 'error', error instanceof Error ? error.message : 'Prompt fetch failed');
+      setServerErrorMessage(serverId, error instanceof Error ? error.message : 'Prompt fetch failed');
       return null;
     }
-  }, [getOrCreateClient, getServerById, updateServerStatus]);
+  }, [getOrCreateClient, getServerById, setServerErrorMessage]);
 
   const completePromptArgument = useCallback(async (input: {
     serverId: string;
@@ -734,7 +777,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
       if (!fallback.ok) {
         console.warn(`[MCP] completion/complete fallback failed (${fallback.status}) for ${server.url}`);
         promptFailureRef.current.add(server.id);
-        updateServerStatus(server.id, 'error', `Completion failed (${fallback.status})`);
+        setServerErrorMessage(server.id, `Completion failed (${fallback.status})`);
         return null;
       }
       const data = await fallback.json().catch(() => ({}));
@@ -747,10 +790,10 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error(`[MCP] completion/complete failed for ${input.promptName}.${input.argumentName}:`, error);
       promptFailureRef.current.add(input.serverId);
-      updateServerStatus(input.serverId, 'error', error instanceof Error ? error.message : 'Completion failed');
+      setServerErrorMessage(input.serverId, error instanceof Error ? error.message : 'Completion failed');
       return null;
     }
-  }, [getOrCreateClient, getServerById, updateServerStatus]);
+  }, [getOrCreateClient, getServerById, setServerErrorMessage]);
 
   const getPromptClient = useCallback(async (serverId: string): Promise<Client | null> => {
     const server = getServerById(serverId);
@@ -858,26 +901,120 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   const ensureOAuthToken = useCallback(async (server: MCPServer): Promise<string | null> => {
     if (!server.auth || server.auth.type !== "oauth") return null;
 
+    const resolveTemplateValue = (value?: string | null) => {
+      if (typeof value !== "string" || !value) return undefined;
+      return value.replace(/\{\{\s*origin\s*\}\}/gi, window.location.origin);
+    };
+
+    const redirectUri = resolveTemplateValue(server.auth?.redirectUri) ?? `${window.location.origin}/oauth/callback`;
+
     const leewayMs = 60_000;
     const existingState = server.authState;
+
+    const prepareAuthenticatedServer = (token: string, refreshDetails?: { refreshToken?: string; expiresIn?: number }) => {
+      const refreshToken = refreshDetails?.refreshToken ?? existingState?.refreshToken;
+      const expiresInRaw = refreshDetails?.expiresIn;
+      const expiresAt = expiresInRaw && Number.isFinite(expiresInRaw)
+        ? Date.now() + Math.max(expiresInRaw - 30, 30) * 1000
+        : existingState?.expiresAt;
+
+      setMcpServersInternal((currentServers) =>
+        currentServers.map((s) =>
+          s.id === server.id
+            ? {
+                ...s,
+                headers: upsertAuthorizationHeader(s.headers ?? [], `Bearer ${token}`),
+                authState: {
+                  accessToken: token,
+                  refreshToken,
+                  expiresAt,
+                },
+              }
+            : s
+        )
+      );
+    };
+
+    const makeTokenRequest = async (params: Record<string, string>): Promise<any> => {
+      let tokenUrl: URL;
+      try {
+        tokenUrl = new URL(server.auth!.tokenEndpoint);
+      } catch {
+        throw new Error("Invalid token endpoint URL");
+      }
+
+      const body = new URLSearchParams(params);
+      if (redirectUri && params.grant_type === "authorization_code") {
+        body.set("redirect_uri", redirectUri);
+      }
+      body.set("client_id", server.auth!.clientId);
+      if (server.auth?.clientSecret) {
+        body.set("client_secret", server.auth.clientSecret);
+      }
+      if (server.auth?.tokenParams) {
+        for (const [key, value] of Object.entries(server.auth.tokenParams)) {
+          if (typeof value === "string") {
+            body.set(key, resolveTemplateValue(value) ?? value);
+          }
+        }
+      }
+
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(tokenUrl.toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+          body: body.toString(),
+        });
+      } catch (error) {
+        throw new Error(
+          error instanceof Error
+            ? `Token request failed: ${error.message}`
+            : "Token request failed"
+        );
+      }
+
+      let tokenData: any;
+      try {
+        tokenData = await tokenResponse.json();
+      } catch {
+        throw new Error("Failed to parse token response");
+      }
+
+      if (!tokenResponse.ok) {
+        const errorMessage = tokenData?.error_description || tokenData?.error || "OAuth token exchange failed";
+        throw new Error(errorMessage);
+      }
+
+      return tokenData;
+    };
 
     if (existingState?.accessToken) {
       const stillValid = !existingState.expiresAt || existingState.expiresAt - Date.now() > leewayMs;
       if (stillValid) {
-        setMcpServersInternal((currentServers) =>
-          currentServers.map((s) =>
-            s.id === server.id
-              ? {
-                  ...s,
-                  headers: upsertAuthorizationHeader(s.headers ?? [], `Bearer ${existingState.accessToken}`),
-                }
-              : s
-          )
-        );
+        prepareAuthenticatedServer(existingState.accessToken);
         return existingState.accessToken;
       }
 
-      // Expired token - clear existing credentials so we can request a new one
+      if (existingState.refreshToken) {
+        try {
+          const refreshed = await makeTokenRequest({
+            grant_type: "refresh_token",
+            refresh_token: existingState.refreshToken,
+          });
+          const newAccessToken = typeof refreshed.access_token === "string" ? refreshed.access_token : undefined;
+          if (!newAccessToken) {
+            throw new Error("Refresh response missing access token");
+          }
+          const newRefreshToken = typeof refreshed.refresh_token === "string" ? refreshed.refresh_token : existingState.refreshToken;
+          const expiresInRaw = typeof refreshed.expires_in === "number" ? refreshed.expires_in : Number(refreshed.expires_in);
+          prepareAuthenticatedServer(newAccessToken, { refreshToken: newRefreshToken, expiresIn: Number.isFinite(expiresInRaw) ? expiresInRaw : undefined });
+          return newAccessToken;
+        } catch (refreshError) {
+          console.warn(`[MCP] OAuth refresh failed for ${server.name || server.url}:`, refreshError);
+        }
+      }
+
       setMcpServersInternal((currentServers) =>
         currentServers.map((s) =>
           s.id === server.id
@@ -905,7 +1042,6 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     const handshakePromise = (async () => {
       const authConfig = server.auth!;
 
-      const redirectUri = `${window.location.origin}/oauth/callback?provider=${encodeURIComponent(server.id)}`;
       const state = crypto.randomUUID();
 
       const width = 500;
@@ -957,12 +1093,22 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
 
       authorizeUrl.searchParams.set("response_type", "code");
       authorizeUrl.searchParams.set("client_id", authConfig.clientId);
-      authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      if (redirectUri) {
+        authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      }
       const scopes = authConfig.scopes?.length ? authConfig.scopes : OAUTH_DEFAULT_SCOPES;
       authorizeUrl.searchParams.set("scope", scopes.join(" "));
       authorizeUrl.searchParams.set("state", state);
       authorizeUrl.searchParams.set("code_challenge", codeChallenge);
       authorizeUrl.searchParams.set("code_challenge_method", "S256");
+
+      if (authConfig.authorizationParams) {
+        for (const [key, value] of Object.entries(authConfig.authorizationParams)) {
+          if (typeof value === "string" && value.length > 0) {
+            authorizeUrl.searchParams.set(key, resolveTemplateValue(value) ?? value);
+          }
+        }
+      }
 
       try {
         popup.location.replace(authorizeUrl.toString());
@@ -1034,47 +1180,11 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Authentication did not provide a code");
       }
 
-      let tokenUrl: URL;
-      try {
-        tokenUrl = new URL(authConfig.tokenEndpoint);
-      } catch {
-        throw new Error("Invalid token endpoint URL");
-      }
-
-      const tokenBody = new URLSearchParams({
+      const tokenData = await makeTokenRequest({
         grant_type: "authorization_code",
         code,
-        redirect_uri: redirectUri,
-        client_id: authConfig.clientId,
         code_verifier: codeVerifier,
       });
-
-      let tokenResponse: Response;
-      try {
-        tokenResponse = await fetch(tokenUrl.toString(), {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-          body: tokenBody.toString(),
-        });
-      } catch (error) {
-        throw new Error(
-          error instanceof Error
-            ? `Token request failed: ${error.message}`
-            : "Token request failed"
-        );
-      }
-
-      let tokenData: any;
-      try {
-        tokenData = await tokenResponse.json();
-      } catch {
-        throw new Error("Failed to parse token response");
-      }
-
-      if (!tokenResponse.ok) {
-        const errorMessage = tokenData?.error_description || tokenData?.error || "OAuth token exchange failed";
-        throw new Error(errorMessage);
-      }
 
       const accessToken = typeof tokenData.access_token === "string" ? tokenData.access_token : undefined;
       if (!accessToken) {
@@ -1086,23 +1196,10 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         ? tokenData.expires_in
         : Number(tokenData.expires_in);
       const expiresIn = Number.isFinite(expiresInRaw) ? expiresInRaw : 3600;
-      const expiresAt = Date.now() + Math.max(expiresIn - 30, 30) * 1000;
-
-      setMcpServersInternal((currentServers) =>
-        currentServers.map((s) =>
-          s.id === server.id
-            ? {
-                ...s,
-                headers: upsertAuthorizationHeader(s.headers ?? [], `Bearer ${accessToken}`),
-                authState: {
-                  accessToken,
-                  refreshToken,
-                  expiresAt,
-                },
-              }
-            : s
-        )
-      );
+      prepareAuthenticatedServer(accessToken, {
+        refreshToken,
+        expiresIn,
+      });
 
       return accessToken;
     })();
@@ -1116,103 +1213,137 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   }, [pendingOAuthRef, oauthHandshakePromisesRef, setMcpServersInternal]);
 
   // Start a server with isolated error handling and fast failure
-  const startServer = useCallback(async (serverId: string): Promise<boolean> => {
-    healthFailureRef.current.delete(serverId);
-    promptFailureRef.current.delete(serverId);
-    promptsLoadedRef.current.delete(serverId);
-    // Clear attempted connection tracking when manually starting a server
-    attemptedConnectionsRef.current.delete(serverId);
-    let server = getServerById(serverId);
-    if (!server) {
-      console.error(`[startServer] Server not found for ID: ${serverId}`);
-      return false;
+  const startServer = useCallback(async (serverId: string, options?: { force?: boolean }): Promise<boolean> => {
+    if (!options?.force) {
+      const existing = startPromisesRef.current.get(serverId);
+      if (existing) {
+        return existing;
+      }
     }
 
-    // Skip if already connecting or connected
-    if (server.status === "connecting" || server.status === "connected") {
-      return server.status === "connected";
+    if (options?.force) {
+      startAttemptsRef.current.delete(serverId);
+      healthFailureRef.current.delete(serverId);
     }
 
-    // Check allowlist if in locked mode
-    if (isServerLocked()) {
+    const startOperation = (async (): Promise<boolean> => {
+      healthFailureRef.current.delete(serverId);
+      promptFailureRef.current.delete(serverId);
+      promptsLoadedRef.current.delete(serverId);
+      // Clear attempted connection tracking when manually starting a server
+      attemptedConnectionsRef.current.delete(serverId);
+
+      let server = getServerById(serverId);
+      if (!server) {
+        console.error(`[startServer] Server not found for ID: ${serverId}`);
+        return false;
+      }
+
+      // Skip if already connecting or connected
+      if (server.status === "connecting" || server.status === "connected") {
+        return server.status === "connected";
+      }
+
+      const attempts = startAttemptsRef.current.get(serverId) ?? 0;
+      if (!options?.force && attempts >= MAX_AUTO_START_ATTEMPTS) {
+        const message = "Connection retry limit reached. Disable and re-enable to try again.";
+        updateServerStatus(serverId, "error", message);
+        healthFailureRef.current.add(serverId);
+        return false;
+      }
+
+      const nextAttempts = options?.force ? 1 : attempts + 1;
+      startAttemptsRef.current.set(serverId, nextAttempts);
+
+      // Check allowlist if in locked mode
+      if (isServerLocked()) {
+        try {
+          const presetServers = JSON.parse(localStorage.getItem(STORAGE_KEYS.MCP_SERVERS) || "[]");
+          const allowedUrls = new Set(presetServers.map((s: MCPServer) => s.url));
+          if (!allowedUrls.has(server.url)) {
+            console.error(`[startServer] Server URL not in allowlist: ${server.url}`);
+            updateServerStatus(serverId, "error", "This demo is locked to preset MCP servers.");
+            return false;
+          }
+        } catch (error) {
+          console.error(`[startServer] Error checking allowlist:`, error);
+          updateServerStatus(serverId, "error", "Error validating server allowlist");
+          return false;
+        }
+      }
+
+    // logging suppressed
+
+      // Mark server as connecting
+      updateServerStatus(serverId, "connecting");
+
       try {
-        const presetServers = JSON.parse(localStorage.getItem(STORAGE_KEYS.MCP_SERVERS) || "[]");
-        const allowedUrls = new Set(presetServers.map((s: MCPServer) => s.url));
-        if (!allowedUrls.has(server.url)) {
-          console.error(`[startServer] Server URL not in allowlist: ${server.url}`);
-          updateServerStatus(serverId, "error", "This demo is locked to preset MCP servers.");
+        server = getServerById(serverId);
+        if (!server) {
+          return false;
+        }
+
+        if (server.auth?.type === "oauth") {
+          try {
+            const token = await ensureOAuthToken(server);
+            if (token) {
+              server = {
+                ...server,
+                headers: upsertAuthorizationHeader(server.headers ?? [], `Bearer ${token}`),
+              };
+            }
+          } catch (oauthError) {
+            const message = oauthError instanceof Error ? oauthError.message : String(oauthError);
+            updateServerStatus(serverId, "error", message);
+            return false;
+          }
+        }
+
+        if (!server.url) {
+          console.error(`[startServer] No URL provided for ${server.type} server`);
+          updateServerStatus(serverId, "error", "No URL provided");
+          return false;
+        }
+
+        // Use very aggressive timeout - fail extremely fast for broken servers
+        const healthResult = await checkServerHealth(
+          server.url,
+          server.headers,
+          server.type === 'sse' ? 9000 : 7000,
+          server.type
+        );
+
+        if (healthResult.ready) {
+          // Allow empty tool list (store empty array) so connection still counts
+          updateServerWithTools(serverId, healthResult.tools || [], "connected", healthResult.prompts || [], undefined);
+          activeServersRef.current[serverId] = true;
+          startAttemptsRef.current.delete(serverId);
+          // logging suppressed
+          fetchServerPrompts(serverId, { serverSnapshot: server });
+          subscribeToPromptNotifications(server);
+          return true;
+        } else {
+          updateServerStatus(
+            serverId,
+            "error",
+            healthResult.error || "Could not connect to server"
+          );
+          // logging suppressed
           return false;
         }
       } catch (error) {
-        console.error(`[startServer] Error checking allowlist:`, error);
-        updateServerStatus(serverId, "error", "Error validating server allowlist");
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        // logging suppressed
+        updateServerStatus(serverId, "error", `Error: ${errorMessage}`);
         return false;
       }
-    }
+    })();
 
-  // logging suppressed
-
-    // Mark server as connecting
-    updateServerStatus(serverId, "connecting");
-
+    startPromisesRef.current.set(serverId, startOperation);
     try {
-      server = getServerById(serverId);
-      if (!server) {
-        return false;
-      }
-
-      if (server.auth?.type === "oauth") {
-        try {
-          const token = await ensureOAuthToken(server);
-          if (token) {
-            server = {
-              ...server,
-              headers: upsertAuthorizationHeader(server.headers ?? [], `Bearer ${token}`),
-            };
-          }
-        } catch (oauthError) {
-          const message = oauthError instanceof Error ? oauthError.message : String(oauthError);
-          updateServerStatus(serverId, "error", message);
-          return false;
-        }
-      }
-
-      if (!server.url) {
-        console.error(`[startServer] No URL provided for ${server.type} server`);
-        updateServerStatus(serverId, "error", "No URL provided");
-        return false;
-      }
-
-      // Use very aggressive timeout - fail extremely fast for broken servers
-      const healthResult = await checkServerHealth(
-        server.url,
-        server.headers,
-        server.type === 'sse' ? 9000 : 7000,
-        server.type
-      );
-      
-      if (healthResult.ready) {
-        // Allow empty tool list (store empty array) so connection still counts
-        updateServerWithTools(serverId, healthResult.tools || [], "connected", healthResult.prompts || [], undefined);
-        activeServersRef.current[serverId] = true;
-        // logging suppressed
-        fetchServerPrompts(serverId, { serverSnapshot: server });
-        subscribeToPromptNotifications(server);
-        return true;
-      } else {
-        updateServerStatus(
-          serverId,
-          "error",
-          healthResult.error || "Could not connect to server"
-        );
-        // logging suppressed
-        return false;
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      // logging suppressed
-      updateServerStatus(serverId, "error", `Error: ${errorMessage}`);
-      return false;
+      return await startOperation;
+    } finally {
+      startPromisesRef.current.delete(serverId);
     }
   }, [ensureOAuthToken, fetchServerPrompts, getServerById, subscribeToPromptNotifications, updateServerStatus, updateServerWithTools]);
 
@@ -1224,6 +1355,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
     try {
       // Mark as not active
       delete activeServersRef.current[serverId];
+      startAttemptsRef.current.delete(serverId);
 
       // Update server status and clear tools
       setMcpServersInternal((currentServers) =>
@@ -1281,6 +1413,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         if (s.status === "connected" || s.status === "connecting") return false;
         // Skip if currently in a connection attempt
         if (connectingSetRef.current.has(s.id)) return false;
+        if (startPromisesRef.current.has(s.id)) return false;
         // Skip if we've already tried and failed this session
         if (healthFailureRef.current.has(s.id)) return false;
         // Skip if we've already attempted connection for this server in this session
@@ -1311,6 +1444,7 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     attemptedConnectionsRef.current.clear();
     healthFailureRef.current.clear();
+    startAttemptsRef.current.clear();
   }, [selectedMcpServers]);
 
   useEffect(() => {
