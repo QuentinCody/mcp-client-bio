@@ -9,10 +9,12 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   LightbulbIcon,
+  Sparkles,
 } from "lucide-react";
 import { SpinnerIcon } from "./icons";
 import { ToolInvocation } from "./tool-invocation";
 import { CopyButton } from "./copy-button";
+import { Avatar, AvatarFallback } from "./ui/avatar";
 
 interface ReasoningPart {
   type: "reasoning";
@@ -196,108 +198,180 @@ const PurePreviewMessage = ({
     message.role === "assistant" &&
     (!isLatestMessage || status !== "streaming");
 
+  const isUser = message.role === "user";
+  const speakerLabel = isUser ? "You" : "Bio MCP";
+  const streamingLabel = isLatestMessage
+    ? status === "streaming"
+      ? "Streaming…"
+      : status === "submitted"
+        ? "Pending…"
+        : null
+    : null;
+
+  const bubbleClassName = cn(
+    "relative rounded-[22px] border px-5 py-4 shadow-sm backdrop-blur-sm transition-colors",
+    isUser
+      ? "border-primary/35 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/5 text-primary-foreground"
+      : "border-border/60 bg-gradient-to-br from-background/98 via-background/95 to-background/90 text-foreground"
+  );
+
+  const headerClassName = cn(
+    "flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80",
+    isUser ? "justify-end" : "justify-start"
+  );
+
+  const copyAlignmentClass = cn(
+    "mt-3 flex",
+    isUser ? "justify-end" : "justify-start"
+  );
+
   return (
     <div
       className={cn(
-        "w-full mx-auto px-4 group/message",
-        message.role === "assistant" ? "mb-8" : "mb-6"
+        "group/message relative mx-auto w-full px-2 sm:px-4",
+        message.role === "assistant" ? "mb-9" : "mb-7"
       )}
       data-role={message.role}
     >
       <div
         className={cn(
-          "flex gap-4 w-full group-data-[role=user]/message:ml-auto group-data-[role=user]/message:max-w-2xl",
-          "group-data-[role=user]/message:w-fit"
+          "flex w-full items-start gap-3 sm:gap-4",
+          isUser ? "flex-row-reverse text-right" : "text-left"
         )}
       >
-        <div className="flex flex-col w-full space-y-3">
-          {message.parts?.map((part, i) => {
-            switch (part.type) {
-              case "text":
-                {
-                  // Heuristic: if this text looks like a serialized tool invocation, render styled component instead
-                  try {
-                    const maybe = JSON.parse(part.text || 'null');
-                    if (maybe && typeof maybe === 'object' && maybe.toolInvocation && typeof maybe.toolInvocation === 'object') {
-                      const ti = maybe.toolInvocation;
-                      return (
-                        <ToolInvocation
-                          key={`message-${message.id}-part-${i}`}
-                          toolName={ti.toolName || 'unknown'}
-                          state={ti.state || 'call'}
-                          args={ti.args}
-                          result={'result' in ti ? ti.result : undefined}
-                          isLatestMessage={isLatestMessage}
-                          status={status}
-                        />
-                      );
-                    }
-                  } catch (err) {
-                    // ignore parse errors
-                  }
-                  const isStreamingText = isLatestMessage && status === "streaming" && i === message.parts.length - 1;
-                  return (
-                    <div
-                      key={`message-${message.id}-part-${i}`}
-                      className="flex flex-row gap-2 items-start w-full"
-                    >
-                      <div
-                        className={cn("flex flex-col gap-3 w-full", {
-                          "bg-secondary text-secondary-foreground px-4 py-3 rounded-2xl":
-                            message.role === "user",
-                        })}
-                      >
-                        <div className="relative">
-                          <Markdown>{part.text}</Markdown>
-                          {isStreamingText && (
-                            <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1 align-text-bottom" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-              case "tool-invocation":
-                const { toolName, state, args } = part.toolInvocation;
-                const result =
-                  "result" in part.toolInvocation
-                    ? part.toolInvocation.result
-                    : null;
+        <div className="relative flex flex-col items-center pt-1 sm:pt-0">
+          <Avatar
+            className={cn(
+              "h-9 w-9 border border-border/60 bg-background shadow-sm transition-transform duration-200 group-hover/message:scale-[1.02]",
+              isUser
+                ? "border-primary/40 bg-primary/15 text-primary"
+                : "border-border/60 bg-secondary/40 text-secondary-foreground"
+            )}
+          >
+            <AvatarFallback className="text-[10px] font-semibold uppercase tracking-wide">
+              {isUser ? "You" : "AI"}
+            </AvatarFallback>
+          </Avatar>
+          <span className="mt-2 hidden h-full w-px flex-1 bg-border/40 sm:block" />
+        </div>
 
-                return (
-                  <ToolInvocation
-                    key={`message-${message.id}-part-${i}`}
-                    toolName={toolName}
-                    state={state}
-                    args={args}
-                    result={result}
-                    isLatestMessage={isLatestMessage}
-                    status={status}
-                  />
-                );
-              case "reasoning":
-                return (
-                  <ReasoningMessagePart
-                    key={`message-${message.id}-${i}`}
-                    // @ts-expect-error part
-                    part={part}
-                    isReasoning={
-                      (message.parts &&
-                        status === "streaming" &&
-                        i === message.parts.length - 1) ??
-                      false
+        <div className="flex-1 space-y-3">
+          <div className={headerClassName}>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
+                isUser
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border/60 bg-background/80 text-muted-foreground"
+              )}
+            >
+              {speakerLabel}
+            </span>
+            {!isUser && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                <Sparkles className="h-3 w-3" />
+                Adaptive
+              </span>
+            )}
+            {streamingLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary">
+                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                {streamingLabel}
+              </span>
+            )}
+          </div>
+
+          <div className={bubbleClassName}>
+            <div className="flex flex-col gap-4 text-sm leading-relaxed text-foreground/90">
+              {message.parts?.map((part, i) => {
+                switch (part.type) {
+                  case "text": {
+                    try {
+                      const maybe = JSON.parse(part.text || "null");
+                      if (
+                        maybe &&
+                        typeof maybe === "object" &&
+                        maybe.toolInvocation &&
+                        typeof maybe.toolInvocation === "object"
+                      ) {
+                        const ti = maybe.toolInvocation;
+                        return (
+                          <ToolInvocation
+                            key={`message-${message.id}-part-${i}`}
+                            toolName={ti.toolName || "unknown"}
+                            state={ti.state || "call"}
+                            args={ti.args}
+                            result={"result" in ti ? ti.result : undefined}
+                            isLatestMessage={isLatestMessage}
+                            status={status}
+                          />
+                        );
+                      }
+                    } catch (err) {
+                      // ignore parse errors
                     }
-                  />
-                );
-              default:
-                return null;
-            }
-          })}
-          {shouldShowCopyButton && (
-            <div className="flex justify-start mt-2">
-              <CopyButton text={getMessageText()} />
+
+                    const isStreamingText =
+                      isLatestMessage &&
+                      status === "streaming" &&
+                      i === (message.parts?.length ?? 0) - 1;
+
+                    return (
+                      <div
+                        key={`message-${message.id}-part-${i}`}
+                        className="relative"
+                      >
+                        <Markdown>{part.text}</Markdown>
+                        {isStreamingText && (
+                          <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-primary" />
+                        )}
+                      </div>
+                    );
+                  }
+                  case "tool-invocation": {
+                    const { toolName, state, args } = part.toolInvocation;
+                    const result =
+                      "result" in part.toolInvocation
+                        ? part.toolInvocation.result
+                        : null;
+
+                    return (
+                      <ToolInvocation
+                        key={`message-${message.id}-part-${i}`}
+                        toolName={toolName}
+                        state={state}
+                        args={args}
+                        result={result}
+                        isLatestMessage={isLatestMessage}
+                        status={status}
+                      />
+                    );
+                  }
+                  case "reasoning":
+                    return (
+                      <ReasoningMessagePart
+                        key={`message-${message.id}-${i}`}
+                        // @ts-expect-error part
+                        part={part}
+                        isReasoning={
+                          (message.parts &&
+                            status === "streaming" &&
+                            i === message.parts.length - 1) ??
+                          false
+                        }
+                      />
+                    );
+                  default:
+                    return null;
+                }
+              })}
             </div>
-          )}
+            {shouldShowCopyButton && (
+              <div className={copyAlignmentClass}>
+                <CopyButton text={getMessageText()} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

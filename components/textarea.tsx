@@ -1,9 +1,9 @@
-import { modelID } from "@/ai/providers";
+import { modelDetails, type modelID } from "@/ai/providers";
 import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
-import { ArrowUp, Loader2, Hash, Sparkles, Zap } from "lucide-react";
+import { ArrowUp, Loader2, Hash, Sparkles, Zap, ServerIcon, CircleStop, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
 import { SlashPromptMenu } from "@/components/prompts/slash-prompt-menu";
 import { toToken } from "@/lib/mcp/prompts/token";
@@ -54,7 +54,7 @@ export const Textarea = ({
   selectedModel,
   setSelectedModel,
   showModelPicker = true,
-  modelPickerVariant = "floating",
+  modelPickerVariant = "inline",
   onRunCommand,
   onPromptResolved,
   promptPreview,
@@ -69,6 +69,7 @@ export const Textarea = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     mcpServers,
+    selectedMcpServers,
     ensureAllPromptsLoaded,
     fetchPromptMessages,
     completePromptArgument,
@@ -105,6 +106,17 @@ export const Textarea = ({
     void ensureAllPromptsLoaded();
   }, [menuOpen, ensureAllPromptsLoaded]);
 
+  const modelInfo = useMemo(() => modelDetails[selectedModel], [selectedModel]);
+
+  const activeServerCount = useMemo(() => {
+    if (!Array.isArray(mcpServers) || mcpServers.length === 0) {
+      return 0;
+    }
+    return selectedMcpServers.filter((id) =>
+      mcpServers.some((server) => server.id === id)
+    ).length;
+  }, [mcpServers, selectedMcpServers]);
+
   const commandSuggestions = useMemo<SlashCommandSuggestion[]>(() => {
     void registryRevision;
     return slashRegistry
@@ -140,6 +152,54 @@ export const Textarea = ({
   const items = useMemo<MenuItem[]>(() => {
     return [...commandItems, ...promptItems];
   }, [commandItems, promptItems]);
+
+  const composerStatus = isStreaming
+    ? status === "submitted"
+      ? "Preparing"
+      : "Streaming"
+    : "Ready";
+
+  const characterCount = input.length;
+
+  const quickSnippets = useMemo(
+    () => [
+      {
+        id: "summary",
+        label: "Summarize context",
+        value:
+          "Summarize the key points and open questions from our conversation so far.",
+      },
+      {
+        id: "next-steps",
+        label: "Suggest next steps",
+        value:
+          "Suggest the next three actions I should take based on this discussion, including why each matters.",
+      },
+      {
+        id: "critique",
+        label: "Spot risks",
+        value:
+          "Review the current approach and outline potential risks, missing data, or validation steps we should address before proceeding.",
+      },
+    ],
+    []
+  );
+
+  const handleSnippetInsert = useCallback(
+    (value: string) => {
+      if (promptPreview) {
+        onPromptPreviewCancel();
+      }
+      handleInputChange({ target: { value } } as any);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
+    },
+    [handleInputChange, onPromptPreviewCancel, promptPreview]
+  );
+
+  const showQuickSnippets =
+    !menuOpen && !promptPreview && input.trim().length === 0;
 
   function toPromptSummary(def: MenuItem): PromptSummary {
     return {
@@ -345,24 +405,84 @@ export const Textarea = ({
     } catch {}
   }
 
+  const showInlineModelPicker = showModelPicker && modelPickerVariant === "inline";
+  const showFloatingModelPicker = showModelPicker && modelPickerVariant === "floating";
+
   return (
-    <div className="w-full">
-      <div className="relative">
-        {/* Slash command hint overlay */}
+    <div className="w-full space-y-3">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground/80">
+          {showInlineModelPicker ? (
+            <ModelPicker
+              setSelectedModel={setSelectedModel}
+              selectedModel={selectedModel}
+              variant="inline"
+              className="w-full text-left sm:w-auto"
+            />
+          ) : (
+            <span className="font-semibold text-foreground">
+              {modelInfo ? `${modelInfo.name} • ${modelInfo.provider}` : selectedModel}
+            </span>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1 text-muted-foreground/80">
+              <ServerIcon className="h-3 w-3" />
+              {activeServerCount} active
+            </span>
+            <span className="inline-flex items-center gap-1 text-muted-foreground/80">
+              <Hash className="h-3 w-3" />
+              Slash ready
+            </span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
+                isStreaming
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border/60 bg-background/80 text-muted-foreground"
+              )}
+            >
+              {isStreaming ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Zap className="h-3 w-3" />
+              )}
+              {composerStatus}
+            </span>
+          </div>
+        </div>
+
+        {showQuickSnippets && quickSnippets.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {quickSnippets.map((snippet) => (
+              <button
+                key={snippet.id}
+                type="button"
+                onClick={() => handleSnippetInsert(snippet.value)}
+                className="group inline-flex items-center gap-2 rounded-full border border-border/40 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground transition-all hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+              >
+                <Sparkles className="h-3 w-3 text-primary/70 transition-colors group-hover:text-primary" />
+                {snippet.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="relative overflow-hidden rounded-lg border border-border/40 bg-background/80 shadow-inner focus-within:border-primary/40 focus-within:shadow-md">
         {showingSlashHint && !menuOpen && (
-          <div className="absolute top-2 left-4 z-20 animate-in slide-in-from-left-2 duration-200">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/90 text-white text-xs font-medium rounded-lg backdrop-blur-sm">
-              <Hash className="w-3 h-3" />
+          <div className="pointer-events-none absolute top-3 left-4 z-20 animate-in slide-in-from-left-2 duration-200">
+            <div className="flex items-center gap-2 rounded-lg bg-blue-500/90 px-3 py-1.5 text-[11px] font-medium text-white shadow-md backdrop-blur-sm">
+              <Hash className="h-3 w-3" />
               <span>Type to search prompts</span>
-              <Sparkles className="w-3 h-3 animate-pulse" />
+              <Sparkles className="h-3 w-3 animate-pulse" />
             </div>
           </div>
         )}
-        
+
         <ShadcnTextarea
           className={cn(
-            "max-h-[45vh] min-h-[10rem] overflow-auto resize-none bg-background/50 dark:bg-muted/50 backdrop-blur-sm w-full rounded-2xl pr-12 pt-4 pb-16 border-input focus-visible:ring-ring placeholder:text-muted-foreground transition-all duration-200",
-            menuOpen && "border-blue-300 shadow-lg"
+            "max-h-[40vh] ![min-height:3.5rem] w-full resize-none border-none bg-transparent px-3 pb-9 pt-3 text-sm leading-relaxed placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:outline-none",
+            menuOpen && "ring-1 ring-primary/30"
           )}
           value={input}
           autoFocus
@@ -373,74 +493,128 @@ export const Textarea = ({
           aria-autocomplete="list"
           data-command-target="chat-input"
         />
-        {showModelPicker && (
+
+        {showFloatingModelPicker && (
           <ModelPicker
             setSelectedModel={setSelectedModel}
             selectedModel={selectedModel}
-            variant={modelPickerVariant}
+            variant="floating"
           />
         )}
-        {/* Enhanced send button with status indicators */}
-        <div className="absolute right-2 bottom-2 flex items-center gap-2">
+
+        <div className="pointer-events-none absolute inset-x-3 bottom-11 h-px bg-gradient-to-r from-transparent via-border/40 to-transparent" />
+
+        <div className="absolute bottom-3 right-3 flex items-center gap-2">
           {menuOpen && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg">
-              <Hash className="w-3 h-3" />
+            <div className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 shadow-sm">
+              <Hash className="h-3 w-3" />
               <span>{items.length}</span>
             </div>
           )}
-          
+
           <button
             type={isStreaming ? "button" : "submit"}
             onClick={isStreaming ? stop : undefined}
-            disabled={
-              (!isStreaming && !input.trim()) ||
-              (isStreaming && status === "submitted")
-            }
+            disabled={(!isStreaming && !input.trim()) || (isStreaming && status === "submitted")}
             className={cn(
-              "rounded-full p-2 transition-all duration-200 shadow-lg",
-              isStreaming 
-                ? "bg-red-500 hover:bg-red-600 text-white" 
-                : (!input.trim())
-                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  : "bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-xl hover:scale-105"
+              "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-medium transition-colors shadow-md",
+              isStreaming
+                ? "border-red-400 bg-red-500 text-white hover:bg-red-600"
+                : !input.trim()
+                  ? "border-border/60 bg-muted text-muted-foreground"
+                  : "border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90"
             )}
+            aria-label={isStreaming ? "Stop response" : "Send message"}
           >
-            {isStreaming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
+            {isStreaming ? <CircleStop className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/80">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+            Send
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Shift</span>
+            <CornerDownLeft className="h-3 w-3 text-muted-foreground/70" />
+            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+            New line
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">/</span>
+            Prompts
+          </span>
+        </div>
+        <span>{characterCount} characters</span>
+      </div>
+
+      {promptPreview && (
+        <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 shadow-inner">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                <Sparkles className="h-4 w-4" />
+                Prompt staged
+              </div>
+              {promptPreview.sending ? (
+                <p className="mt-1 text-[11px] text-primary/80">Sending to the assistant…</p>
+              ) : (
+                <p className="mt-1 text-[11px] text-primary/80">Review linked resources before sending.</p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px] text-primary hover:text-primary/80"
+              type="button"
+              onClick={onPromptPreviewCancel}
+            >
+              Clear
+            </Button>
+          </div>
+          {promptPreview.resources?.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {promptPreview.resources.map((resource) => (
+                <ResourceChip
+                  key={resource.uri}
+                  uri={resource.uri}
+                  name={resource.name}
+                  onRemove={() => onPromptPreviewResourceRemove(resource.uri)}
+                />
+              ))}
+            </div>
+          ) : null}
+          {!promptPreview.sending && (
+            <div className="mt-3 flex justify-end">
+              <Button size="sm" className="gap-2" type="button" onClick={handlePreviewSend} disabled={isLoading}>
+                <ArrowUp className="h-3.5 w-3.5" />
+                Send prompt
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {menuOpen && (
-        <div className="mt-2 animate-in slide-in-from-top-2 duration-200">
+        <div className="animate-in slide-in-from-top-2 duration-200">
           <SlashPromptMenu
             className="w-full"
             query={query}
             items={items}
             onSelect={insertPrompt}
-            onClose={() => { setMenuOpen(false); setIsTypingSlash(false); }}
+            onClose={() => {
+              setMenuOpen(false);
+              setIsTypingSlash(false);
+            }}
             activeIndex={activeIndex}
             setActiveIndex={setActiveIndex}
             loading={!promptsLoaded}
           />
         </div>
       )}
-
-      {promptPreview?.resources?.length ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {promptPreview.resources.map((resource) => (
-            <ResourceChip
-              key={resource.uri}
-              uri={resource.uri}
-              name={resource.name}
-              onRemove={() => onPromptPreviewResourceRemove(resource.uri)}
-            />
-          ))}
-        </div>
-      ) : null}
 
       <PromptArgDialog
         open={argDialog.open}

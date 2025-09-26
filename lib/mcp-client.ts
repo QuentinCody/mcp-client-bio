@@ -458,7 +458,7 @@ export function transformMCPToolsForResponsesAPI(tools: Record<string, any>): Re
     // To avoid this while still loosening validation for GPT-5 Responses API, wrap in a permissive Zod schema.
     if (!transformedParameters || typeof transformedParameters !== 'object' || !('_def' in transformedParameters)) {
       const originalJSONSchema = transformedParameters;
-      transformedParameters = z.object({}).strict();
+      transformedParameters = z.object({}).passthrough();
       (transformedParameters as any).__originalJSONSchema = originalJSONSchema;
     }
 
