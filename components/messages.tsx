@@ -15,7 +15,7 @@ export const Messages = ({
   endRef: RefObject<HTMLDivElement | null>;
 }) => {
   return (
-    <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-2.5 py-4 sm:px-2">
+    <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-3 px-3 pb-28 pt-6 sm:px-6 lg:px-8">
       <AnimatePresence initial={false}>
         {messages.map((m, i) => {
           const key = m.id ?? `message-${i}`;

@@ -33,6 +33,7 @@ import {
 import { getSlashRuntimeActions, setSlashRuntimeActions } from "@/lib/slash/runtime";
 import { useScrollToBottom } from "@/lib/hooks/use-scroll-to-bottom";
 import { AnimatePresence, motion } from "motion/react";
+import { ChatHeader } from "./chat-header";
 
 // Type for chat data from DB
 interface ChatData {
@@ -193,6 +194,13 @@ export default function Chat() {
   }, [setMessages, setPromptPreview]);
 
   const isChatLoading = status === "streaming" || status === "submitted" || isLoadingChat;
+
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    setPromptPreview(null);
+    setGeneratedChatId(nanoid());
+    router.push("/");
+  }, [router, setMessages, setPromptPreview, setGeneratedChatId]);
 
   const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -458,43 +466,63 @@ export default function Chat() {
   }, [mcpServers, selectedMcpServers]);
 
   return (
-    <div className="relative flex h-full w-full flex-1 flex-col min-h-0">
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col bg-[#f7f7f8] dark:bg-[#0d0d0d]">
       <ToolMetricsPanel />
-      <div 
-        className="flex-1 min-h-0 overflow-y-auto no-scrollbar"
-        ref={containerRef}
-      >
-        {showWelcomeState ? (
-          <div className="flex h-full items-center justify-center px-5 py-8 sm:px-8">
-            <div className="w-full max-w-xl space-y-4 text-center">
-              <h1 className="text-2xl font-semibold text-foreground">Ready to chat</h1>
-              <p className="text-sm text-muted-foreground">
-                {modelInfo
-                  ? `Using ${modelInfo.name} with ${serverStatusCounts.total > 0 ? `${serverStatusCounts.online}/${serverStatusCounts.total}` : "0"} servers active`
-                  : "Configure your model and servers to get started"}
-              </p>
-              {serverStatusCounts.total === 0 && (
-                <div>
-                  <Button
-                    variant="outline"
-                    onClick={openServerManager}
-                    className="gap-2"
-                  >
-                    <ServerIcon className="h-4 w-4" />
-                    Setup MCP Servers
-                  </Button>
+      <div className="flex h-full min-h-0 flex-col">
+        <ChatHeader
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          onNewChat={handleNewChat}
+          onOpenServerManager={openServerManager}
+          serverStatusCounts={serverStatusCounts}
+          status={status as "error" | "submitted" | "streaming" | "ready"}
+        />
+        <div
+          className="relative flex-1 min-h-0 overflow-hidden"
+        >
+          <div
+            className="no-scrollbar h-full min-h-0 overflow-y-auto"
+            ref={containerRef}
+          >
+            {showWelcomeState ? (
+              <div className="flex h-full items-center justify-center px-6 py-12">
+                <div className="w-full max-w-2xl space-y-4 text-center">
+                  <h1 className="text-2xl font-semibold text-[#202123] dark:text-[#f7f7f8]">
+                    Ready to chat
+                  </h1>
+                  <p className="text-sm text-[#5f6368] dark:text-[#9ca3af]">
+                    {modelInfo
+                      ? `Using ${modelInfo.name} with ${
+                          serverStatusCounts.total > 0
+                            ? `${serverStatusCounts.online}/${serverStatusCounts.total}`
+                            : "0"
+                        } servers active`
+                      : "Configure your model and servers to get started"}
+                  </p>
+                  {serverStatusCounts.total === 0 && (
+                    <div className="flex items-center justify-center">
+                      <Button
+                        variant="outline"
+                        onClick={openServerManager}
+                        className="gap-2 border-[#d4d4d4] bg-white text-[#202123] hover:bg-[#f2f2f2] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f7f7f8] dark:hover:bg-[#1f1f1f]"
+                      >
+                        <ServerIcon className="h-4 w-4" />
+                        Setup MCP Servers
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <Messages
+                messages={displayMessages}
+                isLoading={isChatLoading}
+                status={status as "error" | "submitted" | "streaming" | "ready"}
+                endRef={endRef}
+              />
+            )}
           </div>
-        ) : (
-          <Messages
-            messages={displayMessages}
-            isLoading={isChatLoading}
-            status={status as "error" | "submitted" | "streaming" | "ready"}
-            endRef={endRef}
-          />
-        )}
+        </div>
       </div>
       <AnimatePresence>
         {!isPinned && (
@@ -513,9 +541,9 @@ export default function Chat() {
           </motion.button>
         )}
       </AnimatePresence>
-      <div className="w-full bg-background/95 p-3 sm:p-4">
+      <div className="shrink-0 border-t border-[#e3e3e3] bg-white/95 px-4 py-5 shadow-[0_-8px_24px_rgba(15,15,15,0.05)] dark:border-[#1f1f1f] dark:bg-[#090909]/95">
         <div className="mx-auto w-full max-w-4xl">
-          <form onSubmit={handleFormSubmit}>
+          <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
             <Textarea
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
@@ -529,7 +557,7 @@ export default function Chat() {
               promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isChatLoading } : null}
               onPromptPreviewCancel={cancelPromptPreview}
               onPromptPreviewResourceRemove={removePromptResource}
-              showModelPicker={true}
+              showModelPicker={false}
               modelPickerVariant="inline"
             />
           </form>

@@ -641,8 +641,9 @@ export const MCPServerManager = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-hidden flex flex-col bg-white text-[#1f2937] dark:bg-[#0f0f10] dark:text-[#f5f5f5] p-0">
+        <div className="flex h-full flex-col overflow-hidden">
+        <DialogHeader className="space-y-2 px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center gap-2">
             <ServerIcon className="h-5 w-5 text-primary" />
             MCP Server Configuration
@@ -660,9 +661,9 @@ export const MCPServerManager = ({
         </DialogHeader>
 
         {view === "list" ? (
-          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-hidden flex flex-col px-6 pb-6">
             {/* Server Overview Stats */}
-            <div className="mb-6 p-4 rounded-xl border border-border/60 bg-gradient-to-br from-primary/8 via-background/80 to-background/60">
+            <div className="mb-6 rounded-xl border border-border bg-muted p-4 shadow-sm">
               <div className="flex items-center gap-2 mb-3">
                 <Activity className="h-4 w-4 text-primary" />
                 <h3 className="text-sm font-semibold">Server Overview</h3>
@@ -723,7 +724,7 @@ export const MCPServerManager = ({
                       </span>
                     </div>
                   </div>
-                  <div className="overflow-y-auto pr-1 flex-1 gap-2.5 flex flex-col pb-16">
+                  <div className="flex-1 overflow-y-auto space-y-3 rounded-xl border border-border bg-card px-5 pb-6 pt-4 shadow-sm">
                     {servers
                       .sort((a, b) => {
                         const aActive = selectedServers.includes(a.id);
@@ -904,7 +905,7 @@ export const MCPServerManager = ({
                 </div>
               </div>
             ) : (
-              <div className="flex-1 py-8 pb-16 flex flex-col items-center justify-center space-y-4">
+              <div className="flex-1 py-10 flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-border bg-card text-foreground shadow-sm">
                 <div className="rounded-full p-3 bg-primary/10">
                   <ServerIcon className="h-7 w-7 text-primary" />
                 </div>
@@ -931,7 +932,7 @@ export const MCPServerManager = ({
             )}
           </div>
         ) : (
-          <div className="space-y-4 overflow-y-auto px-1 py-0.5 mb-14 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="space-y-4 overflow-y-auto px-4 py-1 mb-6 rounded-2xl border border-border bg-card [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-sm">
             <h3 className="text-sm font-medium">
               {editingServerId ? "Edit MCP Server" : "Add New MCP Server"}
             </h3>
@@ -1385,6 +1386,7 @@ export const MCPServerManager = ({
             </>
           )}
         </div>
+      </div>
       </DialogContent>
     </Dialog>
   );
