@@ -27,6 +27,9 @@ import {
   AlertTriangle,
   RefreshCw,
   Power,
+  BarChart3,
+  Activity,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -658,14 +661,67 @@ export const MCPServerManager = ({
 
         {view === "list" ? (
           <div className="flex-1 overflow-hidden flex flex-col">
+            {/* Server Overview Stats */}
+            <div className="mb-6 p-4 rounded-xl border border-border/60 bg-gradient-to-br from-primary/8 via-background/80 to-background/60">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Server Overview</h3>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-foreground">
+                    {servers.filter(s => selectedServers.includes(s.id) && s.status === "connected").length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Active</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-foreground">
+                    {servers.filter(s => selectedServers.includes(s.id)).flatMap(s => s.tools || []).length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Tools</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-semibold text-foreground">
+                    {servers.filter(s => s.status === "error").length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Issues</div>
+                </div>
+              </div>
+              {selectedServers.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/40">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Zap className="h-3 w-3" />
+                    <span>
+                      {selectedServers.length} server{selectedServers.length !== 1 ? 's' : ''} enabled for chat
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {servers.length > 0 ? (
               <div className="flex-1 overflow-hidden flex flex-col">
                 <div className="flex-1 overflow-hidden flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium">Available Servers</h3>
-                    <span className="text-xs text-muted-foreground">
-                      Select multiple servers to combine their tools
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (typeof window !== "undefined") {
+                            window.dispatchEvent(new CustomEvent("tool-metrics:toggle"));
+                          }
+                        }}
+                        className="gap-1.5 h-7 text-xs"
+                      >
+                        <BarChart3 className="h-3 w-3" />
+                        Metrics
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        Select multiple servers to combine tools
+                      </span>
+                    </div>
                   </div>
                   <div className="overflow-y-auto pr-1 flex-1 gap-2.5 flex flex-col pb-16">
                     {servers

@@ -1,11 +1,10 @@
 "use client";
 
-import { defaultModel, type modelID } from "@/ai/providers";
+import { defaultModel, modelDetails, type modelID } from "@/ai/providers";
 import { Message, useChat } from "@ai-sdk/react";
 import type { UIMessage } from 'ai';
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Textarea } from "./textarea";
-import { ProjectOverview } from "./project-overview";
 import { Messages } from "./messages";
 import { toast } from "sonner";
 import { showRateLimitToast } from "@/lib/rate-limit-toast";
@@ -17,7 +16,8 @@ import { convertToUIMessages } from "@/lib/chat-store";
 import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { ToolMetricsPanel } from "./tool-metrics";
-import { ChatSessionToolbar } from "./chat-session-toolbar";
+import { Button } from "./ui/button";
+import { ServerIcon, ArrowDown } from "lucide-react";
 import { useMCP } from "@/lib/context/mcp-context";
 import type { SlashCommandMeta } from "@/lib/slash/types";
 import { slashRegistry } from "@/lib/slash";
@@ -31,7 +31,8 @@ import {
   type ResolvedPromptEntry,
 } from "@/lib/mcp/prompts/resolve";
 import { getSlashRuntimeActions, setSlashRuntimeActions } from "@/lib/slash/runtime";
-import { isServerLocked } from "@/lib/utils";
+import { useScrollToBottom } from "@/lib/hooks/use-scroll-to-bottom";
+import { AnimatePresence, motion } from "motion/react";
 
 // Type for chat data from DB
 interface ChatData {
@@ -50,7 +51,7 @@ export default function Chat() {
   const [selectedModel, setSelectedModel] = useLocalStorage<modelID>("selectedModel", defaultModel);
   const [userId, setUserId] = useState<string>('');
   const [generatedChatId, setGeneratedChatId] = useState<string>('');
-  const [promptPreview, setPromptPreview] = useState<{
+  const [promptPreview, setPromptPreview] = useState<{ 
     def: SlashPromptDef;
     args: Record<string, string>;
     entry: ResolvedPromptEntry;
@@ -59,27 +60,18 @@ export default function Chat() {
     rawMessages: PromptMessage[];
   } | null>(null);
   
-  // Get MCP server data from context
-  const {
-    mcpServersForApi,
-    mcpServers,
-    selectedMcpServers,
-    setSelectedMcpServers,
-  } = useMCP();
+  const { mcpServersForApi, mcpServers, selectedMcpServers } = useMCP();
   
-  // Initialize userId
   useEffect(() => {
     setUserId(getUserId());
   }, []);
   
-  // Generate a chat ID if needed
   useEffect(() => {
     if (!chatId) {
       setGeneratedChatId(nanoid());
     }
   }, [chatId]);
   
-  // Use React Query to fetch chat history
   const { data: chatData, isLoading: isLoadingChat, error } = useQuery({
     queryKey: ['chat', chatId, userId] as const,
     queryFn: async ({ queryKey }) => {
@@ -93,7 +85,6 @@ export default function Chat() {
       });
       
       if (!response.ok) {
-        // For 404, return empty chat data instead of throwing
         if (response.status === 404) {
           return { id: chatId, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         }
@@ -104,11 +95,10 @@ export default function Chat() {
     },
     enabled: !!chatId && !!userId,
     retry: 1,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false
   });
   
-  // Handle query errors
   useEffect(() => {
     if (error) {
       console.error('Error loading chat history:', error);
@@ -116,85 +106,68 @@ export default function Chat() {
     }
   }, [error]);
   
-  // Prepare initial messages from query data
   const initialMessages = useMemo(() => {
     if (!chatData || !chatData.messages || chatData.messages.length === 0) {
       return [];
     }
     
-    // Convert DB messages to UI format, then ensure it matches the Message type from @ai-sdk/react
     const uiMessages = convertToUIMessages(chatData.messages);
     return uiMessages.map(msg => ({
       id: msg.id,
-      role: msg.role as Message['role'], // Ensure role is properly typed
+      role: msg.role as Message['role'],
       content: msg.content,
       parts: msg.parts,
     } as Message));
   }, [chatData]);
   
-  const { messages, input, handleInputChange, handleSubmit, status, stop, setMessages } =
+  const { messages, input, handleInputChange, handleSubmit, status, stop, setMessages } = 
     useChat({
-      id: chatId || generatedChatId, // Use generated ID if no chatId in URL
+      api: '/api/chat',
+      id: chatId || generatedChatId,
       initialMessages,
-      maxSteps: 20,
       headers: {
         'x-model-id': selectedModel,
       },
       body: {
         selectedModel,
-        // Fallback: if no servers are selected, include all configured servers for this request
-        mcpServers: (mcpServersForApi && (mcpServersForApi as any).length > 0)
-          ? mcpServersForApi
-          : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers })),
-        chatId: chatId || generatedChatId, // Use generated ID if no chatId in URL
+        mcpServers: mcpServersForApi,
+        chatId: chatId || generatedChatId,
         userId,
         promptContext: promptPreview?.context,
       },
-      experimental_prepareRequestBody: ({ id, messages, requestData, requestBody }) => {
-        const fromData = (requestData as any) || {};
-        const servers = (mcpServersForApi as any)?.length > 0
-          ? mcpServersForApi
-          : (mcpServers as any[] || []).map((s: any) => ({ type: s.type, url: s.url, headers: s.headers }));
-        try { console.log('[CHAT] prepare body servers len=', (servers as any)?.length || 0); } catch {}
-        return {
-          id,
-          messages,
-          ...(requestBody as any),
-          ...(fromData || {}),
-          mcpServers: servers,
-          promptContext: promptPreview?.context,
-        };
-      },
-      experimental_throttle: 16, // ~60fps for smoother streaming
       onFinish: () => {
-        // Invalidate the chats query to refresh the sidebar
+        setPromptPreview(null);
         if (userId) {
           queryClient.invalidateQueries({ queryKey: ['chats', userId] });
         }
+        setTimeout(() => {
+          const textarea = document.querySelector<HTMLTextAreaElement>(
+            'textarea[data-command-target="chat-input"]'
+          );
+          textarea?.focus();
+        }, 100);
       },
       onError: (error) => {
         const errorMessage = error.message.length > 0
           ? error.message
           : "An error occurred, please try again later.";
-        
-        // Check if this is a rate limit error and show enhanced notification
         if (/rate limit/i.test(errorMessage)) {
           showRateLimitToast(errorMessage, () => {
-            // Retry the last message by re-submitting the form
             if (input.trim()) {
-              handleSubmit(new Event('submit') as any);
+              handleSubmit();
             }
           });
         } else {
-          toast.error(errorMessage, { 
-            position: "top-center", 
-            richColors: true 
+          toast.error(errorMessage, {
+            position: "top-center",
+            richColors: true
           });
         }
       },
     });
 
   const messagesRef = useRef<Message[]>(messages);
+  const [containerRef, endRef, isPinned, scrollToBottom] = useScrollToBottom();
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -219,19 +192,19 @@ export default function Chat() {
     };
   }, [setMessages, setPromptPreview]);
 
-  // Custom submit handler
+  const isChatLoading = status === "streaming" || status === "submitted" || isLoadingChat;
+
   const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('[CHAT] Submit with model=', selectedModel, 'serversForApiLen=', (mcpServersForApi as any)?.length || 0, 'serversLen=', (mcpServers as any)?.length || 0);
-
-    if (!chatId && generatedChatId && input.trim()) {
+    if (!input.trim() || isChatLoading) return;
+    if (!chatId && generatedChatId) {
       const effectiveChatId = generatedChatId;
       handleSubmit(e);
       router.push(`/chat/${effectiveChatId}`);
     } else {
       handleSubmit(e);
     }
-  }, [chatId, generatedChatId, input, handleSubmit, router, mcpServersForApi, mcpServers, selectedModel]);
+  }, [chatId, generatedChatId, input, handleSubmit, router, isChatLoading]);
 
   const runSlashCommand = useCallback(async (
     command: SlashCommandMeta,
@@ -350,7 +323,7 @@ export default function Chat() {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === failedId
-              ? { ...msg, content: `Error: ${errorText}` }
+              ? { ...msg, content: `Error: ${errorText}` } 
               : msg
           )
         );
@@ -363,8 +336,6 @@ export default function Chat() {
       controller.abort();
     }
   }, [setMessages]);
-
-  const isLoading = status === "streaming" || status === "submitted" || isLoadingChat;
 
   const handlePromptResolved = useCallback((payload: {
     def: SlashPromptDef;
@@ -431,34 +402,10 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    if (promptPreview && (status === "submitted" || status === "streaming")) {
+    if (promptPreview && status === "streaming") {
       setPromptPreview(null);
     }
   }, [promptPreview, status]);
-
-  const toggleServerSelection = useCallback(
-    (serverId: string) => {
-      if (isServerLocked()) {
-        toast.info("MCP servers are locked in this environment.");
-        return;
-      }
-
-      const server = mcpServers.find((entry) => entry.id === serverId);
-      setSelectedMcpServers((prev) => {
-        const isSelected = prev.includes(serverId);
-        const next = isSelected
-          ? prev.filter((id) => id !== serverId)
-          : [...prev, serverId];
-        if (server) {
-          toast.success(
-            `${isSelected ? "Disabled" : "Enabled"} ${server.name} for this chat`
-          );
-        }
-        return next;
-      });
-    },
-    [mcpServers, setSelectedMcpServers]
-  );
 
   const openServerManager = useCallback(() => {
     const actions = getSlashRuntimeActions();
@@ -469,12 +416,6 @@ export default function Chat() {
     toast.info("Open the sidebar to manage MCP servers.");
   }, []);
 
-  const handleToggleMetrics = useCallback(() => {
-    if (typeof window === "undefined") return;
-    window.dispatchEvent(new CustomEvent("tool-metrics:toggle"));
-  }, []);
-
-  // Ensure messages always have parts so the renderer displays user messages
   const displayMessages: UIMessage[] = useMemo(() => {
     return messages.map((m) => {
       if (m.parts && m.parts.length > 0) return m;
@@ -491,59 +432,105 @@ export default function Chat() {
   }, [messages]);
 
   const showWelcomeState = messages.length === 0 && !isLoadingChat;
+  const modelInfo = useMemo(() => modelDetails[selectedModel], [selectedModel]);
+  const serverStatusCounts = useMemo(() => {
+    const counts = {
+      total: selectedMcpServers.length,
+      online: 0,
+      connecting: 0,
+      error: 0,
+    };
+    if (!Array.isArray(mcpServers) || mcpServers.length === 0) {
+      return counts;
+    }
+    selectedMcpServers.forEach((serverId) => {
+      const server = mcpServers.find((entry) => entry.id === serverId);
+      if (!server) return;
+      if (server.status === "connected") {
+        counts.online += 1;
+      } else if (server.status === "connecting") {
+        counts.connecting += 1;
+      } else if (server.status === "error") {
+        counts.error += 1;
+      }
+    });
+    return counts;
+  }, [mcpServers, selectedMcpServers]);
 
   return (
-    <div className="relative flex h-dvh w-full">
-      <div className="flex h-full w-full max-w-5xl flex-col gap-5 px-4 py-6 sm:px-8">
-        <ToolMetricsPanel />
-        <ChatSessionToolbar
-          selectedModel={selectedModel}
-          onModelChange={setSelectedModel}
-          servers={mcpServers}
-          selectedServerIds={selectedMcpServers}
-          onToggleServer={toggleServerSelection}
-          onOpenServers={openServerManager}
-          onToggleMetrics={handleToggleMetrics}
-        />
-        <div className="flex-1 min-h-0 flex flex-col gap-4">
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {showWelcomeState ? (
-              <div className="h-full overflow-y-auto pr-1">
-                <ProjectOverview
-                  selectedModel={selectedModel}
-                  servers={mcpServers}
-                  activeServerIds={selectedMcpServers}
-                  onOpenServers={openServerManager}
-                  onToggleServer={toggleServerSelection}
-                  onToggleMetrics={handleToggleMetrics}
-                />
-              </div>
-            ) : (
-              <Messages
-                messages={displayMessages}
-                isLoading={isLoading}
-                status={status as "error" | "submitted" | "streaming" | "ready"}
-              />
-            )}
+    <div className="relative flex h-full w-full flex-1 flex-col min-h-0">
+      <ToolMetricsPanel />
+      <div 
+        className="flex-1 min-h-0 overflow-y-auto no-scrollbar"
+        ref={containerRef}
+      >
+        {showWelcomeState ? (
+          <div className="flex h-full items-center justify-center px-5 py-8 sm:px-8">
+            <div className="w-full max-w-xl space-y-4 text-center">
+              <h1 className="text-2xl font-semibold text-foreground">Ready to chat</h1>
+              <p className="text-sm text-muted-foreground">
+                {modelInfo
+                  ? `Using ${modelInfo.name} with ${serverStatusCounts.total > 0 ? `${serverStatusCounts.online}/${serverStatusCounts.total}` : "0"} servers active`
+                  : "Configure your model and servers to get started"}
+              </p>
+              {serverStatusCounts.total === 0 && (
+                <div>
+                  <Button
+                    variant="outline"
+                    onClick={openServerManager}
+                    className="gap-2"
+                  >
+                    <ServerIcon className="h-4 w-4" />
+                    Setup MCP Servers
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
-          <form
-            onSubmit={handleFormSubmit}
-            className="mx-auto w-full max-w-3xl"
+        ) : (
+          <Messages
+            messages={displayMessages}
+            isLoading={isChatLoading}
+            status={status as "error" | "submitted" | "streaming" | "ready"}
+            endRef={endRef}
+          />
+        )}
+      </div>
+      <AnimatePresence>
+        {!isPinned && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => scrollToBottom("smooth")}
+            className="group absolute bottom-24 right-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/95 px-3 py-2 text-xs font-medium text-foreground shadow-lg backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-xl"
+            aria-label="Scroll to bottom to follow conversation"
           >
+            <ArrowDown className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+            {status === "streaming" ? "Follow stream" : "Resume live view"}
+          </motion.button>
+        )}
+      </AnimatePresence>
+      <div className="w-full bg-background/95 p-3 sm:p-4">
+        <div className="mx-auto w-full max-w-4xl">
+          <form onSubmit={handleFormSubmit}>
             <Textarea
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
               handleInputChange={handleInputChange}
               input={input}
-              isLoading={isLoading}
+              isLoading={isChatLoading}
               status={status}
               stop={stop}
               onRunCommand={runSlashCommand}
               onPromptResolved={handlePromptResolved}
-              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isLoading } : null}
+              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isChatLoading } : null}
               onPromptPreviewCancel={cancelPromptPreview}
               onPromptPreviewResourceRemove={removePromptResource}
-              showModelPicker={false}
+              showModelPicker={true}
+              modelPickerVariant="inline"
             />
           </form>
         </div>

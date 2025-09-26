@@ -1,5 +1,5 @@
 import { model, type modelID } from "@/ai/providers";
-import { smoothStream, streamText, type UIMessage } from "ai";
+import { streamText, type UIMessage, smoothStream } from "ai";
 import { appendResponseMessages } from 'ai';
 import { saveChat, saveMessages, convertToDBMessages } from '@/lib/chat-store';
 import { nanoid } from 'nanoid';
@@ -126,8 +126,9 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
     Today's date is ${new Date().toISOString().split('T')[0]}.
 
-    The tools are very powerful, and you can use them to answer the user's question.
-    So choose the tool that is most relevant to the user's question.
+    IMPORTANT: You MUST use the available tools to answer user questions. The tools are very powerful and provide access to scientific databases and research data. Always prioritize using tools over providing general responses.
+
+    Choose the tool that is most relevant to the user's question and USE IT.
 
     If tools are not available, say you don't know or if the user wants a tool they can add one from the server icon in bottom left corner in the sidebar.
 
@@ -204,9 +205,9 @@ Response format: Markdown supported. Use tools to answer questions.`;
               const textResult = typeof part.toolInvocation.result === 'string'
                 ? part.toolInvocation.result
                 : JSON.stringify(part.toolInvocation.result);
-              // Include a truncated preview (max 140 chars)
-              summary += ': ' + textResult.slice(0, 140).replace(/\s+/g, ' ');
-              if (textResult.length > 140) summary += '…';
+              // Include a preview of tool results (max 1000 chars for better context)
+              summary += ': ' + textResult.slice(0, 1000).replace(/\s+/g, ' ');
+              if (textResult.length > 1000) summary += '…';
             }
           newParts.push({ type: 'text', text: summary });
           continue;
@@ -214,8 +215,8 @@ Response format: Markdown supported. Use tools to answer questions.`;
         if (part.type === 'text') {
           // Optionally compress long past text
           const text: string = part.text || '';
-          if (text.length > 1200) {
-            newParts.push({ type: 'text', text: text.slice(0, 600) + ' …(truncated older content)… ' + text.slice(-200) });
+          if (text.length > 3000) {
+            newParts.push({ type: 'text', text: text.slice(0, 1500) + ' …(truncated older content)… ' + text.slice(-500) });
           } else {
             newParts.push(part);
           }
@@ -302,9 +303,10 @@ Response format: Markdown supported. Use tools to answer questions.`;
     system: systemPrompt, // must remain a string for AI SDK
     messages: truncatedMessages,
     tools: toolsWithCache,
-    maxSteps: isComplexQuery ? 20 : 10, // Reduce steps for simple queries
+    toolChoice: 'auto', // Force tool calling for debugging
+    maxSteps: 20, // Allow multiple tool calling steps
     temperature: 1, // Use temperature: 1 for all models
-    maxOutputTokens: isComplexQuery ? 4000 : 2000, // Standard token limits for all models
+    // No maxOutputTokens - allow unlimited output length
   };
 
   // Helper function to create fallback tools with permissive schema
@@ -325,7 +327,15 @@ Response format: Markdown supported. Use tools to answer questions.`;
   // Helper function to attempt streamText with retry on schema errors
   const attemptStreamText = async (config: any, retryOnSchemaError = true) => {
     try {
+      console.log('[API /chat] Calling streamText with config:', {
+        model: config.model?.modelId || 'unknown',
+        toolCount: config.tools ? Object.keys(config.tools).length : 0,
+        hasMessages: !!config.messages,
+        messageCount: config.messages?.length || 0
+      });
+
       const result = await streamText(config);
+      console.log('[API /chat] streamText returned successfully');
       return result;
     } catch (error: any) {
       console.error("StreamText error:", error);
@@ -353,6 +363,13 @@ Response format: Markdown supported. Use tools to answer questions.`;
   };
 
   console.log('[API /chat] tools count=', tools ? Object.keys(tools).length : 0, 'model=', effectiveModel);
+
+  // Debug: Log a sample tool to check schema structure
+  if (tools && typeof tools === 'object' && !Array.isArray(tools) && Object.keys(tools).length > 0) {
+    const firstToolName = Object.keys(tools)[0];
+    const firstTool = (tools as Record<string, any>)[firstToolName];
+    console.log('[API /chat] Sample tool schema:', firstToolName, ':', JSON.stringify(firstTool, null, 2));
+  }
   const result = await attemptStreamText({
     ...baseConfig,
     // Prepend prompt-injected messages (if any) to the current context
@@ -374,15 +391,19 @@ Response format: Markdown supported. Use tools to answer questions.`;
         }
       }
     },
-    experimental_transform: smoothStream({
-      delayInMs: 0, // Send tokens as fast as possible
-      chunking: 'word', // Stream individual words for responsiveness
-    }),
+    experimental_transform: smoothStream(),
+    // Removed experimental_transform to prevent streaming issues with tool calling
+    onToolError: (error: any) => {
+      console.warn('[API /chat] Tool error:', error);
+      // Return a helpful error message that encourages the LLM to continue
+      return `Tool call failed: ${error.message || 'Unknown error'}. Please try a different approach or continue with alternative methods.`;
+    },
     onError: (error: any) => {
-      console.error(JSON.stringify(error, null, 2));
+      console.error('[API /chat] Stream error:', JSON.stringify(error, null, 2));
     },
     async onFinish({ response }: { response: any }) {
-      responseCompleted = true;
+      // Don't set responseCompleted here - this fires after each tool call step
+      // responseCompleted = true;
       try {
         const outMsgs = (response as any)?.messages || [];
         let toolParts = 0;
@@ -430,7 +451,7 @@ Response format: Markdown supported. Use tools to answer questions.`;
   // Add chat ID to response headers so client can know which chat was created
   try {
     // Stream response optimized for speed
-    return result.toDataStreamResponse({
+    const streamResponse = result.toDataStreamResponse({
       sendReasoning: true,
       headers: {
         'X-Chat-ID': id,
@@ -547,6 +568,10 @@ Response format: Markdown supported. Use tools to answer questions.`;
         return "An error occurred.";
       },
     });
+
+    // Mark response as completed and return the stream
+    responseCompleted = true;
+    return streamResponse;
   } catch (responseError: any) {
     console.error("Error creating data stream response:", responseError);
     

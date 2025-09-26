@@ -1,81 +1,128 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+
+type ScrollBehaviorOption = "auto" | "smooth" | "instant";
+
+type ScrollContainerRef = RefObject<HTMLDivElement | null>;
+
+const PIN_THRESHOLD_PX = 80;
 
 export function useScrollToBottom(): [
-  RefObject<HTMLDivElement>,
-  RefObject<HTMLDivElement>
+  ScrollContainerRef,
+  ScrollContainerRef,
+  boolean,
+  (behavior?: ScrollBehaviorOption) => void
 ] {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  const isUserScrollingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const [isPinned, setIsPinned] = useState(true);
+
+  const isProgrammaticRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+
+  const setPinnedState = useCallback((value: boolean) => {
+    isAtBottomRef.current = value;
+    setIsPinned((prev) => (prev === value ? prev : value));
+  }, []);
+
+  const scrollToBottom = useCallback(
+    (behavior: ScrollBehaviorOption = "smooth") => {
+      const container = containerRef.current;
+      const sentinel = endRef.current;
+      if (!container || !sentinel) return;
+
+      isProgrammaticRef.current = true;
+
+      if (behavior === "instant") {
+        container.scrollTop = container.scrollHeight - container.clientHeight;
+      } else {
+        sentinel.scrollIntoView({ behavior, block: "end" });
+      }
+
+      requestAnimationFrame(() => {
+        isProgrammaticRef.current = false;
+        setPinnedState(true);
+      });
+    },
+    [setPinnedState]
+  );
+
+  const evaluatePinned = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distance = scrollHeight - scrollTop - clientHeight;
+    setPinnedState(distance <= PIN_THRESHOLD_PX);
+  }, [setPinnedState]);
 
   useEffect(() => {
     const container = containerRef.current;
-    const end = endRef.current;
+    const sentinel = endRef.current;
+    if (!container || !sentinel) return;
 
-    if (!container || !end) return;
+    const initial = window.setTimeout(() => {
+      scrollToBottom("instant");
+    }, 80);
 
-    // Initial scroll to bottom
-    setTimeout(() => {
-      end.scrollIntoView({ behavior: "instant", block: "end" });
-    }, 100);
-
-    // Track if user has manually scrolled up
     const handleScroll = () => {
-      if (!container) return;
-
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-
-      // If user is scrolled up, mark as manually scrolling
-      isUserScrollingRef.current = distanceFromBottom > 100;
+      if (isProgrammaticRef.current) return;
+      evaluatePinned();
     };
 
-    // Handle mutations
-    const observer = new MutationObserver((mutations) => {
-      if (!container || !end) return;
+    container.addEventListener("scroll", handleScroll, { passive: true });
 
-      // Check if mutation is related to expand/collapse
-      const isToggleSection = mutations.some((mutation) => {
-        // Check if the target or parent is a motion-div (expanded content)
-        let target = mutation.target as HTMLElement;
-        let isExpand = false;
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        setPinnedState(entry.isIntersecting ?? false);
+      },
+      { root: container, threshold: 1 }
+    );
 
-        while (target && target !== container) {
-          if (target.classList?.contains("motion-div")) {
-            isExpand = true;
-            break;
-          }
-          target = target.parentElement as HTMLElement;
-        }
-        return isExpand;
+    intersectionObserver.observe(sentinel);
+
+    const mutationObserver = new MutationObserver((mutations) => {
+      if (!isAtBottomRef.current || isProgrammaticRef.current) return;
+
+      const hasContentChange = mutations.some(
+        (mutation) => mutation.type === "childList" || mutation.type === "characterData"
+      );
+
+      if (!hasContentChange) return;
+
+      requestAnimationFrame(() => {
+        scrollToBottom("smooth");
       });
-
-      // Don't scroll for expand/collapse actions
-      if (isToggleSection) return;
-
-      // Only auto-scroll if user hasn't manually scrolled up
-      if (!isUserScrollingRef.current) {
-        // For new messages, use smooth scrolling
-        end.scrollIntoView({ behavior: "smooth", block: "end" });
-      }
     });
 
-    observer.observe(container, {
+    mutationObserver.observe(container, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
 
-    // Add scroll event listener
-    container.addEventListener("scroll", handleScroll);
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        if (!isAtBottomRef.current || isProgrammaticRef.current) return;
+        scrollToBottom("auto");
+      });
+
+      resizeObserver.observe(container);
+    }
 
     return () => {
-      observer.disconnect();
+      window.clearTimeout(initial);
       container.removeEventListener("scroll", handleScroll);
+      intersectionObserver.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver?.disconnect();
     };
-  }, []);
+  }, [evaluatePinned, scrollToBottom, setPinnedState]);
 
-  return [containerRef, endRef] as [
-    RefObject<HTMLDivElement>,
-    RefObject<HTMLDivElement>
-  ];
+  useEffect(() => {
+    evaluatePinned();
+  }, [evaluatePinned]);
+
+  return [containerRef, endRef, isPinned, scrollToBottom];
 }
