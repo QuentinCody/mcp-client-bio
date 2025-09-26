@@ -43,14 +43,14 @@ export function ReasoningMessagePart({
   }, [isReasoning, memoizedSetIsExpanded]);
 
   return (
-    <div className="flex flex-col mb-2 group">
+    <div className="mb-2 flex flex-col group">
       {isReasoning ? (
         <div className="space-y-2">
           <div
             className={cn(
-              "flex items-center gap-2.5 rounded-full py-1.5 px-3",
-              "bg-indigo-50/50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-300",
-              "border border-indigo-200/50 dark:border-indigo-700/20 w-fit"
+              "flex items-center gap-2.5 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-3 py-1.5 text-[#1d4ed8]",
+              "dark:border-[#1e3a8a] dark:bg-[#1e3a8a]/30 dark:text-[#bfdbfe]",
+              "w-fit"
             )}
           >
             <div className="animate-spin h-3.5 w-3.5">
@@ -62,24 +62,23 @@ export function ReasoningMessagePart({
           {part.details && part.details.length > 0 && (
             <div
               className={cn(
-                "text-sm text-muted-foreground flex flex-col gap-2",
-                "pl-3.5 ml-0.5",
-                "border-l border-amber-200/50 dark:border-amber-700/30"
+                "ml-0.5 flex flex-col gap-2 border-l-2 border-[#fde68a] pl-3",
+                "text-sm text-[#6b7280] dark:text-[#d1d5db]"
               )}
             >
-              <div className="text-xs text-muted-foreground/70 pl-1 font-medium">
+              <div className="pl-1 text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
                 The assistant&apos;s thought process:
               </div>
               {part.details.map((detail, detailIndex) =>
                 detail.type === "text" ? (
                   <div
                     key={detailIndex}
-                    className="px-2 py-1.5 bg-muted/10 rounded-md border border-border/30"
+                    className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-2 py-1.5 text-sm text-[#374151] dark:border-[#303030] dark:bg-[#1c1c1c] dark:text-[#d1d5db]"
                   >
                     <div className="relative">
                       <Markdown>{detail.text}</Markdown>
                       {detailIndex === part.details.length - 1 && (
-                        <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1 align-text-bottom" />
+                        <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
                       )}
                     </div>
                   </div>
@@ -94,24 +93,21 @@ export function ReasoningMessagePart({
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className={cn(
-            "flex items-center justify-between w-full",
-            "rounded-md py-2 px-3 mb-0.5",
-            "bg-muted/50 border border-border/60 hover:border-border/80",
-            "transition-all duration-150 cursor-pointer",
-            isExpanded ? "bg-muted border-primary/20" : ""
+            "mb-0.5 flex w-full items-center justify-between rounded-xl border border-[#d4d4d4] bg-[#f5f5f5] px-3 py-2 text-left",
+            "transition-all duration-150 hover:bg-[#ededee] dark:border-[#2b2b2b] dark:bg-[#1c1c1c] dark:hover:bg-[#232323]",
+            isExpanded ? "shadow-inner" : ""
           )}
         >
           <div className="flex items-center gap-2.5">
             <div
               className={cn(
-                "flex items-center justify-center w-6 h-6 rounded-full",
-                "bg-amber-50 dark:bg-amber-900/20",
-                "text-amber-600 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-700/30"
+                "flex h-6 w-6 items-center justify-center rounded-full",
+                "bg-[#fde68a] text-[#92400e] dark:bg-[#92400e]/30 dark:text-[#fcd34d]"
               )}
             >
               <LightbulbIcon className="h-3.5 w-3.5" />
             </div>
-            <div className="text-sm font-medium text-foreground flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-[#1f2937] dark:text-[#f5f5f5]">
               Reasoning
               <span className="text-xs text-muted-foreground font-normal">
                 (click to {isExpanded ? "hide" : "view"})
@@ -120,11 +116,7 @@ export function ReasoningMessagePart({
           </div>
           <div
             className={cn(
-              "flex items-center justify-center",
-              "rounded-full p-0.5 w-5 h-5",
-              "text-muted-foreground hover:text-foreground",
-              "bg-background/80 border border-border/50",
-              "transition-colors"
+              "flex h-6 w-6 items-center justify-center rounded-full border border-transparent bg-white text-[#6b7280] transition-colors hover:text-[#1f2937] dark:bg-[#1f1f1f] dark:text-[#9ca3af] dark:hover:text-[#f5f5f5]"
             )}
           >
             {isExpanded ? (
@@ -136,28 +128,27 @@ export function ReasoningMessagePart({
         </button>
       )}
 
-  {/* Show expandable block only after reasoning (streaming) phase ends to avoid duplication */}
-  {!isReasoning && isExpanded && (
+      {/* Show expandable block only after reasoning (streaming) phase ends to avoid duplication */}
+      {!isReasoning && isExpanded && (
         <div
           className={cn(
-            "text-sm text-muted-foreground flex flex-col gap-2",
-            "pl-3.5 ml-0.5 mt-1",
-            "border-l border-amber-200/50 dark:border-amber-700/30"
+            "mt-2 ml-0.5 flex flex-col gap-2 border-l-2 border-[#fde68a] pl-3",
+            "text-sm text-[#6b7280] dark:text-[#d1d5db]"
           )}
         >
-          <div className="text-xs text-muted-foreground/70 pl-1 font-medium">
+          <div className="pl-1 text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
             The assistant&apos;s thought process:
           </div>
           {part.details.map((detail, detailIndex) =>
             detail.type === "text" ? (
               <div
                 key={detailIndex}
-                className="px-2 py-1.5 bg-muted/10 rounded-md border border-border/30"
+                className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-2 py-1.5 text-sm text-[#374151] dark:border-[#303030] dark:bg-[#1c1c1c] dark:text-[#d1d5db]"
               >
                 <div className="relative">
                   <Markdown>{detail.text}</Markdown>
                   {isReasoning && detailIndex === part.details.length - 1 && (
-                    <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1 align-text-bottom" />
+                    <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
                   )}
                 </div>
               </div>
@@ -209,80 +200,89 @@ const PurePreviewMessage = ({
     : null;
 
   const bubbleClassName = cn(
-    "relative rounded-[22px] border px-5 py-4 shadow-sm backdrop-blur-sm transition-colors",
+    "relative max-w-[90%] rounded-xl border px-5 py-4 shadow-sm transition-colors",
     isUser
-      ? "border-primary/35 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/5 text-primary-foreground"
-      : "border-border/60 bg-gradient-to-br from-background/98 via-background/95 to-background/90 text-foreground"
+      ? "border-[#d4d4d4] bg-[#f4f4f5] text-[#1f2933] dark:border-[#2b2b2b] dark:bg-[#1c1c1c] dark:text-[#f3f4f6]"
+      : "border-[#e3e3e3] bg-white text-[#1b1b1f] dark:border-[#252525] dark:bg-[#141414] dark:text-[#f7f7f8]"
   );
 
   const headerClassName = cn(
-    "flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80",
+    "flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#707070] dark:text-[#9f9f9f]",
     isUser ? "justify-end" : "justify-start"
   );
 
-  const copyAlignmentClass = cn(
-    "mt-3 flex",
-    isUser ? "justify-end" : "justify-start"
-  );
+  const bubbleAlignment = isUser ? "ml-auto text-right" : "mr-auto";
+  const copyButtonPosition = isUser ? "left-3" : "right-3";
 
   return (
     <div
       className={cn(
-        "group/message relative mx-auto w-full px-2 sm:px-4",
-        message.role === "assistant" ? "mb-9" : "mb-7"
+        "group/message relative mx-auto w-full px-1 py-2 sm:px-2",
+        message.role === "assistant" ? "mb-8" : "mb-7"
       )}
       data-role={message.role}
     >
       <div
         className={cn(
-          "flex w-full items-start gap-3 sm:gap-4",
+          "flex w-full items-start gap-4 sm:gap-5",
           isUser ? "flex-row-reverse text-right" : "text-left"
         )}
       >
-        <div className="relative flex flex-col items-center pt-1 sm:pt-0">
+        <div className="relative flex flex-col items-center pt-1">
           <Avatar
             className={cn(
-              "h-9 w-9 border border-border/60 bg-background shadow-sm transition-transform duration-200 group-hover/message:scale-[1.02]",
+              "h-9 w-9 border border-transparent text-sm font-semibold uppercase tracking-wide shadow-lg ring-1 ring-black/5 transition-transform duration-200 group-hover/message:scale-[1.02] dark:ring-white/10",
               isUser
-                ? "border-primary/40 bg-primary/15 text-primary"
-                : "border-border/60 bg-secondary/40 text-secondary-foreground"
+                ? "bg-[#4b5563] text-white dark:bg-[#374151]"
+                : "bg-[#1f7aec] text-white dark:bg-[#2563eb]"
             )}
           >
-            <AvatarFallback className="text-[10px] font-semibold uppercase tracking-wide">
+            <AvatarFallback className="text-[10px] font-semibold uppercase">
               {isUser ? "You" : "AI"}
             </AvatarFallback>
           </Avatar>
-          <span className="mt-2 hidden h-full w-px flex-1 bg-border/40 sm:block" />
         </div>
 
-        <div className="flex-1 space-y-3">
+        <div className="flex w-full flex-1 flex-col gap-2">
           <div className={headerClassName}>
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
-                isUser
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-border/60 bg-background/80 text-muted-foreground"
+                "inline-flex items-center gap-1 px-0.5 py-0.5 text-[#1f2933] dark:text-[#fafafa]",
+                isUser ? "font-semibold" : "font-semibold"
               )}
             >
               {speakerLabel}
             </span>
             {!isUser && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              <span className="inline-flex items-center gap-1 rounded-full border border-transparent bg-[#e0f2fe] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#0369a1] dark:bg-[#1e40af]/30 dark:text-[#93c5fd]">
                 <Sparkles className="h-3 w-3" />
-                Adaptive
+                Assistant
               </span>
             )}
             {streamingLabel && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-primary">
-                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-transparent bg-[#d1fae5] px-2 py-0.5 text-[#047857] dark:bg-[#064e3b] dark:text-[#34d399]">
+                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-[#047857] dark:bg-[#34d399]" />
                 {streamingLabel}
               </span>
             )}
           </div>
 
-          <div className={bubbleClassName}>
-            <div className="flex flex-col gap-4 text-sm leading-relaxed text-foreground/90">
+          <div className={cn(bubbleClassName, bubbleAlignment)}>
+            {shouldShowCopyButton && (
+              <CopyButton
+                text={getMessageText()}
+                className={cn(
+                  "absolute top-3 h-8 w-auto px-2 py-1 text-xs text-[#525252] dark:text-[#d4d4d4]",
+                  copyButtonPosition
+                )}
+              />
+            )}
+            <div
+              className={cn(
+                "flex flex-col gap-4 text-[0.95rem] leading-7 text-[#1f2937] dark:text-[#e7e7e7]",
+                isUser ? "items-end text-right" : "text-left"
+              )}
+            >
               {message.parts?.map((part, i) => {
                 switch (part.type) {
                   case "text": {
@@ -323,7 +323,7 @@ const PurePreviewMessage = ({
                       >
                         <Markdown>{part.text}</Markdown>
                         {isStreamingText && (
-                          <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-primary" />
+                          <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-[#34d399] dark:bg-[#10b981]" />
                         )}
                       </div>
                     );
@@ -366,11 +366,6 @@ const PurePreviewMessage = ({
                 }
               })}
             </div>
-            {shouldShowCopyButton && (
-              <div className={copyAlignmentClass}>
-                <CopyButton text={getMessageText()} />
-              </div>
-            )}
           </div>
         </div>
       </div>

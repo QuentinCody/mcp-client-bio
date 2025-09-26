@@ -163,8 +163,8 @@ export function ChatSidebar() {
             <Skeleton className="h-4 w-4 rounded-full" />
             {!isCollapsed && (
               <>
-                <Skeleton className="h-4 w-full max-w-[180px]" />
-                <Skeleton className="h-5 w-5 ml-auto rounded-md flex-shrink-0" />
+                <Skeleton className="h-4 w-full max-w-[180px] bg-[#2c2f36]" />
+                <Skeleton className="ml-auto h-5 w-5 flex-shrink-0 rounded-md bg-[#2c2f36]" />
               </>
             )}
           </div>
@@ -174,10 +174,10 @@ export function ChatSidebar() {
 
   return (
     <Sidebar
-      className="shadow-sm bg-background/80 dark:bg-background/40 backdrop-blur-md"
+      className="border-r border-[#2c2c2d] bg-[#202123] text-[#ececec]"
       collapsible="icon"
     >
-      <SidebarHeader className="p-4 border-b border-border/40">
+      <SidebarHeader className="border-b border-[#2f2f2f] p-4">
         <div className="flex items-center justify-start">
           <div
             className={`flex items-center gap-2 ${
@@ -200,8 +200,8 @@ export function ChatSidebar() {
               />
             </div>
             {!isCollapsed && (
-              <div className="font-semibold text-lg text-foreground/90">
-                MCP
+              <div className="text-lg font-semibold text-[#f7f7f8]">
+                Bio MCP
               </div>
             )}
           </div>
@@ -212,7 +212,7 @@ export function ChatSidebar() {
         <SidebarGroup className="flex-1 min-h-0">
           <SidebarGroupLabel
             className={cn(
-              "px-4 text-xs font-medium text-muted-foreground/80 uppercase tracking-wider",
+              "px-4 text-xs font-semibold uppercase tracking-wider text-[#8b8f98]",
               isCollapsed ? "sr-only" : ""
             )}
           >
@@ -257,15 +257,12 @@ export function ChatSidebar() {
                       transition={{ duration: 0.2 }}
                     >
                       <SidebarMenuItem>
-                        <SidebarMenuButton
+                      <SidebarMenuButton
                           asChild
                           tooltip={isCollapsed ? chat.title : undefined}
                           data-active={pathname === `/chat/${chat.id}`}
                           className={cn(
-                            "transition-all hover:bg-primary/10 active:bg-primary/15",
-                            pathname === `/chat/${chat.id}`
-                              ? "bg-secondary/60 hover:bg-secondary/60"
-                              : ""
+                            "transition-all text-[#e5e7eb] hover:bg-[#343541] data-[active=true]:bg-[#2c2d32]"
                           )}
                         >
                           <Link
@@ -277,8 +274,8 @@ export function ChatSidebar() {
                                 className={cn(
                                   "h-4 w-4 flex-shrink-0",
                                   pathname === `/chat/${chat.id}`
-                                    ? "text-foreground"
-                                    : "text-muted-foreground"
+                                    ? "text-[#f5f5f5]"
+                                    : "text-[#9ca3af]"
                                 )}
                               />
                               {!isCollapsed && (
@@ -286,8 +283,8 @@ export function ChatSidebar() {
                                   className={cn(
                                     "ml-2 truncate text-sm",
                                     pathname === `/chat/${chat.id}`
-                                      ? "text-foreground font-medium"
-                                      : "text-foreground/80"
+                                      ? "font-medium text-[#f7f7f8]"
+                                      : "text-[#d1d5db]"
                                   )}
                                   title={chat.title}
                                 >
@@ -301,7 +298,7 @@ export function ChatSidebar() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-foreground flex-shrink-0"
+                                className="h-6 w-6 flex-shrink-0 text-[#9ca3af] hover:text-[#f7f7f8]"
                                 onClick={(e) => handleDeleteChat(chat.id, e)}
                                 title="Delete chat"
                               >
@@ -341,8 +338,7 @@ export function ChatSidebar() {
                   <SidebarMenuButton
                     onClick={() => setMcpSettingsOpen(true)}
                     className={cn(
-                      "w-full flex items-center gap-2 transition-all",
-                      "hover:bg-secondary/50 active:bg-secondary/70"
+                      "flex w-full items-center gap-2 transition-all text-[#e5e7eb] hover:bg-[#343541]"
                     )}
                     tooltip={isCollapsed ? "MCP Servers" : undefined}
                   >
@@ -350,24 +346,24 @@ export function ChatSidebar() {
                       className={cn(
                         "h-4 w-4 flex-shrink-0",
                         activeServersCount > 0
-                          ? "text-primary"
-                          : "text-muted-foreground"
+                          ? "text-[#34d399]"
+                          : "text-[#9ca3af]"
                       )}
                     />
                     {!isCollapsed && (
-                      <span className="flex-grow text-sm text-foreground/80">
+                      <span className="flex-grow text-sm text-[#d1d5db]">
                         MCP Servers
                       </span>
                     )}
                     {activeServersCount > 0 && !isCollapsed ? (
                       <Badge
                         variant="secondary"
-                        className="ml-auto text-[10px] px-1.5 py-0 h-5 bg-secondary/80"
+                        className="ml-auto h-5 px-1.5 py-0 text-[10px] bg-[#343541] text-[#e5e7eb]"
                       >
                         {activeServersCount}
                       </Badge>
                     ) : activeServersCount > 0 && isCollapsed ? (
-                      <SidebarMenuBadge className="bg-secondary/80 text-secondary-foreground">
+                      <SidebarMenuBadge className="bg-[#343541] text-[#e5e7eb]">
                         {activeServersCount}
                       </SidebarMenuBadge>
                     ) : null}
@@ -377,31 +373,31 @@ export function ChatSidebar() {
               {locked && (
                 <SidebarMenuItem>
                   <div className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2",
+                    "w-full flex items-center gap-2 px-3 py-2 text-[#d1d5db]",
                     isCollapsed ? "justify-center" : ""
                   )}>
                     <ServerIcon
                       className={cn(
                         "h-4 w-4 flex-shrink-0",
                         activeServersCount > 0
-                          ? "text-primary"
-                          : "text-muted-foreground"
+                          ? "text-[#34d399]"
+                          : "text-[#9ca3af]"
                       )}
                     />
                     {!isCollapsed && (
-                      <span className="flex-grow text-sm text-foreground/80">
+                      <span className="flex-grow text-sm text-[#d1d5db]">
                         MCP Servers
                       </span>
                     )}
                     {activeServersCount > 0 && !isCollapsed ? (
                       <Badge
                         variant="secondary"
-                        className="ml-auto text-[10px] px-1.5 py-0 h-5 bg-secondary/80"
+                        className="ml-auto h-5 px-1.5 py-0 text-[10px] bg-[#343541] text-[#e5e7eb]"
                       >
                         {activeServersCount}
                       </Badge>
                     ) : activeServersCount > 0 && isCollapsed ? (
-                      <SidebarMenuBadge className="bg-secondary/80 text-secondary-foreground">
+                      <SidebarMenuBadge className="bg-[#343541] text-[#e5e7eb]">
                         {activeServersCount}
                       </SidebarMenuBadge>
                     ) : null}
@@ -413,7 +409,7 @@ export function ChatSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t border-border/40 mt-auto">
+      <SidebarFooter className="mt-auto border-t border-[#2c2c2d] p-4">
         <div
           className={`flex flex-col ${isCollapsed ? "items-center" : ""} gap-3`}
         >
@@ -421,8 +417,8 @@ export function ChatSidebar() {
             <Button
               variant="default"
               className={cn(
-                "w-full bg-primary text-primary-foreground hover:bg-primary/90",
-                isCollapsed ? "w-8 h-8 p-0" : ""
+                "w-full bg-[#343541] text-[#f7f7f8] hover:bg-[#3f414a]",
+                isCollapsed ? "h-8 w-8 p-0" : ""
               )}
               onClick={handleNewChat}
               title={isCollapsed ? "New Chat" : undefined}
@@ -437,10 +433,10 @@ export function ChatSidebar() {
               {isCollapsed ? (
                 <Button
                   variant="ghost"
-                  className="w-8 h-8 p-0 flex items-center justify-center"
+                  className="flex h-8 w-8 items-center justify-center p-0 text-[#e5e7eb] hover:bg-[#343541]"
                 >
-                  <Avatar className="h-6 w-6 rounded-lg bg-secondary/60">
-                    <AvatarFallback className="rounded-lg text-xs font-medium text-secondary-foreground">
+                  <Avatar className="h-6 w-6 rounded-lg bg-[#3a3c44]">
+                    <AvatarFallback className="rounded-lg text-xs font-medium text-[#f5f5f5]">
                       {userId.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -448,45 +444,45 @@ export function ChatSidebar() {
               ) : (
                 <Button
                   variant="outline"
-                  className="w-full justify-between font-normal bg-transparent border border-border/60 shadow-none px-2 h-10 hover:bg-secondary/50"
+                  className="h-10 w-full justify-between border border-[#2c2c2d] bg-transparent px-2 font-normal text-[#e5e7eb] shadow-none hover:bg-[#343541]"
                 >
                   <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7 rounded-lg bg-secondary/60">
-                      <AvatarFallback className="rounded-lg text-sm font-medium text-secondary-foreground">
+                    <Avatar className="h-7 w-7 rounded-lg bg-[#3a3c44]">
+                      <AvatarFallback className="rounded-lg text-sm font-medium text-[#f5f5f5]">
                         {userId.substring(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="grid text-left text-sm leading-tight">
-                      <span className="truncate font-medium text-foreground/90">
+                    <div className="grid text-left text-sm leading-tight text-[#e5e7eb]">
+                      <span className="truncate font-medium text-[#f7f7f8]">
                         User ID
                       </span>
-                      <span className="truncate text-xs text-muted-foreground">
+                      <span className="truncate text-xs text-[#9ca3af]">
                         {userId.substring(0, 16)}...
                       </span>
                     </div>
                   </div>
-                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                  <ChevronsUpDown className="h-4 w-4 text-[#9ca3af]" />
                 </Button>
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-56 rounded-lg"
+              className="w-56 rounded-lg border border-[#2c2c2d] bg-[#1f1f23] text-[#e5e7eb]"
               side={isCollapsed ? "top" : "top"}
               align={isCollapsed ? "start" : "end"}
               sideOffset={8}
             >
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Avatar className="h-8 w-8 rounded-lg bg-secondary/60">
-                    <AvatarFallback className="rounded-lg text-sm font-medium text-secondary-foreground">
+                  <Avatar className="h-8 w-8 rounded-lg bg-[#3a3c44]">
+                    <AvatarFallback className="rounded-lg text-sm font-medium text-[#f5f5f5]">
                       {userId.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold text-foreground/90">
+                    <span className="truncate font-semibold text-[#f7f7f8]">
                       User ID
                     </span>
-                    <span className="truncate text-xs text-muted-foreground">
+                    <span className="truncate text-xs text-[#9ca3af]">
                       {userId}
                     </span>
                   </div>
@@ -495,6 +491,7 @@ export function ChatSidebar() {
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
+                  className="focus:bg-[#343541] focus:text-[#f7f7f8]"
                   onSelect={(e) => {
                     e.preventDefault();
                     navigator.clipboard.writeText(userId);
@@ -505,6 +502,7 @@ export function ChatSidebar() {
                   Copy User ID
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  className="focus:bg-[#343541] focus:text-[#f7f7f8]"
                   onSelect={(e) => {
                     e.preventDefault();
                     setEditUserIdOpen(true);
@@ -518,6 +516,7 @@ export function ChatSidebar() {
               <DropdownMenuGroup>
                 {!locked && (
                   <DropdownMenuItem
+                    className="focus:bg-[#343541] focus:text-[#f7f7f8]"
                     onSelect={(e) => {
                       e.preventDefault();
                       setMcpSettingsOpen(true);
@@ -528,6 +527,7 @@ export function ChatSidebar() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
+                  className="focus:bg-[#343541] focus:text-[#f7f7f8]"
                   onSelect={(e) => {
                     e.preventDefault();
                     setApiKeySettingsOpen(true);
@@ -537,6 +537,7 @@ export function ChatSidebar() {
                   API Keys
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  className="focus:bg-[#343541] focus:text-[#f7f7f8]"
                   onSelect={(e) => {
                     e.preventDefault();
                     window.open("https://git.new/s-mcp", "_blank");
@@ -545,7 +546,10 @@ export function ChatSidebar() {
                   <Github className="mr-2 h-4 w-4 hover:text-sidebar-accent" />
                   GitHub
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <DropdownMenuItem
+                  className="focus:bg-[#343541] focus:text-[#f7f7f8]"
+                  onSelect={(e) => e.preventDefault()}
+                >
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center">
                       <Sparkles className="mr-2 h-4 w-4 hover:text-sidebar-accent" />
