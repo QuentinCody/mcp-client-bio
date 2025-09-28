@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -641,70 +642,72 @@ export const MCPServerManager = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-hidden flex flex-col bg-white text-[#1f2937] dark:bg-[#0f0f10] dark:text-[#f5f5f5] p-0">
-        <div className="flex h-full flex-col overflow-hidden">
-        <DialogHeader className="space-y-2 px-6 pt-6 pb-4">
-          <DialogTitle className="flex items-center gap-2">
-            <ServerIcon className="h-5 w-5 text-primary" />
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden rounded-3xl border border-primary/20 bg-white/95 p-0 shadow-[0_32px_120px_-40px_rgba(79,70,229,0.35)] dark:bg-slate-950/95">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white/92 backdrop-blur-xl dark:bg-slate-950/90">
+        <DialogHeader className="space-y-2 px-6 pt-6 pb-4 bg-white/90 border-b border-primary/15 shadow-inner dark:bg-slate-950">
+          <DialogTitle className="flex items-center gap-3 text-lg font-semibold text-foreground">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <ServerIcon className="h-4 w-4" />
+            </span>
             MCP Server Configuration
           </DialogTitle>
-          <DialogDescription>
-            Connect to Model Context Protocol servers to access additional AI
-            tools.
+          <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+            Connect to Model Context Protocol servers to unlock additional tools, prompts, and automations.
             {selectedServers.length > 0 && (
-              <span className="block mt-1 text-xs font-medium text-primary">
-                {selectedServers.length} server
-                {selectedServers.length !== 1 ? "s" : ""} currently active
+              <span className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+                {selectedServers.length} server{selectedServers.length !== 1 ? "s" : ""} currently active
               </span>
             )}
           </DialogDescription>
         </DialogHeader>
 
         {view === "list" ? (
-            <div className="flex-1 overflow-hidden flex flex-col px-6 pb-6">
+            <div className="flex-1 overflow-y-auto px-6 pb-24">
             {/* Server Overview Stats */}
-            <div className="mb-6 rounded-xl border border-border bg-muted p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <Activity className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-semibold">Server Overview</h3>
+            <div className="mb-6 mt-4 rounded-2xl border border-primary/15 bg-white/95 p-5 shadow-[0_20px_45px_-30px_rgba(79,70,229,0.35)] dark:bg-slate-950/80">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <Activity className="h-4 w-4" />
+                </span>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Server Overview</h3>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">
+                <div className="rounded-xl border border-primary/30 bg-white/90 px-3 py-4 text-center shadow-sm dark:bg-slate-900/70">
+                  <div className="text-xl font-semibold text-primary">
                     {servers.filter(s => selectedServers.includes(s.id) && s.status === "connected").length}
                   </div>
-                  <div className="text-xs text-muted-foreground">Active</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">
+                <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/85 px-3 py-4 text-center shadow-sm dark:border-emerald-300/30 dark:bg-emerald-500/20">
+                  <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-200">
                     {servers.filter(s => selectedServers.includes(s.id)).flatMap(s => s.tools || []).length}
                   </div>
-                  <div className="text-xs text-muted-foreground">Tools</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-700/80 dark:text-emerald-200/80">Tools</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">
+                <div className="rounded-xl border border-amber-200/70 bg-amber-50/85 px-3 py-4 text-center shadow-sm dark:border-amber-300/30 dark:bg-amber-500/20">
+                  <div className="text-xl font-semibold text-amber-600 dark:text-amber-200">
                     {servers.filter(s => s.status === "error").length}
                   </div>
-                  <div className="text-xs text-muted-foreground">Issues</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-200/80">Issues</div>
                 </div>
               </div>
               {selectedServers.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border/40">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Zap className="h-3 w-3" />
-                    <span>
+                <div className="mt-4 flex items-center gap-3 rounded-xl border border-primary/15 bg-primary/10 px-4 py-3 text-xs font-medium text-primary">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary/25">
+                    <Zap className="h-3.5 w-3.5" />
+                  </span>
+                  <span>
                       {selectedServers.length} server{selectedServers.length !== 1 ? 's' : ''} enabled for chat
                     </span>
-                  </div>
                 </div>
               )}
             </div>
 
             {servers.length > 0 ? (
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <div className="flex-1 overflow-hidden flex flex-col">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-medium">Available Servers</h3>
+              <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium text-foreground">Available Servers</h3>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
@@ -724,7 +727,7 @@ export const MCPServerManager = ({
                       </span>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto space-y-3 rounded-xl border border-border bg-card px-5 pb-6 pt-4 shadow-sm">
+                  <div className="space-y-3 rounded-2xl border border-primary/15 bg-white/95 p-4 shadow-[0_16px_40px_-30px_rgba(79,70,229,0.45)] dark:bg-slate-950/75 dark:border-slate-700/50">
                     {servers
                       .sort((a, b) => {
                         const aActive = selectedServers.includes(a.id);
@@ -742,114 +745,91 @@ export const MCPServerManager = ({
                         return (
                           <div
                             key={server.id}
-                            className={`
-                            relative flex flex-col p-3.5 rounded-xl transition-colors
-                            border ${
+                            className={cn(
+                              "relative flex flex-col gap-4 rounded-xl border transition-all duration-200",
                               isActive
-                                ? "border-primary bg-primary/10"
-                                : "border-border hover:border-primary/30 hover:bg-primary/5"
-                            }
-                          `}
+                                ? "border-primary/35 bg-gradient-to-br from-primary/20 via-white/90 to-primary/8 shadow-[0_22px_55px_-26px_rgba(79,70,229,0.55)]"
+                                : "border-border/70 bg-white/95 shadow-sm hover:border-primary/25 hover:shadow-lg dark:bg-slate-950/70 dark:border-slate-800/60"
+                            )}
                           >
                             {/* Server Header with Type Badge and Actions */}
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <Globe
-                                  className={`h-4 w-4 ${
-                                    isActive
-                                      ? "text-primary"
-                                      : "text-muted-foreground"
-                                  } flex-shrink-0`}
-                                />
-                                <h4 className="text-sm font-medium truncate max-w-[160px]">
-                                  {server.name}
-                                </h4>
+                            <div className="flex items-center justify-between px-4 pt-4">
+                              <div className="flex items-center gap-3 truncate">
+                                <span className={cn(
+                                  "flex h-8 w-8 items-center justify-center rounded-lg",
+                                  isActive ? "bg-primary/20 text-primary" : "bg-muted/60 text-muted-foreground"
+                                )}>
+                                  <Globe className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                  <h4 className="truncate text-sm font-semibold text-foreground">
+                                    {server.name || server.id}
+                                  </h4>
+                                  <p className="text-xs text-muted-foreground">
+                                    {getServerDisplayUrl(server)}
+                                  </p>
+                                </div>
                                 {server.auth?.type === "oauth" && (
-                                  <span className="text-[10px] uppercase tracking-wide text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+                                  <span className="flex-shrink-0 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                                     OAuth
                                   </span>
                                 )}
                                 {hasAdvancedConfig(server) && (
-                                  <span className="flex-shrink-0">
-                                    <Cog className="h-3 w-3 text-muted-foreground" />
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
+                                    <Cog className="h-3 w-3" />
                                   </span>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-                                  {server.url?.endsWith("/sse")
-                                    ? "SSE"
-                                    : "HTTP"}
+                                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground">
+                                  {server.url?.endsWith("/sse") ? "SSE" : "HTTP"}
                                 </span>
-
-                                {/* Status indicator */}
                                 <StatusIndicator
                                   status={server.status}
-                                  onClick={() =>
-                                    server.errorMessage &&
-                                    toast.error(server.errorMessage)
-                                  }
+                                  onClick={() => server.errorMessage && toast.error(server.errorMessage)}
                                   hoverInfo={getServerStatusHoverInfo(server)}
                                 />
-
-                                {/* Server actions */}
-                                <div className="flex items-center">
+                                <div className="flex items-center gap-1 rounded-full bg-muted/40 px-1 py-0.5">
                                   <button
-                                    onClick={(e) =>
-                                      toggleServerStatus(server, e)
-                                    }
-                                    className="p-1 rounded-full hover:bg-muted/70"
-                                    aria-label={
-                                      isRunning ? "Stop server" : "Start server"
-                                    }
-                                    title={
-                                      isRunning ? "Stop server" : "Start server"
-                                    }
+                                    onClick={(e) => toggleServerStatus(server, e)}
+                                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
+                                    aria-label={isRunning ? "Stop server" : "Start server"}
+                                    title={isRunning ? "Stop server" : "Start server"}
                                   >
-                                    <Power
-                                      className={`h-3.5 w-3.5 ${
-                                        isRunning
-                                          ? "text-red-500"
-                                          : "text-green-500"
-                                      }`}
-                                    />
+                                    <Power className={cn("h-3.5 w-3.5", isRunning ? "text-red-500" : "text-emerald-500")} />
                                   </button>
-
                                   <button
                                     onClick={(e) => restartServer(server, e)}
-                                    className="p-1 rounded-full hover:bg-muted/70"
+                                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
                                     aria-label="Restart server"
                                     title="Restart server"
                                     disabled={server.status === "connecting"}
                                   >
                                     <RefreshCw
-                                      className={`h-3.5 w-3.5 text-muted-foreground ${
-                                        server.status === "connecting"
-                                          ? "opacity-50"
-                                          : ""
-                                      }`}
+                                      className={cn(
+                                        "h-3.5 w-3.5",
+                                        server.status === "connecting" && "opacity-50"
+                                      )}
                                     />
                                   </button>
-
                                   {!locked && (
                                     <button
                                       onClick={(e) => removeServer(server.id, e)}
-                                      className="p-1 rounded-full hover:bg-muted/70"
+                                      className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
                                       aria-label="Remove server"
                                       title="Remove server"
                                     >
-                                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                      <Trash2 className="h-3.5 w-3.5" />
                                     </button>
                                   )}
-
                                   {!locked && (
                                     <button
                                       onClick={() => startEditing(server)}
-                                      className="p-1 rounded-full hover:bg-muted/50"
+                                      className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
                                       aria-label="Edit server"
                                       title="Edit server"
                                     >
-                                      <Edit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                      <Edit2 className="h-3.5 w-3.5" />
                                     </button>
                                   )}
                                 </div>
@@ -857,20 +837,22 @@ export const MCPServerManager = ({
                             </div>
 
                             {/* Server Details */}
-                            <p className="text-xs text-muted-foreground mb-2.5 truncate">
-                              {getServerDisplayUrl(server)}
-                            </p>
+                            <div className="px-4 text-xs text-muted-foreground">
+                              <p className="truncate">
+                                {server.description || getServerDisplayUrl(server)}
+                              </p>
+                            </div>
 
                             {/* Tools & Prompts */}
                             {server.status === "connected" && (
-                              <div className="mb-2.5 space-y-2">
+                              <div className="mb-2.5 space-y-2 px-4">
                                 <ToolsList tools={server.tools} />
                                 {server.prompts && server.prompts.length > 0 && (
                                   <div>
                                     <div className="text-xs font-medium text-muted-foreground mb-1">Prompts</div>
                                     <div className="grid grid-cols-1 gap-1">
                                       {server.prompts.slice(0, 8).map((p) => (
-                                        <div key={p.name} className="text-xs border rounded-md px-2 py-1 bg-muted/30">
+                                        <div key={p.name} className="text-xs rounded-md border border-primary/20 bg-primary/10/20 px-2 py-1">
                                           <span className="font-medium">{p.title || p.name}</span>
                                           {p.description && (
                                             <span className="text-muted-foreground"> — {p.description}</span>
@@ -887,42 +869,44 @@ export const MCPServerManager = ({
                             )}
 
                             {/* Action Button */}
-                            <Button
-                              size="sm"
-                              className="w-full gap-1.5 hover:text-black hover:dark:text-white rounded-lg"
-                              variant={isActive ? "default" : "outline"}
-                              onClick={() => toggleServer(server.id)}
-                            >
-                              {isActive && (
-                                <CheckCircle className="h-3.5 w-3.5" />
-                              )}
-                              {isActive ? "Active" : "Enable Server"}
-                            </Button>
+                            <div className="px-4 pb-4">
+                              <Button
+                                size="sm"
+                                className={cn(
+                                  "w-full gap-1.5 rounded-lg transition-all duration-200",
+                                  isActive
+                                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
+                                    : "border border-primary/25 bg-white/70 hover:bg-primary/10 hover:text-primary"
+                                )}
+                                variant={isActive ? "default" : "outline"}
+                                onClick={() => toggleServer(server.id)}
+                              >
+                                {isActive && <CheckCircle className="h-3.5 w-3.5" />}
+                                {isActive ? "Active" : "Enable Server"}
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
                   </div>
-                </div>
               </div>
             ) : (
-              <div className="flex-1 py-10 flex flex-col items-center justify-center space-y-4 rounded-2xl border border-dashed border-border bg-card text-foreground shadow-sm">
-                <div className="rounded-full p-3 bg-primary/10">
-                  <ServerIcon className="h-7 w-7 text-primary" />
+              <div className="flex flex-col items-center justify-center space-y-4 rounded-2xl border border-primary/20 bg-white/95 py-12 text-foreground shadow-[0_24px_60px_-35px_rgba(79,70,229,0.35)] dark:bg-slate-950/80">
+                <div className="rounded-2xl border border-primary/30 bg-primary/15 p-4 text-primary">
+                  <ServerIcon className="h-7 w-7" />
                 </div>
-                <div className="text-center space-y-1">
-                  <h3 className="text-base font-medium">
-                    No MCP Servers Added
-                  </h3>
-                  <p className="text-sm text-muted-foreground max-w-[300px]">
-                    Add your first MCP server to access additional AI tools
+                <div className="space-y-1 text-center">
+                  <h3 className="text-base font-semibold">No MCP Servers Added</h3>
+                  <p className="mx-auto max-w-[320px] text-sm text-muted-foreground">
+                    Add your first MCP server to access additional tools, prompts, and diagnostics inside the workspace.
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-4">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <a
                     href="https://modelcontextprotocol.io"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 hover:text-primary transition-colors"
+                    className="inline-flex items-center gap-1 rounded-full border border-primary/30 px-3 py-1 text-primary transition-colors hover:bg-primary/10"
                   >
                     Learn about MCP
                     <ExternalLink className="h-3 w-3" />
@@ -932,7 +916,8 @@ export const MCPServerManager = ({
             )}
           </div>
         ) : (
-          <div className="space-y-4 overflow-y-auto px-4 py-1 mb-6 rounded-2xl border border-border bg-card [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-sm">
+          <div className="flex-1 overflow-y-auto px-6 pb-10">
+            <div className="mt-4 space-y-4 rounded-2xl border border-primary/15 bg-white/90 p-5 shadow-[0_24px_55px_-35px_rgba(79,70,229,0.45)] dark:bg-slate-950/70 dark:border-slate-800/60">
             <h3 className="text-sm font-medium">
               {editingServerId ? "Edit MCP Server" : "Add New MCP Server"}
             </h3>
@@ -962,10 +947,10 @@ export const MCPServerManager = ({
                       onClick={() =>
                         setNewServer({ ...newServer, type: "sse" })
                       }
-                      className={`flex items-center gap-2 p-3 rounded-md text-left border transition-all ${
+                      className={`flex items-center gap-2 p-3 rounded-lg text-left border transition-all duration-200 ${
                         newServer.type === "sse"
-                          ? "border-primary bg-primary/10 ring-1 ring-primary"
-                          : "border-border hover:border-border/80 hover:bg-muted/50"
+                          ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-sm"
+                          : "border-border bg-card hover:border-primary/40 hover:bg-primary/5"
                       }`}
                     >
                       <Globe
@@ -986,10 +971,10 @@ export const MCPServerManager = ({
                       onClick={() =>
                         setNewServer({ ...newServer, type: "http" })
                       }
-                      className={`flex items-center gap-2 p-3 rounded-md text-left border transition-all ${
+                      className={`flex items-center gap-2 p-3 rounded-lg text-left border transition-all duration-200 ${
                         newServer.type === "http"
-                          ? "border-primary bg-primary/10 ring-1 ring-primary"
-                          : "border-border hover:border-border/80 hover:bg-muted/50"
+                          ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-sm"
+                          : "border-border bg-card hover:border-primary/40 hover:bg-primary/5"
                       }`}
                     >
                       <Globe
@@ -1344,18 +1329,19 @@ export const MCPServerManager = ({
                 </AccordionItem>
               </Accordion>
             </div>
+            </div>
           </div>
         )}
 
         {/* Persistent fixed footer with buttons */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t border-border flex justify-between z-10">
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur-sm border-t border-border flex justify-between z-10 shadow-lg">
           {view === "list" ? (
             <>
               <Button
                 variant="outline"
                 onClick={clearAllServers}
                 size="sm"
-                className="gap-1.5 hover:text-black hover:dark:text-white"
+                className="gap-1.5"
                 disabled={selectedServers.length === 0}
               >
                 <X className="h-3.5 w-3.5" />

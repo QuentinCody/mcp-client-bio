@@ -306,6 +306,7 @@ Response format: Markdown supported. Use tools to answer questions.`;
     toolChoice: 'auto', // Force tool calling for debugging
     maxSteps: 20, // Allow multiple tool calling steps
     temperature: 1, // Use temperature: 1 for all models
+    experimental_continueSteps: true,
     // No maxOutputTokens - allow unlimited output length
   };
 
