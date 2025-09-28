@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Terminal } from "lucide-react";
 import type { PromptSummary } from "@/lib/mcp/transport/http";
+import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
 
 export function PromptArgDialog({
   open,
@@ -15,6 +16,7 @@ export function PromptArgDialog({
   prompt,
   onResolve,
   onCompleteArgument,
+  promptDef,
 }: {
   open: boolean;
   onOpenChange: (value: boolean) => void;
@@ -26,6 +28,7 @@ export function PromptArgDialog({
     value: string,
     context: Record<string, string>
   ) => Promise<string[]>;
+  promptDef?: SlashPromptDef;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -34,6 +37,7 @@ export function PromptArgDialog({
   const [activeIndex, setActiveIndex] = useState(0);
   const timers = useRef<Record<string, number>>({});
   const requestVersions = useRef<Record<string, number>>({});
+  const hydratingPromptId = useRef<string | null>(null);
 
   const args = useMemo(() => prompt.arguments ?? [], [prompt.arguments]);
   const totalArgs = args.length;
@@ -55,6 +59,7 @@ export function PromptArgDialog({
       }
       timers.current = {};
       setActiveIndex(0);
+      hydratingPromptId.current = null;
     }
   }, [open]);
 
@@ -66,6 +71,23 @@ export function PromptArgDialog({
       timers.current = {};
     };
   }, []);
+
+  useEffect(() => {
+    if (!open || !promptDef?.id) return;
+    if (hydratingPromptId.current === promptDef.id) return;
+    hydratingPromptId.current = promptDef.id;
+    try {
+      const raw = window.localStorage.getItem(`prompt:${promptDef.id}:args`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        if (parsed && typeof parsed === "object") {
+          setValues((prev) => ({ ...parsed, ...prev }));
+        }
+      }
+    } catch {
+      // ignore hydration issues
+    }
+  }, [open, promptDef?.id]);
 
   const requiredMissing = useMemo(() => {
     return args.some((arg) => {
@@ -104,6 +126,13 @@ export function PromptArgDialog({
     setErrors({});
     try {
       await onResolve(values);
+      if (promptDef?.id) {
+        try {
+          window.localStorage.setItem(`prompt:${promptDef.id}:args`, JSON.stringify(values));
+        } catch {
+          // ignore persistence errors
+        }
+      }
       onOpenChange(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to resolve prompt";
@@ -164,7 +193,10 @@ export function PromptArgDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[80vh] overflow-auto" aria-describedby={undefined}>
+      <DialogContent
+        className="sm:max-w-md max-h-[80vh] overflow-auto border border-border/40 bg-white/95 backdrop-blur-xl shadow-2xl"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             Configure prompt

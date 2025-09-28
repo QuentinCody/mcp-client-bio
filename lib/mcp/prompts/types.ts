@@ -6,7 +6,7 @@ export type PromptArg = {
   // future: type?: "string" | "number" | "enum"; options?: string[];
 };
 
-export type SlashPromptMode = "template" | "server" | "template-required" | "command";
+export type SlashPromptMode = "template" | "server" | "template-required" | "command" | "client";
 
 export type SlashPromptMessage = {
   role: "system" | "user" | "assistant";
@@ -24,7 +24,7 @@ export type SlashPromptDef = {
   name: string; // e.g., "summarize_variant"
   title: string; // display title
   description?: string;
-  origin: "client" | "server-import";
+  origin: "client" | "server-import" | "client-prompt";
   sourceServerId?: string; // when origin === "server-import"
   version?: string;
   updatedAt?: string; // ISO

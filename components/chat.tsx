@@ -56,7 +56,7 @@ export default function Chat() {
     def: SlashPromptDef;
     args: Record<string, string>;
     entry: ResolvedPromptEntry;
-    context: ResolvedPromptContext;
+    context: ResolvedPromptContext | null;
     resources: { uri: string; name?: string }[];
     rawMessages: PromptMessage[];
   } | null>(null);
@@ -352,7 +352,9 @@ export default function Chat() {
     result: { messages: PromptMessage[]; description?: string };
   }) => {
     const entry = createResolvedPromptEntry(payload.def, payload.args, payload.result.messages as any);
-    const context = createResolvedPromptContext(entry);
+    const context = payload.def.origin === 'client-prompt'
+      ? null
+      : createResolvedPromptContext(entry);
     const normalized = normalizePromptMessages(payload.result.messages as any);
     const previewText = normalized
       .map((message) => message.text)
@@ -554,7 +556,7 @@ export default function Chat() {
               stop={stop}
               onRunCommand={runSlashCommand}
               onPromptResolved={handlePromptResolved}
-              promptPreview={promptPreview ? { resources: promptPreview.resources, sending: isChatLoading } : null}
+              promptPreview={promptPreview ? { def: promptPreview.def, args: promptPreview.args, resources: promptPreview.resources, sending: isChatLoading } : null}
               onPromptPreviewCancel={cancelPromptPreview}
               onPromptPreviewResourceRemove={removePromptResource}
               showModelPicker={false}

@@ -18,7 +18,13 @@ import { ResourceChip } from "@/components/mcp/ResourceChip";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-type MenuItem = SlashPromptDef & { commandMeta?: SlashCommandMeta };
+type MenuItem = SlashPromptDef & {
+  commandMeta?: SlashCommandMeta;
+  score?: number;
+  group?: "command" | "prompt";
+};
+
+type SlashSegmentHint = { value: string; complete: boolean };
 
 interface InputProps {
   input: string;
@@ -38,6 +44,8 @@ interface InputProps {
     result: { messages: PromptMessage[]; description?: string };
   }) => void;
   promptPreview?: {
+    def: SlashPromptDef;
+    args: Record<string, string>;
     resources: { uri: string; name?: string }[];
     sending?: boolean;
   } | null;
@@ -106,6 +114,11 @@ export const Textarea = ({
     void ensureAllPromptsLoaded();
   }, [menuOpen, ensureAllPromptsLoaded]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    setActiveIndex(0);
+  }, [query, menuOpen]);
+
   const modelInfo = useMemo(() => modelDetails[selectedModel], [selectedModel]);
 
   const activeServerCount = useMemo(() => {
@@ -141,17 +154,55 @@ export const Textarea = ({
       })),
       commandMetaId: suggestion.id,
       commandMeta: suggestion,
+      score: suggestion.score,
     }));
   }, [commandSuggestions]);
 
   const promptItems = useMemo<MenuItem[]>(() => {
     void mcpServers;
-    return promptRegistry.search(query).map((def) => ({ ...def } as MenuItem));
-  }, [query, mcpServers]);
+    void registryRevision;
+    void promptsLoaded;
+    const results = promptRegistry.searchDetailed(query, { limit: 80 });
+    return results.map(({ prompt, score }) => ({
+      ...prompt,
+      score,
+    }));
+  }, [query, mcpServers, registryRevision, promptsLoaded]);
 
   const items = useMemo<MenuItem[]>(() => {
-    return [...commandItems, ...promptItems];
+    const merged = [...commandItems, ...promptItems];
+    merged.sort((a, b) => {
+      const aScore = typeof a.score === "number" ? a.score : 0;
+      const bScore = typeof b.score === "number" ? b.score : 0;
+      if (bScore !== aScore) return bScore - aScore;
+      return (a.trigger || a.name).localeCompare(b.trigger || b.name);
+    });
+    return merged;
   }, [commandItems, promptItems]);
+
+  useEffect(() => {
+    if (activeIndex < items.length) return;
+    if (items.length === 0) {
+      setActiveIndex(0);
+      return;
+    }
+    setActiveIndex(items.length - 1);
+  }, [items.length, activeIndex]);
+
+  const highlightedItem = useMemo(() => {
+    if (!items.length) return null;
+    const safeIndex = Math.max(0, Math.min(activeIndex, items.length - 1));
+    return items[safeIndex];
+  }, [items, activeIndex]);
+
+  const slashSegments = useMemo<SlashSegmentHint[]>(() => {
+    if (!menuOpen || !query) return [];
+    const rawSegments = query.split(".");
+    return rawSegments.map((segment, idx) => ({
+      value: segment,
+      complete: idx < rawSegments.length - 1,
+    }));
+  }, [menuOpen, query]);
 
   const composerStatus = isStreaming
     ? status === "submitted"
@@ -221,11 +272,15 @@ export const Textarea = ({
   ) {
     setMenuOpen(false);
     setIsTypingSlash(false);
+    promptRegistry.markUsed(def.id);
     try {
       const result = await fetchPromptMessages(server.id, def.name, args);
       if (!result) {
         throw new Error("Prompt resolution failed");
       }
+      try {
+        localStorage.setItem(`prompt:${def.id}:args`, JSON.stringify(args));
+      } catch {}
       onPromptResolved({
         def,
         serverId: server.id,
@@ -351,6 +406,55 @@ export const Textarea = ({
       return;
     }
 
+    if (def.origin === 'client-prompt') {
+      const templateMessages = def.template?.messages ?? [];
+      if (templateMessages.length === 0) {
+        const selStart = textareaRef.current?.selectionStart ?? input.length;
+        const before = input.slice(0, selStart);
+        const after = input.slice(selStart);
+        const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
+        handleInputChange({ target: { value: replaced } } as any);
+        setMenuOpen(false);
+        promptRegistry.markUsed(def.id);
+        return;
+      }
+
+      const messages: PromptMessage[] = templateMessages.map((message) => ({
+        role: message.role,
+        content: [
+          {
+            type: "text",
+            text: message.text,
+          },
+        ],
+      }));
+
+      setMenuOpen(false);
+      setIsTypingSlash(false);
+      promptRegistry.markUsed(def.id);
+      try {
+        const raw = localStorage.getItem("prompt:recent");
+        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+        existing.set(def.id, Date.now());
+        const next = Array.from(existing.entries())
+          .map(([id, ts]) => ({ id, ts }))
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 8);
+        localStorage.setItem("prompt:recent", JSON.stringify(next));
+      } catch {}
+
+      onPromptResolved({
+        def,
+        args: {},
+        result: {
+          messages,
+          description: def.description,
+        },
+      });
+      return;
+    }
+
     if (def.origin === 'server-import') {
       const server = mcpServers.find((entry) => entry.id === def.sourceServerId) ??
         mcpServers.find((entry) => entry.name === def.sourceServerId) ??
@@ -392,6 +496,7 @@ export const Textarea = ({
     const fakeEvent = { target: { value: replaced } } as any;
     handleInputChange(fakeEvent);
     setMenuOpen(false);
+    promptRegistry.markUsed(def.id);
     try {
       const raw = localStorage.getItem("prompt:recent");
       const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
@@ -468,7 +573,25 @@ export const Textarea = ({
         )}
       </div>
 
-      <div className="relative overflow-hidden rounded-lg border border-border/40 bg-background/80 shadow-inner focus-within:border-primary/40 focus-within:shadow-md">
+      <div className="relative overflow-visible rounded-lg border border-border/40 bg-background/80 shadow-inner focus-within:border-primary/40 focus-within:shadow-md">
+        {menuOpen && (
+          <div className="pointer-events-auto absolute bottom-full left-0 right-0 mb-3 z-50">
+            <SlashPromptMenu
+              className="w-full"
+              query={query}
+              items={items}
+              onSelect={insertPrompt}
+              onClose={() => {
+                setMenuOpen(false);
+                setIsTypingSlash(false);
+              }}
+              activeIndex={activeIndex}
+              setActiveIndex={setActiveIndex}
+              loading={!promptsLoaded}
+            />
+          </div>
+        )}
+
         {showingSlashHint && !menuOpen && (
           <div className="pointer-events-none absolute top-3 left-4 z-20 animate-in slide-in-from-left-2 duration-200">
             <div className="flex items-center gap-2 rounded-lg bg-blue-500/90 px-3 py-1.5 text-[11px] font-medium text-white shadow-md backdrop-blur-sm">
@@ -476,6 +599,24 @@ export const Textarea = ({
               <span>Type to search prompts</span>
               <Sparkles className="h-3 w-3 animate-pulse" />
             </div>
+          </div>
+        )}
+
+        {menuOpen && slashSegments.length > 0 && (
+          <div className="pointer-events-none absolute left-3 top-2 z-10 flex flex-wrap items-center gap-1 text-[10px] font-medium text-blue-700/80">
+            {slashSegments.map((segment, idx) => (
+              <span
+                key={`segment-${idx}-${segment.value}`}
+                className={cn(
+                  "rounded-md border px-2 py-0.5 font-mono uppercase tracking-wide",
+                  segment.complete
+                    ? "border-blue-200 bg-blue-50"
+                    : "border-blue-100 bg-blue-100/70 text-blue-600"
+                )}
+              >
+                {segment.value || (idx === slashSegments.length - 1 ? "..." : "--")}
+              </span>
+            ))}
           </div>
         )}
 
@@ -493,6 +634,28 @@ export const Textarea = ({
           aria-autocomplete="list"
           data-command-target="chat-input"
         />
+
+        {menuOpen && highlightedItem && (
+          <div className="pointer-events-none absolute bottom-12 left-3 z-10 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80">
+            <div className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-primary shadow-sm">
+              <span className="rounded border border-primary/30 bg-white/40 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                Tab
+              </span>
+              <span className="text-primary/80">complete</span>
+              <code className="font-mono text-xs text-primary">
+                /
+                {highlightedItem.mode === "command" ? highlightedItem.name : highlightedItem.trigger}
+              </code>
+            </div>
+            {Array.isArray(highlightedItem.args) && highlightedItem.args.length > 0 ? (
+              <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 shadow-sm">
+                <span>{highlightedItem.args.filter((arg) => arg.required).length} required</span>
+                <span>·</span>
+                <span>{highlightedItem.args.length} total</span>
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {showFloatingModelPicker && (
           <ModelPicker
@@ -557,13 +720,21 @@ export const Textarea = ({
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-primary">
                 <Sparkles className="h-4 w-4" />
-                Prompt staged
+                {promptPreview.def.origin === 'client-prompt' ? 'Client prompt staged' : 'Prompt staged'}
               </div>
-              {promptPreview.sending ? (
+              {promptPreview.def.origin === 'client-prompt' ? (
+                <p className="mt-1 text-[11px] text-primary/80">
+                  This client prompt expands to a full instruction set before sending. Adjust the text if needed, then submit to the AI agent.
+                </p>
+              ) : promptPreview.sending ? (
                 <p className="mt-1 text-[11px] text-primary/80">Sending to the assistant…</p>
               ) : (
                 <p className="mt-1 text-[11px] text-primary/80">Review linked resources before sending.</p>
               )}
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-medium text-primary">
+                <Hash className="h-3 w-3" />
+                /{promptPreview.def.trigger}
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -597,30 +768,12 @@ export const Textarea = ({
           )}
         </div>
       )}
-
-      {menuOpen && (
-        <div className="animate-in slide-in-from-top-2 duration-200">
-          <SlashPromptMenu
-            className="w-full"
-            query={query}
-            items={items}
-            onSelect={insertPrompt}
-            onClose={() => {
-              setMenuOpen(false);
-              setIsTypingSlash(false);
-            }}
-            activeIndex={activeIndex}
-            setActiveIndex={setActiveIndex}
-            loading={!promptsLoaded}
-          />
-        </div>
-      )}
-
       <PromptArgDialog
         open={argDialog.open}
         onOpenChange={(open) => setArgDialog((state) => ({ ...state, open }))}
         serverId={argDialog.def?.sourceServerSlug ?? argDialog.server?.id ?? "server"}
         prompt={argDialog.prompt ?? { name: "", arguments: [] }}
+        promptDef={argDialog.def}
         onResolve={async (values) => {
           if (!argDialog.server || !argDialog.def) return;
           await resolveServerPrompt(argDialog.server, argDialog.def, values);

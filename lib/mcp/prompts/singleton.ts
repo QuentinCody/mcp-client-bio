@@ -1,6 +1,7 @@
 "use client";
 import { PromptRegistry } from "./registry";
 import type { SlashPromptDef } from "./types";
+import { clientPromptDefs } from "@/lib/slash/client-prompts-defs";
 
 export const promptRegistry = new PromptRegistry();
 
@@ -47,7 +48,23 @@ export async function ensurePromptsLoaded(): Promise<void> {
       const normalized = Array.isArray(data.prompts)
         ? data.prompts.map((p) => normalizePrompt(p))
         : [];
-      promptRegistry.load(normalized);
+      const map = new Map(normalized.map((def) => [def.trigger.toLowerCase(), def] as const));
+      for (const prompt of clientPromptDefs.map(normalizePrompt)) {
+        map.set(prompt.trigger.toLowerCase(), prompt);
+      }
+      promptRegistry.load(Array.from(map.values()));
+      try {
+        const raw = typeof window !== "undefined" ? window.localStorage.getItem("prompt:recent") : null;
+        if (raw) {
+          const recent: Array<{ id: string; ts: number }> = JSON.parse(raw);
+          for (const entry of recent) {
+            if (!entry || typeof entry.id !== "string") continue;
+            promptRegistry.markUsed(entry.id, typeof entry.ts === "number" ? entry.ts : undefined);
+          }
+        }
+      } catch {
+        // ignore localStorage hydration issues
+      }
       loaded = true;
     } catch {
       // ignore load failures; menu will simply be empty
