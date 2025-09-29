@@ -3,10 +3,8 @@ import React, { memo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import {
-  tomorrow,
-  oneLight,
-} from "react-syntax-highlighter/dist/cjs/styles/prism";
+import ghcolors from "react-syntax-highlighter/dist/cjs/styles/prism/ghcolors";
+import vscDarkPlus from "react-syntax-highlighter/dist/cjs/styles/prism/vsc-dark-plus";
 import { Check, Copy } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -21,7 +19,7 @@ const CodeBlock = ({
   const [copied, setCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || "");
   const language = match ? match[1] : "";
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(children);
@@ -29,9 +27,15 @@ const CodeBlock = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Select appropriate theme based on the app's current theme
-  const codeStyle =
-    theme === "light" || theme === "sunset" ? oneLight : tomorrow;
+  const activeTheme = theme === "system" ? resolvedTheme : theme;
+  const isLightTheme =
+    !activeTheme || activeTheme === "light" || activeTheme === "sunset";
+
+  // Select high-contrast theme based on the app's current palette
+  const codeStyle = isLightTheme ? ghcolors : vscDarkPlus;
+  const codeBackground = isLightTheme
+    ? "hsl(var(--secondary))"
+    : "hsl(var(--muted))";
 
   return (
     <div className="relative group rounded-lg overflow-hidden border border-border mb-3 md:mb-4 w-full max-w-full">
@@ -52,13 +56,22 @@ const CodeBlock = ({
           customStyle={{
             margin: 0,
             padding: "0.75rem 1rem",
-            fontSize: "0.85em",
-            backgroundColor: "var(--secondary)",
+            fontSize: "0.9em",
+            lineHeight: "1.55",
+            background: codeBackground,
+            backgroundColor: codeBackground,
+            color: "hsl(var(--foreground))",
             borderRadius: 0,
             width: "100%",
             minWidth: "100%",
           }}
           PreTag="div"
+          codeTagProps={{
+            style: {
+              background: "transparent",
+              color: "inherit",
+            },
+          }}
           wrapLines
           wrapLongLines
         >
