@@ -191,4 +191,4 @@ export type modelID = keyof typeof languageModels;
 
 export const MODELS = Object.keys(languageModels);
 
-export const defaultModel: modelID = "gpt-5";
+export const defaultModel: modelID = "gemini-2.5-pro";
