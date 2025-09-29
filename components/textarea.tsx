@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
 import { SlashPromptMenu } from "@/components/prompts/slash-prompt-menu";
 import { toToken } from "@/lib/mcp/prompts/token";
+import { renderTemplate } from "@/lib/mcp/prompts/template";
 import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
 import { slashRegistry } from "@/lib/slash";
 import type { SlashCommandMeta, SlashCommandSuggestion } from "@/lib/slash/types";
@@ -87,6 +88,7 @@ export const Textarea = ({
   const [registryRevision, setRegistryRevision] = useState(0);
   const [argDialog, setArgDialog] = useState<{
     open: boolean;
+    mode?: "server" | "client";
     server?: MCPServer;
     prompt?: PromptSummary;
     def?: MenuItem;
@@ -265,6 +267,71 @@ export const Textarea = ({
     };
   }
 
+  function resolveClientPrompt(def: MenuItem, args: Record<string, string>) {
+    const templateMessages = def.template?.messages ?? [];
+
+    if (templateMessages.length === 0) {
+      const selStart = textareaRef.current?.selectionStart ?? input.length;
+      const before = input.slice(0, selStart);
+      const after = input.slice(selStart);
+      const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
+      handleInputChange({ target: { value: replaced } } as any);
+      setMenuOpen(false);
+      setIsTypingSlash(false);
+      promptRegistry.markUsed(def.id);
+      try {
+        const raw = localStorage.getItem("prompt:recent");
+        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+        existing.set(def.id, Date.now());
+        const next = Array.from(existing.entries())
+          .map(([id, ts]) => ({ id, ts }))
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 8);
+        localStorage.setItem("prompt:recent", JSON.stringify(next));
+      } catch {}
+      return;
+    }
+
+    setMenuOpen(false);
+    setIsTypingSlash(false);
+    promptRegistry.markUsed(def.id);
+    try {
+      const raw = localStorage.getItem("prompt:recent");
+      const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
+      const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
+      existing.set(def.id, Date.now());
+      const next = Array.from(existing.entries())
+        .map(([id, ts]) => ({ id, ts }))
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 8);
+      localStorage.setItem("prompt:recent", JSON.stringify(next));
+    } catch {}
+
+    try {
+      localStorage.setItem(`prompt:${def.id}:args`, JSON.stringify(args));
+    } catch {}
+
+    const messages: PromptMessage[] = templateMessages.map((message) => ({
+      role: message.role,
+      content: [
+        {
+          type: "text",
+          text: renderTemplate(message.text, args),
+        },
+      ],
+    }));
+
+    onPromptResolved({
+      def,
+      args,
+      result: {
+        messages,
+        description: def.description,
+      },
+    });
+  }
+
   async function resolveServerPrompt(
     server: MCPServer,
     def: MenuItem,
@@ -407,51 +474,20 @@ export const Textarea = ({
     }
 
     if (def.origin === 'client-prompt') {
-      const templateMessages = def.template?.messages ?? [];
-      if (templateMessages.length === 0) {
-        const selStart = textareaRef.current?.selectionStart ?? input.length;
-        const before = input.slice(0, selStart);
-        const after = input.slice(selStart);
-        const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
-        handleInputChange({ target: { value: replaced } } as any);
+      const hasArgs = (def.args?.length ?? 0) > 0;
+      if (hasArgs) {
         setMenuOpen(false);
-        promptRegistry.markUsed(def.id);
+        setIsTypingSlash(false);
+        setArgDialog({
+          open: true,
+          mode: 'client',
+          prompt: toPromptSummary(def),
+          def,
+        });
         return;
       }
 
-      const messages: PromptMessage[] = templateMessages.map((message) => ({
-        role: message.role,
-        content: [
-          {
-            type: "text",
-            text: message.text,
-          },
-        ],
-      }));
-
-      setMenuOpen(false);
-      setIsTypingSlash(false);
-      promptRegistry.markUsed(def.id);
-      try {
-        const raw = localStorage.getItem("prompt:recent");
-        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-        existing.set(def.id, Date.now());
-        const next = Array.from(existing.entries())
-          .map(([id, ts]) => ({ id, ts }))
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, 8);
-        localStorage.setItem("prompt:recent", JSON.stringify(next));
-      } catch {}
-
-      onPromptResolved({
-        def,
-        args: {},
-        result: {
-          messages,
-          description: def.description,
-        },
-      });
+      resolveClientPrompt(def, {});
       return;
     }
 
@@ -480,7 +516,7 @@ export const Textarea = ({
       } catch {}
 
       if (hasArgs) {
-        setArgDialog({ open: true, server, prompt: summary, def });
+        setArgDialog({ open: true, mode: 'server', server, prompt: summary, def });
         return;
       }
 
@@ -771,25 +807,38 @@ export const Textarea = ({
       <PromptArgDialog
         open={argDialog.open}
         onOpenChange={(open) => setArgDialog((state) => ({ ...state, open }))}
-        serverId={argDialog.def?.sourceServerSlug ?? argDialog.server?.id ?? "server"}
+        serverId={
+          argDialog.mode === 'client'
+            ? 'client'
+            : argDialog.def?.sourceServerSlug ?? argDialog.server?.id ?? 'server'
+        }
         prompt={argDialog.prompt ?? { name: "", arguments: [] }}
         promptDef={argDialog.def}
         onResolve={async (values) => {
-          if (!argDialog.server || !argDialog.def) return;
-          await resolveServerPrompt(argDialog.server, argDialog.def, values);
+          if (!argDialog.def) return;
+          if (argDialog.mode === 'server') {
+            if (!argDialog.server) return;
+            await resolveServerPrompt(argDialog.server, argDialog.def, values);
+          } else if (argDialog.mode === 'client') {
+            resolveClientPrompt(argDialog.def, values);
+          }
           setArgDialog({ open: false });
         }}
-        onCompleteArgument={async (argumentName, value, context) => {
-          if (!argDialog.server || !argDialog.def) return [];
-          const result = await completePromptArgument({
-            serverId: argDialog.server.id,
-            promptName: argDialog.def.name,
-            argumentName,
-            value,
-            contextArgs: context,
-          });
-          return result?.values ?? [];
-        }}
+        onCompleteArgument={
+          argDialog.mode === 'server'
+            ? async (argumentName, value, context) => {
+                if (!argDialog.server || !argDialog.def) return [];
+                const result = await completePromptArgument({
+                  serverId: argDialog.server.id,
+                  promptName: argDialog.def.name,
+                  argumentName,
+                  value,
+                  contextArgs: context,
+                });
+                return result?.values ?? [];
+              }
+            : undefined
+        }
       />
     </div>
   );
