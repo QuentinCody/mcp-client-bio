@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,11 @@ export function PromptArgDialog({
   const [submitting, setSubmitting] = useState(false);
   const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
   const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const timers = useRef<Record<string, number>>({});
   const requestVersions = useRef<Record<string, number>>({});
   const hydratingPromptId = useRef<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const args = useMemo(() => prompt.arguments ?? [], [prompt.arguments]);
   const totalArgs = args.length;
@@ -59,6 +61,7 @@ export function PromptArgDialog({
       }
       timers.current = {};
       setActiveIndex(0);
+      setSelectedSuggestionIndex(-1);
       hydratingPromptId.current = null;
     }
   }, [open]);
@@ -104,16 +107,16 @@ export function PromptArgDialog({
     return Boolean(value && value.trim());
   }, [currentArg, values]);
 
-  function clearFormError() {
+  const clearFormError = useCallback(() => {
     setErrors((prev) => {
       if (!prev.__form) return prev;
       const next = { ...prev };
       delete next.__form;
       return next;
     });
-  }
+  }, []);
 
-  async function handleSubmit() {
+  const handleSubmit = useCallback(async () => {
     const missing = args
       .filter((arg) => arg.required)
       .filter((arg) => !(values[arg.name] ?? "").trim())
@@ -140,7 +143,7 @@ export function PromptArgDialog({
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [args, values, onResolve, promptDef?.id, onOpenChange]);
 
   function scheduleCompletion(argName: string, nextValues: Record<string, string>, delay = 250) {
     if (!onCompleteArgument) return;
@@ -170,10 +173,14 @@ export function PromptArgDialog({
   useEffect(() => {
     if (!open || !currentArg) return;
     scheduleCompletion(currentArg.name, values, 0);
+    // Focus the input immediately when dialog opens or parameter changes
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentArg?.name]);
 
-  function handleNext() {
+  const handleNext = useCallback(() => {
     if (!currentArg) return;
     if (currentArg.required && !canAdvanceCurrent) {
       setErrors({ __form: `Please enter a value for ${currentArg.name}` });
@@ -181,20 +188,31 @@ export function PromptArgDialog({
     }
     clearFormError();
     setActiveIndex((index) => Math.min(index + 1, totalArgs - 1));
-  }
+    setSelectedSuggestionIndex(-1);
+    // Focus next input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  }, [currentArg, canAdvanceCurrent, totalArgs, clearFormError]);
 
-  function handleBack() {
+  const handleBack = useCallback(() => {
     clearFormError();
     setActiveIndex((index) => Math.max(index - 1, 0));
-  }
+    setSelectedSuggestionIndex(-1);
+    // Focus previous input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  }, [clearFormError]);
 
   const suggestionsForCurrent = currentArg ? suggestions[currentArg.name] ?? [] : [];
   const completedPercent = totalArgs === 0 ? 0 : Math.round((completedCount / totalArgs) * 100);
 
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md max-h-[80vh] overflow-auto border border-border/40 bg-white/95 backdrop-blur-xl shadow-2xl"
+        className="sm:max-w-md max-h-[80vh] overflow-auto border-2 border-border/40 bg-white/95 backdrop-blur-xl shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
         aria-describedby={undefined}
       >
         <DialogHeader>
@@ -220,12 +238,12 @@ export function PromptArgDialog({
             </div>
             <div className="h-1 w-full rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-primary transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-500 ease-out"
                 style={{ width: `${completedPercent}%` }}
               />
             </div>
             {currentArg ? (
-              <div className="space-y-3" key={currentArg.name}>
+              <div className="space-y-3 p-4 rounded-lg border-2 border-blue-200 bg-blue-50/50 shadow-sm animate-in fade-in-0 slide-in-from-right-2 duration-300" key={currentArg.name}>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">
                     {currentArg.name}
@@ -242,30 +260,101 @@ export function PromptArgDialog({
                 </div>
                 <div className="relative">
                   <Input
+                    ref={inputRef}
                     aria-label={`Argument ${currentArg.name}`}
                     value={values[currentArg.name] ?? ""}
                     placeholder="Type value…"
+                    className="transition-all duration-200 focus:ring-4 focus:ring-blue-400 focus:border-blue-500 focus:bg-blue-50 focus:scale-[1.02] focus:shadow-lg border-2"
                     onChange={(event) => {
                       const next = {
                         ...values,
                         [currentArg.name]: event.target.value,
                       };
                       setValues(next);
+                      setSelectedSuggestionIndex(-1); // Reset suggestion selection when typing
                       scheduleCompletion(currentArg.name, next);
                     }}
+                    onKeyDown={(event) => {
+                      const hasSuggestions = suggestionsForCurrent.length > 0;
+
+                      // Handle suggestion navigation
+                      if (event.key === "ArrowDown" && hasSuggestions) {
+                        event.preventDefault();
+                        setSelectedSuggestionIndex((prev) =>
+                          prev < suggestionsForCurrent.length - 1 ? prev + 1 : 0
+                        );
+                        return;
+                      }
+
+                      if (event.key === "ArrowUp" && hasSuggestions) {
+                        event.preventDefault();
+                        setSelectedSuggestionIndex((prev) =>
+                          prev > 0 ? prev - 1 : suggestionsForCurrent.length - 1
+                        );
+                        return;
+                      }
+
+                      // Enter handling
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+
+                        // If there's a selected suggestion, use it first
+                        if (hasSuggestions && selectedSuggestionIndex >= 0) {
+                          const selectedSuggestion = suggestionsForCurrent[selectedSuggestionIndex];
+                          const next = { ...values, [currentArg.name]: selectedSuggestion };
+                          setValues(next);
+                          setSelectedSuggestionIndex(-1);
+                          scheduleCompletion(currentArg.name, next);
+                          return;
+                        }
+
+                        // If we're on the last parameter and all required fields are filled, submit
+                        if (activeIndex === totalArgs - 1 && !requiredMissing) {
+                          handleSubmit();
+                        } else if (canAdvanceCurrent) {
+                          // Otherwise, move to next parameter if current one is valid
+                          handleNext();
+                        } else {
+                          // Show error if current field is required but empty
+                          setErrors({ __form: `Please enter a value for ${currentArg.name}` });
+                        }
+                      }
+
+                      // Tab with selected suggestion applies it
+                      if (event.key === "Tab" && hasSuggestions && selectedSuggestionIndex >= 0) {
+                        event.preventDefault();
+                        const selectedSuggestion = suggestionsForCurrent[selectedSuggestionIndex];
+                        const next = { ...values, [currentArg.name]: selectedSuggestion };
+                        setValues(next);
+                        setSelectedSuggestionIndex(-1);
+                        scheduleCompletion(currentArg.name, next);
+                        return;
+                      }
+
+                      // Escape clears suggestion selection
+                      if (event.key === "Escape") {
+                        setSelectedSuggestionIndex(-1);
+                      }
+                    }}
+                    autoFocus
                   />
                   <Terminal className="absolute right-2 top-2 h-4 w-4 text-muted-foreground/70" />
                 </div>
                 {suggestionsForCurrent.length > 0 ? (
                   <div className="max-h-32 overflow-auto rounded border p-1 text-sm">
-                    {suggestionsForCurrent.map((suggestion) => (
+                    {suggestionsForCurrent.map((suggestion, index) => (
                       <button
                         key={suggestion}
                         type="button"
-                        className="block w-full rounded px-2 py-1 text-left hover:bg-muted"
+                        className={`block w-full rounded px-2 py-1 text-left transition-all duration-200 hover:bg-muted ${
+                          index === selectedSuggestionIndex
+                            ? "bg-purple-100 border-2 border-purple-500 shadow-lg scale-[1.02] text-purple-900 font-medium"
+                            : "border border-transparent"
+                        }`}
                         onClick={() => {
                           const next = { ...values, [currentArg.name]: suggestion };
                           setValues(next);
+                          setSelectedSuggestionIndex(-1);
                           scheduleCompletion(currentArg.name, next);
                         }}
                       >
@@ -285,42 +374,69 @@ export function PromptArgDialog({
           <p className="text-sm text-red-600">{errors.__form}</p>
         ) : null}
 
-        <DialogFooter>
+        {totalArgs > 0 && (
+          <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-muted-foreground/80 border-t pt-3">
+            <span className="inline-flex items-center gap-1">
+              <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+              {activeIndex === totalArgs - 1 ? "Insert prompt" : "Next parameter"}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Tab</span>
+              Navigate to buttons
+            </span>
+            {suggestionsForCurrent.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">↑↓</span>
+                Browse suggestions
+              </span>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="flex justify-between">
           <Button
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
+            className="transition-all duration-200 focus:ring-4 focus:ring-red-400 focus:bg-red-100 focus:text-red-900 focus:border-red-500 focus:scale-105 focus:shadow-xl hover:bg-red-50 border-2 border-transparent"
           >
             Cancel
           </Button>
-          {totalArgs > 0 && activeIndex > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleBack}
-              disabled={submitting}
-            >
-              Back
-            </Button>
-          ) : null}
-          {totalArgs > 0 && activeIndex < totalArgs - 1 ? (
-            <Button
-              type="button"
-              onClick={handleNext}
-              disabled={submitting || !canAdvanceCurrent}
-            >
-              Next
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={submitting || (totalArgs > 0 && requiredMissing)}
-            >
-              {submitting ? "Resolving…" : "Insert preview"}
-            </Button>
-          )}
+
+          <div className="flex gap-2">
+            {totalArgs > 0 && activeIndex > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleBack}
+                disabled={submitting}
+                className="transition-all duration-200 focus:ring-4 focus:ring-orange-400 focus:bg-orange-100 focus:text-orange-900 focus:border-2 focus:border-orange-500 focus:scale-105 focus:shadow-xl hover:bg-orange-50 border-0"
+              >
+                Back
+              </Button>
+            )}
+
+            {totalArgs > 0 && activeIndex < totalArgs - 1 ? (
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={submitting || !canAdvanceCurrent}
+                className="transition-all duration-200 focus:ring-4 focus:ring-green-400 focus:bg-green-600 focus:text-white focus:border-green-700 focus:scale-105 focus:shadow-xl hover:bg-green-600 border-0"
+              >
+                Next
+              </Button>
+            ) : totalArgs > 0 ? (
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting || requiredMissing}
+                className="transition-all duration-200 focus:ring-4 focus:ring-green-400 focus:bg-green-600 focus:text-white focus:border-green-700 focus:scale-105 focus:shadow-xl hover:bg-green-600 border-0"
+              >
+                {submitting ? "Resolving…" : "Insert prompt"}
+              </Button>
+            ) : null}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
