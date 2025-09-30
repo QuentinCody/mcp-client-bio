@@ -274,10 +274,24 @@ export const Textarea = ({
       const selStart = textareaRef.current?.selectionStart ?? input.length;
       const before = input.slice(0, selStart);
       const after = input.slice(selStart);
+      const slashMatch = /(^|\s)\/([^\s]*)$/.exec(before);
       const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
       handleInputChange({ target: { value: replaced } } as any);
       setMenuOpen(false);
       setIsTypingSlash(false);
+
+      // Position cursor after the inserted token
+      requestAnimationFrame(() => {
+        const node = textareaRef.current;
+        if (node && slashMatch) {
+          const matchStart = selStart - slashMatch[0].length;
+          const prefixLength = slashMatch[1].length; // whitespace before slash
+          const tokenLength = toToken(def).length;
+          const newCursorPos = matchStart + prefixLength + tokenLength;
+          node.setSelectionRange(newCursorPos, newCursorPos);
+          node.focus();
+        }
+      });
       promptRegistry.markUsed(def.id);
       try {
         const raw = localStorage.getItem("prompt:recent");
@@ -468,6 +482,11 @@ export const Textarea = ({
       setIsTypingSlash(false);
       const fakeEvent = { target: { value: "" } } as any;
       handleInputChange(fakeEvent);
+
+      // Focus textarea after command execution
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
       try {
         const raw = localStorage.getItem("prompt:recent");
         const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
@@ -538,10 +557,24 @@ export const Textarea = ({
     const selStart = textareaRef.current?.selectionStart ?? input.length;
     const before = input.slice(0, selStart);
     const after = input.slice(selStart);
+    const slashMatch = /(^|\s)\/([^\s]*)$/.exec(before);
     const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
     const fakeEvent = { target: { value: replaced } } as any;
     handleInputChange(fakeEvent);
     setMenuOpen(false);
+
+    // Position cursor after the inserted token
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (node && slashMatch) {
+        const matchStart = selStart - slashMatch[0].length;
+        const prefixLength = slashMatch[1].length; // whitespace before slash
+        const tokenLength = toToken(def).length;
+        const newCursorPos = matchStart + prefixLength + tokenLength;
+        node.setSelectionRange(newCursorPos, newCursorPos);
+        node.focus();
+      }
+    });
     promptRegistry.markUsed(def.id);
     try {
       const raw = localStorage.getItem("prompt:recent");
