@@ -58,8 +58,8 @@
     },
     {
       "name": "NCI GDC",
-      "type": "sse",
-      "url": "https://nci-gdc-mcp-server.quentincody.workers.dev/sse"
+      "type": "streamable-http",
+      "url": "https://nci-gdc-mcp-server.quentincody.workers.dev/mcp"
     },
     {
       "name": "Pharos",
