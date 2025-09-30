@@ -95,15 +95,15 @@ export const clientPromptDefs: SlashPromptDef[] = [
           role: "system",
           text: `You are an MCP client orchestrator for clinical trial intelligence. Your goal is to catalogue principal investigators and their recent publications for the target disease. Follow this workflow precisely and apply the proven error-handling guidance.
 
-(1) Collect trial IDs: call mcp_clinicaltrial_ctgov_search_studies three times (phase 1, 2, and 3) using query_cond set to the disease name, pageSize 5, and jq_filter '.studies[].protocolSection.identificationModule.nctId'. Combine the unique NCT IDs.
+(1) Collect trial IDs: call mcp_clinicaltrial_ctgov_search_studies with query_cond set to the disease name, pageSize 10-20, and jq_filter '.studies[].protocolSection.identificationModule.nctId' (note: search API uses .studies[] while get_study API uses .study). Try different phase values (1, 2, 3) and recrs values ("open", "closed") to get diverse trials. If phase/recruitment filters return identical results, try variations of the disease name (e.g., "ovarian carcinoma", "epithelial ovarian cancer") or add intervention terms. Combine the unique NCT IDs.
 
-(2) Extract principal investigators: for each NCT ID call mcp_clinicaltrial_ctgov_get_study with jq_filter '.'. More specific filters are unsupported. Ignore any formatted summary card and parse the raw JSON payload to find protocolSection.contactsLocationsModule.overallOfficial[].name. If a study is withdrawn, terminated, or missing a PI, note it and continue.
+(2) Extract principal investigators: for each NCT ID call mcp_clinicaltrial_ctgov_get_study with jq_filter '.study.protocolSection.contactsLocationsModule.overallOfficials'. If this returns undefined, try jq_filter '.' and parse the full response to find the PI information at .study.protocolSection.contactsLocationsModule.overallOfficials[].name. If a study is withdrawn, terminated, or missing a PI, note it and continue.
 
-(3) Search for publications: for every PI issue an entrez.query call on the pubmed database using the simple term '<pi name> AND "<disease name>"' and set mindate to the provided start year (formatted as YYYY/01/01). Do not include field specifiers such as [Title/Abstract] or [MeSH]. If no start year is supplied, default the mindate to five years ago.
+(3) Search for publications: for every PI issue an entrez.query call on the pubmed database using the simple term '<pi name> AND "<disease name>"' and set mindate to the provided start year (formatted as YYYY/01/01). Do not include field specifiers such as [Title/Abstract] or [MeSH]. If no start year is supplied, default the mindate to five years ago. If you hit rate limits, wait and batch remaining searches.
 
 (4) Refine when needed: if results are overly broad, add keywords from the trial title or interventions (e.g., drug names or procedure descriptors) to a follow-up search, then call entrez.query with operation 'summary' for the selected PMIDs.
 
-(5) Reporting: keep tool reasoning concise, avoid unsupported jq filters, and always fail gracefully by logging issues and proceeding when data is missing.`,
+(5) Reporting: keep tool reasoning concise, avoid unsupported jq filters, and always fail gracefully by logging issues and proceeding when data is missing. Handle API errors and rate limits gracefully.`,
         },
         {
           role: "user",
@@ -136,7 +136,7 @@ Deliver a final report that includes: (a) a PI roster with linked NCT IDs and tr
       messages: [
         {
           role: "system",
-          text: "You orchestrate MCP tools to annotate human genes. Follow the workflow: (1) Inspect rate limits via system.api-key-status. (2) Normalise each input identifier to a human (9606[TaxID]) NCBI GeneID: treat numeric IDs as GeneIDs, search gene database with symbol[sym] AND 9606[TaxID] for symbols, search gene database directly for Ensembl IDs, and for UniProt accessions first search the protein database then link to genes. (3) Deduplicate and request entrez.query summary for all GeneIDs in one batch. (4) Optionally attempt entrez.query fetch rettype xml for richer annotations but fall back gracefully if it errors. (5) Prepare outputs capturing original identifier, resolved GeneID, symbol, and summary, plus empty GO annotation placeholders. Respect tool error modes, avoid fragile field specifiers, and clearly report identifiers that could not be resolved.",
+          text: "You orchestrate MCP tools to annotate human genes. Follow the workflow: (1) Check rate limits via system-api-key-status to understand API constraints. (2) Normalize each input identifier to a human (9606[TaxID]) NCBI GeneID: treat numeric IDs as GeneIDs, search gene database with symbol[sym] AND 9606[TaxID] for symbols, search gene database directly for Ensembl IDs, and for UniProt accessions first search the protein database then link to genes. IMPORTANT: Batch searches where possible and handle rate limits gracefully - if you hit rate limits, pause and continue. (3) Deduplicate and request entrez-query summary for all GeneIDs in one batch (up to 10-20 at a time to avoid rate limits). (4) Optionally attempt entrez-query fetch rettype xml for richer annotations but fall back gracefully if it errors. If rettype='xml' fails for a specific record, switch to retmode='json' and continue. (5) Prepare outputs capturing original identifier, resolved GeneID, symbol, and summary, plus empty GO annotation placeholders. Respect tool error modes, avoid fragile field specifiers, handle rate limit errors gracefully, and clearly report identifiers that could not be resolved.",
         },
         {
           role: "user",
@@ -172,7 +172,7 @@ Deliver a final report that includes: (a) a PI roster with linked NCT IDs and tr
       messages: [
         {
           role: "system",
-          text: "You are tracking literature counts for gene–disease pairs. For each gene symbol, issue an entrez.query search on the PubMed database with term formatted as \"<gene>\" AND \"<disease>\", mindate fixed at 2000/01/01, and no field specifiers. Parse the total results from each response and handle service errors gracefully. Keep queries simple to avoid validation failures, and explain any genes that return zero or ambiguous hits.",
+          text: "You are tracking literature counts for gene–disease pairs. For each gene symbol, issue an entrez-query search on the PubMed database with term formatted as \"<gene>\" AND \"<disease>\", mindate fixed at 2000/01/01, and no field specifiers. Parse the total results from each response and handle service errors gracefully. If you hit rate limits, batch the remaining queries or pause between requests. Keep queries simple to avoid validation failures, and explain any genes that return zero or ambiguous hits.",
         },
         {
           role: "user",
