@@ -96,7 +96,11 @@ export async function POST(req: Request) {
 
   // Initialize MCP clients using the already running persistent HTTP/SSE servers
   try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
-  const { tools, cleanup } = await initializeMCPClients(mcpServers, req.signal);
+  const { tools: rawTools, cleanup } = await initializeMCPClients(mcpServers, req.signal);
+
+  // Transform MCP tools for compatibility with AI providers
+  const tools = transformMCPToolsForResponsesAPI(rawTools);
+
   try {
     console.log('[API /chat] initialized tools keys=', tools ? Object.keys(tools) : 'none');
   } catch {}
