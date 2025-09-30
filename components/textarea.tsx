@@ -208,7 +208,7 @@ export const Textarea = ({
 
   const composerStatus = isStreaming
     ? status === "submitted"
-      ? "Preparing"
+      ? "Thinking..."
       : "Streaming"
     : "Ready";
 
@@ -444,9 +444,19 @@ export const Textarea = ({
       setIsTypingSlash(false);
     }
 
-    if (e.key === "Enter" && !e.shiftKey && !isLoading && input.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && !isLoading) {
       e.preventDefault();
-      e.currentTarget.form?.requestSubmit();
+
+      // If there's a prompt preview, send it (this calls form.requestSubmit() same as normal)
+      if (promptPreview && !promptPreview.sending) {
+        handlePreviewSend();
+        return;
+      }
+
+      // For regular input without prompt preview, send if it has content
+      if (input.trim()) {
+        e.currentTarget.form?.requestSubmit();
+      }
     }
   }
 
@@ -795,7 +805,13 @@ export const Textarea = ({
             </div>
           ) : null}
           {!promptPreview.sending && (
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/80">
+                <span className="inline-flex items-center gap-1">
+                  <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+                  Send
+                </span>
+              </div>
               <Button size="sm" className="gap-2" type="button" onClick={handlePreviewSend} disabled={isLoading}>
                 <ArrowUp className="h-3.5 w-3.5" />
                 Send prompt
@@ -823,6 +839,17 @@ export const Textarea = ({
             resolveClientPrompt(argDialog.def, values);
           }
           setArgDialog({ open: false });
+
+          // Focus the textarea after dialog closes and prompt is inserted
+          requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (textarea) {
+              textarea.focus();
+              // Position cursor at the end of the text
+              const length = textarea.value.length;
+              textarea.setSelectionRange(length, length);
+            }
+          });
         }}
         onCompleteArgument={
           argDialog.mode === 'server'
