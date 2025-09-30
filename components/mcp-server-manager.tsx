@@ -748,7 +748,7 @@ export const MCPServerManager = ({
                             className={cn(
                               "relative flex flex-col gap-4 rounded-xl border transition-all duration-200",
                               isActive
-                                ? "border-primary/35 bg-gradient-to-br from-primary/20 via-white/90 to-primary/8 shadow-[0_22px_55px_-26px_rgba(79,70,229,0.55)]"
+                                ? "border-primary/35 bg-gradient-to-br from-primary/20 via-white/90 to-primary/8 shadow-[0_22px_55px_-26px_rgba(79,70,229,0.55)] dark:from-primary/15 dark:via-slate-900/95 dark:to-primary/10"
                                 : "border-border/70 bg-white/95 shadow-sm hover:border-primary/25 hover:shadow-lg dark:bg-slate-950/70 dark:border-slate-800/60"
                             )}
                           >
