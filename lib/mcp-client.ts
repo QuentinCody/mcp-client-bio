@@ -360,6 +360,16 @@ function coerceToOpenAIToolParams(schema: any): any {
   const visit = (node: any) => {
     if (!node || typeof node !== "object") return;
 
+    // Fix required array to only include properties that are actually defined
+    if (Array.isArray(node.required) && node.properties && typeof node.properties === "object") {
+      const definedProperties = Object.keys(node.properties);
+      node.required = node.required.filter((prop: string) => definedProperties.includes(prop));
+      // Remove empty required array
+      if (node.required.length === 0) {
+        delete node.required;
+      }
+    }
+
     if ("additionalProperties" in node) {
       const ap = node.additionalProperties;
       // Collapse any empty or typeless object schema into boolean true for OpenAI validator
@@ -407,14 +417,19 @@ function jsonSchemaToZod(schema: any): any {
   }
   if (schema.type === 'object' || schema.properties) {
     const shape: Record<string, any> = {};
-    for (const [key, propSchema] of Object.entries(schema.properties || {})) {
+    const properties = schema.properties || {};
+    const requiredProps = Array.isArray(schema.required)
+      ? schema.required.filter((prop: string) => prop in properties)
+      : [];
+
+    for (const [key, propSchema] of Object.entries(properties)) {
       const zProp = jsonSchemaToZod(propSchema);
-      let finalProp = zProp; // force required
+      let finalProp = requiredProps.includes(key) ? zProp : zProp.optional();
       const desc = (propSchema as any)?.description;
       if (typeof desc === 'string') finalProp = finalProp.describe(desc);
       shape[key] = finalProp;
     }
-    return z.object(shape).strict();
+    return z.object(shape).passthrough();
   }
   return z.any();
 }
@@ -467,7 +482,7 @@ export function transformMCPToolsForResponsesAPI(tools: Record<string, any>): Re
       transformedParameters = z.object({
         query: z.string().describe('GraphQL query string'),
         variables_json: z.string().describe('JSON-encoded GraphQL variables object (use {} if none)')
-      }).strict();
+      }).passthrough();
 
       // Wrap underlying execution to convert variables_json -> variables
       const adaptArgs = (args: any) => {
