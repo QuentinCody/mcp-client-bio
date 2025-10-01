@@ -212,7 +212,7 @@ export function PromptArgDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md max-h-[80vh] overflow-auto border-2 border-border/40 bg-white/95 backdrop-blur-xl shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+        className="sm:max-w-md max-h-[80vh] overflow-auto border-2 border-border/40 bg-background/95 backdrop-blur-xl shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
         aria-describedby={undefined}
       >
         <DialogHeader>
@@ -243,7 +243,7 @@ export function PromptArgDialog({
               />
             </div>
             {currentArg ? (
-              <div className="space-y-3 p-4 rounded-lg border-2 border-blue-200 bg-blue-50/50 shadow-sm animate-in fade-in-0 slide-in-from-right-2 duration-300" key={currentArg.name}>
+              <div className="space-y-3 p-4 rounded-lg border-2 border-border bg-muted/50 shadow-sm animate-in fade-in-0 slide-in-from-right-2 duration-300" key={currentArg.name}>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">
                     {currentArg.name}
@@ -264,7 +264,7 @@ export function PromptArgDialog({
                     aria-label={`Argument ${currentArg.name}`}
                     value={values[currentArg.name] ?? ""}
                     placeholder="Type value…"
-                    className="transition-all duration-200 focus:ring-4 focus:ring-blue-400 focus:border-blue-500 focus:bg-blue-50 focus:scale-[1.02] focus:shadow-lg border-2"
+                    className="transition-all duration-200 focus:ring-4 focus:ring-ring focus:border-ring focus:bg-accent/20 focus:scale-[1.02] focus:shadow-lg border-2"
                     onChange={(event) => {
                       const next = {
                         ...values,
@@ -348,7 +348,7 @@ export function PromptArgDialog({
                         type="button"
                         className={`block w-full rounded px-2 py-1 text-left transition-all duration-200 hover:bg-muted ${
                           index === selectedSuggestionIndex
-                            ? "bg-purple-100 border-2 border-purple-500 shadow-lg scale-[1.02] text-purple-900 font-medium"
+                            ? "bg-accent border-2 border-ring shadow-lg scale-[1.02] text-accent-foreground font-medium"
                             : "border border-transparent"
                         }`}
                         onClick={() => {
@@ -399,7 +399,7 @@ export function PromptArgDialog({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
-            className="transition-all duration-200 focus:ring-4 focus:ring-red-400 focus:bg-red-100 focus:text-red-900 focus:border-red-500 focus:scale-105 focus:shadow-xl hover:bg-red-50 border-2 border-transparent"
+            className="transition-all duration-200 focus:ring-4 focus:ring-destructive/50 focus:bg-destructive/10 focus:text-destructive focus:border-destructive focus:scale-105 focus:shadow-xl hover:bg-destructive/5 border-2 border-transparent"
           >
             Cancel
           </Button>
@@ -411,7 +411,7 @@ export function PromptArgDialog({
                 variant="outline"
                 onClick={handleBack}
                 disabled={submitting}
-                className="transition-all duration-200 focus:ring-4 focus:ring-orange-400 focus:bg-orange-100 focus:text-orange-900 focus:border-2 focus:border-orange-500 focus:scale-105 focus:shadow-xl hover:bg-orange-50 border-0"
+                className="transition-all duration-200 focus:ring-4 focus:ring-ring focus:bg-accent focus:text-accent-foreground focus:border-2 focus:border-ring focus:scale-105 focus:shadow-xl hover:bg-accent/80 border-0"
               >
                 Back
               </Button>
@@ -422,7 +422,7 @@ export function PromptArgDialog({
                 type="button"
                 onClick={handleNext}
                 disabled={submitting || !canAdvanceCurrent}
-                className="transition-all duration-200 focus:ring-4 focus:ring-green-400 focus:bg-green-600 focus:text-white focus:border-green-700 focus:scale-105 focus:shadow-xl hover:bg-green-600 border-0"
+                className="transition-all duration-200 focus:ring-4 focus:ring-primary/50 focus:bg-primary focus:text-primary-foreground focus:border-primary focus:scale-105 focus:shadow-xl hover:bg-primary/90 border-0"
               >
                 Next
               </Button>
@@ -431,7 +431,7 @@ export function PromptArgDialog({
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || requiredMissing}
-                className="transition-all duration-200 focus:ring-4 focus:ring-green-400 focus:bg-green-600 focus:text-white focus:border-green-700 focus:scale-105 focus:shadow-xl hover:bg-green-600 border-0"
+                className="transition-all duration-200 focus:ring-4 focus:ring-primary/50 focus:bg-primary focus:text-primary-foreground focus:border-primary focus:scale-105 focus:shadow-xl hover:bg-primary/90 border-0"
               >
                 {submitting ? "Resolving…" : "Insert prompt"}
               </Button>
