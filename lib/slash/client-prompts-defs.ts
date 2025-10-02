@@ -99,15 +99,17 @@ export const clientPromptDefs: SlashPromptDef[] = [
    - Call mcp_clinicaltrial_ctgov_search_studies with query_cond set to the disease name
    - Use pageSize 15-25 (staging threshold is now 1MB, so larger page sizes work better)
    - Use predefined jq_filter "clinical_summary" to get structured overviews with PI info included
-   - If you need specific fields, use working patterns like '.studies[0].protocolSection.contactsLocationsModule.overallOfficials'
+   - If you need specific fields, use working patterns like '.studies[0].protocolSection.contactsLocationsModule'
    - Try different phase values (1, 2, 3) and recrs values ("open", "closed") to get diverse trials
    - If responses get staged, use the returned data_access_id with mcp_clinicaltrial_ctgov_query_data
 
 (2) Extract NCT IDs and PIs in batch:
-   - From clinical_summary results, collect all NCT IDs that have PI information
-   - For missing PI data, use the NEW mcp_clinicaltrial_ctgov_get_studies tool with all NCT IDs at once
-   - Use jq_filter "." to get full data, then parse .studies[].protocolSection.contactsLocationsModule.overallOfficials
-   - This eliminates multiple individual API calls and is much more efficient
+   - From clinical_summary results, collect all NCT IDs that have contact information
+   - For detailed PI data, use mcp_clinicaltrial_ctgov_get_studies with working jq filters:
+     * ".studies[] | {nctId: .protocolSection.identificationModule.nctId, officials: .protocolSection.contactsLocationsModule.overallOfficials[0]}"
+     * "contact_info" for structured contact extraction
+   - Fallback: use individual mcp_clinicaltrial_ctgov_get_study calls with jq_filter "contact_info"
+   - Note: overallOfficials may not be consistently available, use centralContacts as fallback
 
 (3) Validate parameters if needed:
    - If you encounter parameter errors, use mcp_clinicaltrial_ctgov_validate_args to get corrected parameter names
@@ -123,8 +125,9 @@ export const clientPromptDefs: SlashPromptDef[] = [
    - Default to five years ago if no start year supplied
 
 (6) Enhanced error handling:
-   - jq filter errors now provide specific working examples - use the suggested alternatives
-   - Size estimation warnings help optimize pageSize - follow the recommendations
+   - Working jq filters: ".", "contact_info", "clinical_summary", ".studies[] | {nctId: .protocolSection.identificationModule.nctId, officials: .protocolSection.contactsLocationsModule.overallOfficials[0]}"
+   - The get_studies tool now supports complex array operations for PI extraction
+   - If specific jq filters fail, the tool will provide helpful alternatives
    - Staging is less frequent but when it occurs, use SQL queries effectively
 
 (7) Reporting:
@@ -138,10 +141,10 @@ export const clientPromptDefs: SlashPromptDef[] = [
 Publication start year: {{start_year}} (use the most recent five-year window if blank)
 
 Use the enhanced MCP tools efficiently:
-- Start with clinical_summary jq filter for structured overviews
-- Use batch operations (get_studies) when possible
+- Start with clinical_summary jq filter for structured overviews with contact info
+- Use get_studies with ".studies[] | {nctId: .protocolSection.identificationModule.nctId, officials: .protocolSection.contactsLocationsModule.overallOfficials[0]}" for PI extraction
 - Leverage the increased staging threshold for larger page sizes
-- Follow jq filter guidance from error messages
+- Complex array transformations now work - the tools provide helpful error messages if patterns fail
 
 Deliver a final report that includes: (a) a PI roster with linked NCT IDs and trial statuses, (b) the PubMed search terms you executed with total counts, and (c) a highlighted publications section that ties each PI's most relevant recent work back to {{disease_name}}, explaining the connection.`,
         },
