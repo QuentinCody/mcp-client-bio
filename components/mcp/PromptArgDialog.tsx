@@ -212,7 +212,7 @@ export function PromptArgDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md max-h-[80vh] overflow-auto border-2 border-border/40 bg-background/95 backdrop-blur-xl shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+        className="sm:max-w-md max-h-[80vh] overflow-auto border-2 border-primary bg-white dark:bg-zinc-950 shadow-[0_0_80px_rgba(0,0,0,0.9)] ring-4 ring-primary/30 animate-in fade-in-0 zoom-in-95 duration-200"
         aria-describedby={undefined}
       >
         <DialogHeader>
