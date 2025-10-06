@@ -489,8 +489,8 @@ export default function Chat() {
             {showWelcomeState ? (
               <div className="flex h-full items-center justify-center px-6 py-12">
                 <div className="w-full max-w-2xl space-y-4 text-center">
-                  <h1 className="text-2xl font-semibold text-[#202123] dark:text-[#f7f7f8]">
-                    Ready to chat
+                  <h1 className="text-6xl font-bold text-[#202123] dark:text-[#f7f7f8]">
+                    Bio MCP Chat
                   </h1>
                   <p className="text-sm text-[#5f6368] dark:text-[#9ca3af]">
                     {modelInfo

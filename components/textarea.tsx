@@ -596,17 +596,13 @@ export const Textarea = ({
     <div className="w-full space-y-3">
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground/80">
-          {showInlineModelPicker ? (
+          {showInlineModelPicker && (
             <ModelPicker
               setSelectedModel={setSelectedModel}
               selectedModel={selectedModel}
               variant="inline"
               className="w-full text-left sm:w-auto"
             />
-          ) : (
-            <span className="font-semibold text-foreground">
-              {modelInfo ? `${modelInfo.name} • ${modelInfo.provider}` : selectedModel}
-            </span>
           )}
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1 text-muted-foreground/80">

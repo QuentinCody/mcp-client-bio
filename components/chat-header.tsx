@@ -64,17 +64,6 @@ export function ChatHeader({
             variant="inline"
             className="min-w-[200px] sm:min-w-[220px]"
           />
-          {modelInfo && (
-            <div className="flex flex-col text-xs text-[#6b7280] dark:text-[#9ca3af]">
-              <span className="font-semibold text-[#202123] dark:text-[#f5f5f5]">
-                {modelInfo.name}
-              </span>
-              <span className="flex items-center gap-1 text-[11px]">
-                <Sparkles className="h-3 w-3" />
-                {modelInfo.provider}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
