@@ -1,9 +1,13 @@
 "use server";
 
-import { groq } from "@ai-sdk/groq";
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
+
+// Create OpenAI client
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Helper to extract text content from a message regardless of format
 function getMessageText(message: any): string {
@@ -67,21 +71,13 @@ Rules:
     let lastErr: any;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const { object: titleObject, response } = await generateObject({
-          model: groq('llama-3.1-8b-instant'),
+        const { object: titleObject } = await generateObject({
+          model: openai('gpt-4o-mini'),
           schema,
           prompt,
         });
         if (titleObject && typeof titleObject === 'object' && !Array.isArray(titleObject) && (titleObject as any).title) {
           return (titleObject as any).title;
-        }
-        // Fallback parse from raw response if malformed
-        const out = Array.isArray((response as any)?.output) ? (response as any).output : [];
-        const last = out[out.length - 1];
-        const textPart = last?.content?.find?.((p: any) => p.type === 'output_text');
-        if (textPart?.text) {
-          const candidate = textPart.text.match(/"title"\s*:\s*"([^"]{1,80})"/i)?.[1] || textPart.text.split(/\n|\.|\!/)[0];
-          if (candidate) return heuristic(candidate);
         }
       } catch (e) {
         lastErr = e;

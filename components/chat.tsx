@@ -1,8 +1,9 @@
 "use client";
 
 import { defaultModel, modelDetails, type modelID } from "@/ai/providers";
-import { Message, useChat } from "@ai-sdk/react";
-import type { UIMessage } from 'ai';
+import { useChat } from "@ai-sdk/react";
+import type { UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Textarea } from "./textarea";
 import { Messages } from "./messages";
@@ -51,7 +52,10 @@ export default function Chat() {
   
   const [selectedModel, setSelectedModel] = useLocalStorage<modelID>("selectedModel", defaultModel);
   const [userId, setUserId] = useState<string>('');
-  const [generatedChatId, setGeneratedChatId] = useState<string>('');
+  // Generate chatId immediately if not provided, don't use useState to avoid async issues
+  const generatedChatId = useMemo(() => {
+    return chatId ? '' : nanoid();
+  }, [chatId]);
   const [promptPreview, setPromptPreview] = useState<{ 
     def: SlashPromptDef;
     args: Record<string, string>;
@@ -64,91 +68,177 @@ export default function Chat() {
   const { mcpServersForApi, mcpServers, selectedMcpServers } = useMCP();
   
   useEffect(() => {
-    setUserId(getUserId());
+    const id = getUserId();
+    console.log('Setting userId:', id);
+    setUserId(id);
   }, []);
-  
-  useEffect(() => {
-    if (!chatId) {
-      setGeneratedChatId(nanoid());
-    }
-  }, [chatId]);
-  
+
   const { data: chatData, isLoading: isLoadingChat, error } = useQuery({
     queryKey: ['chat', chatId, userId] as const,
     queryFn: async ({ queryKey }) => {
       const [_, chatId, userId] = queryKey;
-      if (!chatId || !userId) return null;
-      
+      console.log('[CHAT_QUERY] Fetching chat data for:', { chatId, userId });
+      if (!chatId || !userId) {
+        console.log('[CHAT_QUERY] Missing chatId or userId, returning null:', { chatId, userId });
+        return null;
+      }
+
       const response = await fetch(`/api/chats/${chatId}`, {
         headers: {
           'x-user-id': userId
         }
       });
-      
+
+      console.log('[CHAT_QUERY] Chat fetch response:', response.status, 'for chatId:', chatId);
+
       if (!response.ok) {
         if (response.status === 404) {
+          console.log('[CHAT_QUERY] Chat not found, returning empty chat');
           return { id: chatId, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         }
+        console.error('[CHAT_QUERY] Failed to fetch chat:', response.status, response.statusText);
         throw new Error('Failed to load chat');
       }
-      
-      return response.json() as Promise<ChatData>;
+
+      const data = await response.json() as ChatData;
+      console.log('[CHAT_QUERY] Fetched chat data:', {
+        id: data.id,
+        messagesCount: data.messages?.length || 0,
+        messages: data.messages,
+        firstMessage: data.messages?.[0] ? {
+          id: data.messages[0].id,
+          role: data.messages[0].role,
+          partsCount: Array.isArray(data.messages[0].parts) ? data.messages[0].parts.length : 0,
+          parts: data.messages[0].parts
+        } : 'none'
+      });
+      console.log('[CHAT_QUERY] Raw response data:', JSON.stringify(data, null, 2));
+      return data;
     },
     enabled: !!chatId && !!userId,
     retry: 1,
     staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: false,
+    refetchOnMount: true // Force refetch when component mounts
   });
-  
+
+  // Debug chat/user ID values
+  useEffect(() => {
+    console.log('[CHAT_STATE] Component state:', {
+      chatId,
+      userId,
+      isLoadingChat,
+      chatDataExists: !!chatData,
+      messagesInChatData: chatData?.messages?.length || 0
+    });
+  }, [chatId, userId, isLoadingChat, chatData]);
+
   useEffect(() => {
     if (error) {
       console.error('Error loading chat history:', error);
+      console.log('Chat ID:', chatId, 'User ID:', userId);
       toast.error('Failed to load chat history');
     }
-  }, [error]);
+  }, [error, chatId, userId]);
   
   const initialMessages = useMemo(() => {
-    if (!chatData || !chatData.messages || chatData.messages.length === 0) {
+    console.log('[INITIAL_MESSAGES] Calculation started:', {
+      hasChatData: !!chatData,
+      chatDataType: typeof chatData,
+      messagesLength: chatData?.messages?.length || 0,
+      chatId,
+      isLoadingChat,
+      userId,
+      queryEnabled: !!chatId && !!userId,
+      messagesArray: chatData?.messages,
+      messagesPreview: chatData?.messages?.slice(0, 2).map(m => ({
+        id: m.id,
+        role: m.role,
+        partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
+        parts: m.parts
+      }))
+    });
+
+    // Don't return messages if we're still loading or don't have required data
+    if (isLoadingChat || !userId || !chatId) {
+      console.log('[INITIAL_MESSAGES] Still loading or missing data:', { isLoadingChat, userId, chatId });
       return [];
     }
-    
-    const uiMessages = convertToUIMessages(chatData.messages);
-    return uiMessages.map(msg => ({
-      id: msg.id,
-      role: msg.role as Message['role'],
-      content: msg.content,
-      parts: msg.parts,
-    } as Message));
-  }, [chatData]);
+
+    if (!chatData) {
+      console.log('[INITIAL_MESSAGES] No chatData after loading complete, returning empty array');
+      return [];
+    }
+
+    if (!chatData.messages) {
+      console.log('[INITIAL_MESSAGES] No messages property in chatData:', chatData);
+      return [];
+    }
+
+    if (chatData.messages.length === 0) {
+      console.log('[INITIAL_MESSAGES] Messages array is empty');
+      return [];
+    }
+
+    console.log('[INITIAL_MESSAGES] About to convert messages:', chatData.messages);
+    const converted = convertToUIMessages(chatData.messages) as UIMessage[];
+    console.log('[INITIAL_MESSAGES] Converted messages:', {
+      count: converted.length,
+      messages: converted,
+      firstConverted: converted[0] ? {
+        id: converted[0].id,
+        role: converted[0].role,
+        content: (converted[0] as any).content,
+        parts: converted[0].parts
+      } : 'none'
+    });
+    return converted;
+  }, [chatData, chatId, isLoadingChat, userId]);
   
-  const { messages, input, handleInputChange, handleSubmit, status, stop, setMessages } = 
+  const chatSessionId = chatId || generatedChatId;
+  console.log('useChat session ID:', chatSessionId, 'chatId:', chatId, 'generatedChatId:', generatedChatId);
+
+  console.log('[USE_CHAT] Hook initialization:', {
+    chatSessionId,
+    initialMessagesCount: initialMessages.length,
+    initialMessages: initialMessages,
+    isLoadingChat,
+    hasUserId: !!userId
+  });
+
+  const { messages, sendMessage, status, stop, setMessages } =
     useChat({
-      api: '/api/chat',
-      id: chatId || generatedChatId,
-      initialMessages,
-      headers: {
-        'x-model-id': selectedModel,
-      },
-      body: {
-        selectedModel,
-        mcpServers: mcpServersForApi,
-        chatId: chatId || generatedChatId,
-        userId,
-        promptContext: promptPreview?.context,
-      },
-      onFinish: () => {
+      id: chatSessionId,
+      messages: initialMessages,
+      transport: new DefaultChatTransport({
+        api: '/api/chat',
+        credentials: 'include',
+      }),
+      onFinish: useCallback(() => {
+        console.log('onFinish called:', { chatId, generatedChatId, currentPath: window?.location?.pathname });
         setPromptPreview(null);
         if (userId) {
           queryClient.invalidateQueries({ queryKey: ['chats', userId] });
         }
+
+        // Update URL without navigation if we're on home page with new chat
+        const isHomePage = window?.location?.pathname === '/';
+        if (isHomePage && !chatId && generatedChatId) {
+          console.log('Updating URL to reflect new chat ID:', generatedChatId);
+          window.history.replaceState(null, '', `/chat/${generatedChatId}`);
+        }
+
+        // Focus textarea for continued conversation
+        console.log('Message completed, focusing textarea for next message');
         setTimeout(() => {
           const textarea = document.querySelector<HTMLTextAreaElement>(
             'textarea[data-command-target="chat-input"]'
           );
           textarea?.focus();
         }, 100);
-      },
+      }, [setPromptPreview, userId, queryClient, chatId, generatedChatId]),
       onError: (error) => {
+        console.error('useChat onError:', error);
         const errorMessage = error.message.length > 0
           ? error.message
           : "An error occurred, please try again later.";
@@ -167,7 +257,68 @@ export default function Chat() {
       },
     });
 
-  const messagesRef = useRef<Message[]>(messages);
+  const [input, setInput] = useState<string>("");
+
+  // Update messages when initial messages load
+  useEffect(() => {
+    if (initialMessages.length > 0 && messages.length === 0) {
+      console.log('[MESSAGES_UPDATE] Setting initial messages:', {
+        initialCount: initialMessages.length,
+        currentCount: messages.length,
+        chatId,
+        initialMessages: initialMessages.map(m => ({ id: m.id, role: m.role }))
+      });
+      setMessages(initialMessages);
+    }
+  }, [initialMessages, messages.length, setMessages, chatId]);
+
+  const handleInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInput(event.target.value);
+    },
+    []
+  );
+
+  const handleSubmit = useCallback(
+    (event?: React.FormEvent<HTMLFormElement>) => {
+      event?.preventDefault?.();
+      if (!input.trim()) return;
+      if (status === "streaming" || status === "submitted") return;
+      const chatBody = {
+        selectedModel,
+        mcpServers: mcpServersForApi,
+        chatId: chatId || generatedChatId,
+        userId,
+        promptContext: promptPreview?.context,
+      };
+      sendMessage(
+        {
+          role: 'user',
+          parts: [{ type: 'text', text: input }]
+        },
+        {
+          headers: {
+            'x-model-id': selectedModel,
+          },
+          body: chatBody,
+        }
+      );
+      setInput("");
+    },
+    [
+      input,
+      status,
+      selectedModel,
+      mcpServersForApi,
+      chatId,
+      generatedChatId,
+      userId,
+      promptPreview,
+      sendMessage,
+    ]
+  );
+
+  const messagesRef = useRef<UIMessage[]>(messages);
   const [containerRef, endRef, isPinned, scrollToBottom] = useScrollToBottom();
 
   useEffect(() => {
@@ -198,21 +349,15 @@ export default function Chat() {
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setPromptPreview(null);
-    setGeneratedChatId(nanoid());
     router.push("/");
-  }, [router, setMessages, setPromptPreview, setGeneratedChatId]);
+  }, [router, setMessages, setPromptPreview]);
 
-  const handleFormSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || isChatLoading) return;
-    if (!chatId && generatedChatId) {
-      const effectiveChatId = generatedChatId;
-      handleSubmit(e);
-      router.push(`/chat/${effectiveChatId}`);
-    } else {
-      handleSubmit(e);
-    }
-  }, [chatId, generatedChatId, input, handleSubmit, router, isChatLoading]);
+    // Always just submit - let onFinish handle navigation for new chats
+    handleSubmit();
+  }, [input, handleSubmit, isChatLoading]);
 
   const runSlashCommand = useCallback(async (
     command: SlashCommandMeta,
@@ -256,6 +401,10 @@ export default function Chat() {
       });
     };
 
+    const toTextParts = (text: string): UIMessage["parts"] => [
+      { type: "text", text },
+    ];
+
     const pipeStreamToMessage = async (stream: ReadableStream<Uint8Array>, targetId: string) => {
       const reader = stream.getReader();
       const decoder = new TextDecoder();
@@ -269,7 +418,9 @@ export default function Chat() {
             const snapshot = accumulated;
             setMessages((prev) =>
               prev.map((msg) =>
-                msg.id === targetId ? { ...msg, content: snapshot } : msg
+                msg.id === targetId
+                  ? { ...msg, parts: toTextParts(snapshot) }
+                  : msg
               )
             );
           }
@@ -281,7 +432,9 @@ export default function Chat() {
       const finalText = accumulated.trim();
       setMessages((prev) =>
         prev.map((msg) =>
-          msg.id === targetId ? { ...msg, content: finalText } : msg
+          msg.id === targetId
+            ? { ...msg, parts: toTextParts(finalText) }
+            : msg
         )
       );
     };
@@ -314,11 +467,11 @@ export default function Chat() {
       }
 
       messageId = `slash-${command.id}-${Date.now()}`;
-      const newMessage: Message = {
+      const newMessage: UIMessage = {
         id: messageId,
         role: "assistant",
-        content: "",
-      } as Message;
+        parts: toTextParts(""),
+      };
       setMessages((prev) => [...prev, newMessage]);
 
       await pipeStreamToMessage(stream, messageId);
@@ -331,7 +484,7 @@ export default function Chat() {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === failedId
-              ? { ...msg, content: `Error: ${errorText}` } 
+              ? { ...msg, parts: toTextParts(`Error: ${errorText}`) }
               : msg
           )
         );
@@ -377,13 +530,13 @@ export default function Chat() {
       resources,
       rawMessages: payload.result.messages,
     });
-    handleInputChange({ target: { value: previewText } } as any);
-  }, [handleInputChange]);
+    setInput(previewText);
+  }, [setInput]);
 
   const cancelPromptPreview = useCallback(() => {
     setPromptPreview(null);
-    handleInputChange({ target: { value: "" } } as any);
-  }, [handleInputChange]);
+    setInput("");
+  }, [setInput]);
 
   const removePromptResource = useCallback((uri: string) => {
     setPromptPreview((current) => {

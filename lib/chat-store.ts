@@ -1,21 +1,21 @@
 import { db } from "./db";
 import { chats, messages, type Chat, type Message, MessageRole, type MessagePart, type DBMessage } from "./db/schema";
+import type { UIMessage } from "ai";
 import { eq, desc, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateTitle } from "@/app/actions";
 
 type AIMessage = {
   role: string;
-  content: string | any[];
+  content?: string | any[];
   id?: string;
   parts?: MessagePart[];
 };
 
-type UIMessage = {
-  id: string;
-  role: string;
+type PersistableMessage = AIMessage | UIMessage;
+
+type StoredUIMessage = UIMessage & {
   content: string;
-  parts: MessagePart[];
   createdAt?: Date;
 };
 
@@ -35,9 +35,19 @@ export async function saveMessages({
 }: {
   messages: Array<DBMessage>;
 }) {
+  console.log('[SAVE_MESSAGES_DB] Starting:', {
+    messagesCount: dbMessages?.length || 0,
+    firstMessage: dbMessages[0] ? {
+      id: dbMessages[0].id,
+      chatId: dbMessages[0].chatId,
+      role: dbMessages[0].role
+    } : null
+  });
+
   try {
     if (dbMessages.length > 0) {
       const chatId = dbMessages[0].chatId;
+      console.log('[SAVE_MESSAGES_DB] Processing messages for chatId:', chatId);
 
       // Ensure message IDs are unique before persisting to avoid primary key conflicts
       // Assign unique IDs for each message before inserting. This guards against collisions coming
@@ -47,23 +57,30 @@ export async function saveMessages({
         id: nanoid(),
       }));
 
+      console.log('[SAVE_MESSAGES_DB] Deduped messages:', dedupedMessages.map(m => ({ id: m.id, chatId: m.chatId, role: m.role })));
+
       // First delete any existing messages for this chat
+      console.log('[SAVE_MESSAGES_DB] Deleting existing messages for chatId:', chatId);
       await db
         .delete(messages)
         .where(eq(messages.chatId, chatId));
 
       // Then insert the new messages
-      return await db.insert(messages).values(dedupedMessages);
+      console.log('[SAVE_MESSAGES_DB] Inserting', dedupedMessages.length, 'messages');
+      const result = await db.insert(messages).values(dedupedMessages);
+      console.log('[SAVE_MESSAGES_DB] Messages inserted successfully');
+      return result;
     }
+    console.log('[SAVE_MESSAGES_DB] No messages to save');
     return null;
   } catch (error) {
-    console.error('Failed to save messages in database', error);
+    console.error('[SAVE_MESSAGES_DB] Failed to save messages in database:', error);
     throw error;
   }
 }
 
 // Function to convert AI messages to DB format
-export function convertToDBMessages(aiMessages: AIMessage[], chatId: string): DBMessage[] {
+export function convertToDBMessages(aiMessages: PersistableMessage[], chatId: string): DBMessage[] {
   return aiMessages.map(msg => {
     // Use existing id or generate a new one
     const messageId = msg.id || nanoid();
@@ -82,19 +99,16 @@ export function convertToDBMessages(aiMessages: AIMessage[], chatId: string): DB
     // Otherwise, convert content to parts
     let parts: MessagePart[];
 
-    if (typeof msg.content === 'string') {
+    if ('content' in msg && typeof msg.content === 'string') {
       parts = [{ type: 'text', text: msg.content }];
-    } else if (Array.isArray(msg.content)) {
+    } else if ('content' in msg && Array.isArray(msg.content)) {
       if (msg.content.every(item => typeof item === 'object' && item !== null)) {
-        // Content is already in parts-like format
         parts = msg.content as MessagePart[];
       } else {
-        // Content is an array but not in parts format
         parts = [{ type: 'text', text: JSON.stringify(msg.content) }];
       }
     } else {
-      // Default case
-      parts = [{ type: 'text', text: String(msg.content) }];
+      parts = [{ type: 'text', text: '' }];
     }
 
     return {
@@ -108,17 +122,57 @@ export function convertToDBMessages(aiMessages: AIMessage[], chatId: string): DB
 }
 
 // Convert DB messages to UI format
-export function convertToUIMessages(dbMessages: Array<Message>): Array<UIMessage> {
-  return dbMessages.map((message) => ({
-    id: message.id,
-    parts: message.parts as MessagePart[],
-    role: message.role as string,
-    content: getTextContent(message), // For backward compatibility
-    createdAt: message.createdAt,
-  }));
+export function convertToUIMessages(dbMessages: Array<Message>): Array<StoredUIMessage> {
+  console.log('[CONVERT_MESSAGES] Input messages:', {
+    count: dbMessages.length,
+    messages: dbMessages.map(m => ({
+      id: m.id,
+      role: m.role,
+      partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
+      parts: m.parts
+    }))
+  });
+
+  const converted = dbMessages.map((message) => {
+    const textContent = getTextContent(message);
+    console.log('[CONVERT_MESSAGES] Converting message:', {
+      id: message.id,
+      role: message.role,
+      parts: message.parts,
+      extractedContent: textContent
+    });
+
+    return {
+      id: message.id,
+      role: message.role as string,
+      parts: message.parts as MessagePart[], // AI SDK v5 parts property
+      content: textContent, // String content for compatibility
+      createdAt: message.createdAt,
+    };
+  }) as Array<StoredUIMessage>;
+
+  console.log('[CONVERT_MESSAGES] Converted messages:', {
+    count: converted.length,
+    messages: converted.map(m => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      partsCount: Array.isArray(m.parts) ? m.parts.length : 0
+    }))
+  });
+
+  return converted;
 }
 
 export async function saveChat({ id, userId, messages: aiMessages, title }: SaveChatParams) {
+  console.log('[SAVE_CHAT] Starting save:', {
+    id,
+    userId,
+    messagesCount: aiMessages?.length || 0,
+    title,
+    hasMessages: !!aiMessages && aiMessages.length > 0
+  });
+
   // Generate a new ID if one wasn't provided
   const chatId = id || nanoid();
 
@@ -231,6 +285,31 @@ export async function saveChat({ id, userId, messages: aiMessages, title }: Save
     });
   }
 
+  // IMPORTANT: Save the messages if provided
+  if (aiMessages && aiMessages.length > 0) {
+    console.log('[SAVE_CHAT] Saving messages:', {
+      chatId,
+      messagesCount: aiMessages.length,
+      messages: aiMessages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content.slice(0, 100) : 'complex content'
+      }))
+    });
+
+    try {
+      const dbMessages = convertToDBMessages(aiMessages, chatId);
+      await saveMessages({ messages: dbMessages });
+      console.log('[SAVE_CHAT] Messages saved successfully');
+    } catch (error) {
+      console.error('[SAVE_CHAT] Failed to save messages:', error);
+      throw error;
+    }
+  } else {
+    console.log('[SAVE_CHAT] No messages to save');
+  }
+
+  console.log('[SAVE_CHAT] Chat save completed:', { chatId });
   return { id: chatId };
 }
 
@@ -256,6 +335,8 @@ export async function getChats(userId: string) {
 }
 
 export async function getChatById(id: string, userId: string): Promise<ChatWithMessages | null> {
+  console.log('[DB_GET_CHAT] Querying chat by ID:', { id, userId });
+
   const chat = await db.query.chats.findFirst({
     where: and(
       eq(chats.id, id),
@@ -263,17 +344,44 @@ export async function getChatById(id: string, userId: string): Promise<ChatWithM
     ),
   });
 
-  if (!chat) return null;
+  console.log('[DB_GET_CHAT] Chat found:', !!chat);
+  if (!chat) {
+    console.log('[DB_GET_CHAT] No chat found with ID:', id, 'for user:', userId);
+    return null;
+  }
 
   const chatMessages = await db.query.messages.findMany({
     where: eq(messages.chatId, id),
     orderBy: [messages.createdAt]
   });
 
-  return {
+  console.log('[DB_GET_CHAT] Messages found:', {
+    count: chatMessages.length,
+    chatId: id,
+    messages: chatMessages.map(m => ({
+      id: m.id,
+      role: m.role,
+      partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
+      parts: m.parts
+    }))
+  });
+
+  const result = {
     ...chat,
     messages: chatMessages
   };
+
+  console.log('[DB_GET_CHAT] Returning result:', {
+    id: result.id,
+    messagesCount: result.messages.length,
+    firstMessage: result.messages[0] ? {
+      id: result.messages[0].id,
+      role: result.messages[0].role,
+      parts: result.messages[0].parts
+    } : null
+  });
+
+  return result;
 }
 
 export async function deleteChat(id: string, userId: string) {

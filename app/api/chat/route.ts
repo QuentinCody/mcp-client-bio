@@ -1,6 +1,5 @@
 import { model, type modelID } from "@/ai/providers";
-import { streamText, type UIMessage, smoothStream } from "ai";
-import { appendResponseMessages } from 'ai';
+import { convertToModelMessages, smoothStream, stepCountIs, streamText, type UIMessage } from "ai";
 import { saveChat, saveMessages, convertToDBMessages } from '@/lib/chat-store';
 import { nanoid } from 'nanoid';
 import { db } from '@/lib/db';
@@ -111,11 +110,33 @@ export async function POST(req: Request) {
   let responseCompleted = false;
 
   // Aggressive token reduction strategies
-  const isComplexQuery = messages.some(m => 
-    m.content?.toString().toLowerCase().includes('analyze') || 
-    m.content?.toString().toLowerCase().includes('complex') ||
-    m.content?.toString().toLowerCase().includes('detailed')
-  );
+  const extractText = (message: UIMessage) => {
+    if (Array.isArray((message as any).parts)) {
+      return (message as any).parts
+        .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part: any) => part.text as string)
+        .join(' ')
+        .toLowerCase();
+    }
+
+    const content: any = (message as any).content;
+    if (typeof content === 'string') {
+      return content.toLowerCase();
+    }
+    if (Array.isArray(content)) {
+      return content
+        .map((value) => String(value ?? ''))
+        .join(' ')
+        .toLowerCase();
+    }
+    return '';
+  };
+
+  const complexityKeywords = ['analyze', 'complex', 'detailed'];
+  const isComplexQuery = messages.some((message) => {
+    const text = extractText(message);
+    return complexityKeywords.some((keyword) => text.includes(keyword));
+  });
 
   // Use shorter system prompt for simple queries
   const shortSystemPrompt = `You are a helpful assistant with access to tools.
@@ -200,19 +221,49 @@ Response format: Markdown supported. Use tools to answer questions.`;
           // Drop historical reasoning to save tokens
           continue;
         }
-        if (part.type === 'tool-invocation') {
-          const toolName = part.toolInvocation?.toolName || 'tool';
-            const state = part.toolInvocation?.state;
-            let summary = `⧉ ${toolName}`;
-            if (state) summary += ` (${state})`;
-            if ('result' in part.toolInvocation && part.toolInvocation.result) {
-              const textResult = typeof part.toolInvocation.result === 'string'
-                ? part.toolInvocation.result
-                : JSON.stringify(part.toolInvocation.result);
-              // Include a preview of tool results (max 1000 chars for better context)
+        if (part.type === 'dynamic-tool' || (typeof part.type === 'string' && part.type.startsWith('tool-'))) {
+          const toolPart: any = part;
+          const derivedName =
+            part.type === 'dynamic-tool'
+              ? toolPart.toolName || 'tool'
+              : part.type.replace(/^tool-/, '') || 'tool';
+          const state = toolPart.state;
+          let summary = `⧉ ${derivedName}`;
+          if (state) summary += ` (${state})`;
+          const output =
+            toolPart.output !== undefined
+              ? toolPart.output
+              : toolPart.errorText
+                ? { error: toolPart.errorText }
+                : undefined;
+          if (output) {
+            try {
+              const textResult =
+                typeof output === 'string'
+                  ? output
+                  : JSON.stringify(output);
               summary += ': ' + textResult.slice(0, 1000).replace(/\s+/g, ' ');
               if (textResult.length > 1000) summary += '…';
+            } catch {
+              // ignore stringify errors
             }
+          }
+          newParts.push({ type: 'text', text: summary });
+          continue;
+        }
+        if (part.type === 'tool-invocation') {
+          const toolName = part.toolInvocation?.toolName || 'tool';
+          const state = part.toolInvocation?.state;
+          let summary = `⧉ ${toolName}`;
+          if (state) summary += ` (${state})`;
+          if ('result' in part.toolInvocation && part.toolInvocation.result) {
+            const textResult =
+              typeof part.toolInvocation.result === 'string'
+                ? part.toolInvocation.result
+                : JSON.stringify(part.toolInvocation.result);
+            summary += ': ' + textResult.slice(0, 1000).replace(/\s+/g, ' ');
+            if (textResult.length > 1000) summary += '…';
+          }
           newParts.push({ type: 'text', text: summary });
           continue;
         }
@@ -280,323 +331,241 @@ Response format: Markdown supported. Use tools to answer questions.`;
   })();
 
   const maxHistoryLength = 10; // target maximum messages after sanitization
-  // Strip raw slash prompt tokens like "/mcp.server.prompt" from user-visible messages
-  const stripTokens = (text: string) => text.replace(/\/[a-z0-9][a-z0-9._-]*\.[a-z0-9][a-z0-9._-]*/gi, '').replace(/\s+/g, ' ').trim();
-  const normalizeToParts = (m: UIMessage): UIMessage => {
-    if ((m as any).parts && Array.isArray((m as any).parts)) return m;
-    const content: any = (m as any).content;
-    const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map((x) => String(x ?? '')).join('\n') : '';
-    return { ...m, parts: [{ type: 'text', text }] as any } as UIMessage;
-  };
-  const baseClientMessages = sanitizedMessages.map((m) => {
-    const msg = normalizeToParts(m);
-    if (msg.role !== 'user') return msg;
-    const newParts = (msg as any).parts.map((p: any) => (p?.type === 'text' ? { ...p, text: stripTokens(String(p.text ?? '')) } : p));
-    return { ...msg, parts: newParts } as any;
-  });
-  const truncatedMessages = baseClientMessages.length > maxHistoryLength 
-    ? [
-        baseClientMessages[0], // Keep first message for context
-        ...baseClientMessages.slice(-maxHistoryLength + 1) // Keep recent messages
-      ]
-    : baseClientMessages;
+  const stripTokens = (text: string) =>
+    text.replace(/\/[a-z0-9][a-z0-9._-]*\.[a-z0-9][a-z0-9._-]*/gi, '').replace(/\s+/g, ' ').trim();
 
-  // Base configuration for all models
-  const baseConfig = {
-    model: model.languageModel(effectiveModel),
-    system: systemPrompt, // must remain a string for AI SDK
-    messages: truncatedMessages,
-    tools: toolsWithCache,
-    toolChoice: 'auto', // Force tool calling for debugging
-    maxSteps: 20, // Allow multiple tool calling steps
-    temperature: 1, // Use temperature: 1 for all models
-    experimental_continueSteps: true,
-    // No maxOutputTokens - allow unlimited output length
-  };
-
-  // Helper function to create fallback tools with permissive schema
-  const createFallbackTools = (originalTools: Record<string, any>) => {
-    const fallbackTools: Record<string, any> = {};
-    for (const [name, tool] of Object.entries(originalTools)) {
-      fallbackTools[name] = {
-        ...tool,
-        parameters: {
-          type: "object",
-          additionalProperties: true
-        }
-      };
+  const normalizeToParts = (message: UIMessage): UIMessage => {
+    if (Array.isArray((message as any).parts)) {
+      return message;
     }
-    return fallbackTools;
+    const content = (message as any).content;
+    const text =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.map((value) => String(value ?? '')).join('\n')
+          : '';
+    return {
+      ...message,
+      parts: [{ type: 'text', text }] as any,
+    };
   };
 
-  // Helper function to attempt streamText with retry on schema errors
-  const attemptStreamText = async (config: any, retryOnSchemaError = true) => {
-    try {
-      console.log('[API /chat] Calling streamText with config:', {
-        model: config.model?.modelId || 'unknown',
-        toolCount: config.tools ? Object.keys(config.tools).length : 0,
-        hasMessages: !!config.messages,
-        messageCount: config.messages?.length || 0
-      });
-
-      const result = await streamText(config);
-      console.log('[API /chat] streamText returned successfully');
-      return result;
-    } catch (error: any) {
-      console.error("StreamText error:", error);
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      
-      // Check if it's a schema validation error and retry with permissive schema
-      if (retryOnSchemaError && error?.statusCode === 400 && 
-          /invalid_function_parameters/i.test(error?.responseBody ?? "")) {
-        
-        console.log("Schema validation error detected, retrying with permissive schema...");
-        
-        // Create fallback config with permissive tool schemas
-        const fallbackConfig = {
-          ...config,
-          tools: createFallbackTools(config.tools || {})
-        };
-        
-        // Retry once with permissive schemas
-        return await streamText(fallbackConfig);
-      }
-      
-      throw error;
+  const sanitizeForStorage = (message: UIMessage): UIMessage => {
+    const normalized = normalizeToParts(message);
+    if (normalized.role !== 'user') {
+      return normalized;
     }
+
+    const cleanedParts = (normalized as any).parts.map((part: any) =>
+      part?.type === 'text'
+        ? { ...part, text: stripTokens(String(part.text ?? '')) }
+        : part,
+    );
+
+    return { ...normalized, parts: cleanedParts } as UIMessage;
   };
 
-  console.log('[API /chat] tools count=', tools ? Object.keys(tools).length : 0, 'model=', effectiveModel);
+  const baseClientMessages = sanitizedMessages.map(sanitizeForStorage);
 
-  // Debug: Log a sample tool to check schema structure
+  const truncatedMessages =
+    baseClientMessages.length > maxHistoryLength
+      ? [baseClientMessages[0], ...baseClientMessages.slice(-maxHistoryLength + 1)]
+      : baseClientMessages;
+
+  const conversationMessages: UIMessage[] = [
+    ...promptInjectedMessages,
+    ...truncatedMessages,
+  ];
+  const modelMessages = convertToModelMessages(conversationMessages);
+
+  console.log(
+    '[API /chat] tools count=',
+    tools ? Object.keys(tools).length : 0,
+    'model=',
+    effectiveModel,
+  );
+
   if (tools && typeof tools === 'object' && !Array.isArray(tools) && Object.keys(tools).length > 0) {
     const firstToolName = Object.keys(tools)[0];
     const firstTool = (tools as Record<string, any>)[firstToolName];
     console.log('[API /chat] Sample tool schema:', firstToolName, ':', JSON.stringify(firstTool, null, 2));
   }
-  const result = await attemptStreamText({
-    ...baseConfig,
-    // Prepend prompt-injected messages (if any) to the current context
-    messages: [...promptInjectedMessages, ...truncatedMessages],
-    providerOptions: {
-      google: {
-        thinkingConfig: {
-          thinkingBudget: 2048,
-        },
-      },
-      anthropic: {
-        thinking: {
-          type: 'enabled',
-          budgetTokens: 12000
-        },
-        // Enable caching headers for Anthropic
-        headers: {
-          'anthropic-beta': 'prompt-caching-2024-07-31'
-        }
-      }
-    },
-    experimental_transform: smoothStream(),
-    // Removed experimental_transform to prevent streaming issues with tool calling
-    onToolError: (error: any) => {
-      console.warn('[API /chat] Tool error:', error);
-      // Return a helpful error message that encourages the LLM to continue
-      return `Tool call failed: ${error.message || 'Unknown error'}. Please try a different approach or continue with alternative methods.`;
-    },
-    onError: (error: any) => {
-      console.error('[API /chat] Stream error:', JSON.stringify(error, null, 2));
-    },
-    async onFinish({ response }: { response: any }) {
-      // Don't set responseCompleted here - this fires after each tool call step
-      // responseCompleted = true;
-      try {
-        const outMsgs = (response as any)?.messages || [];
-        let toolParts = 0;
-        for (const m of outMsgs) {
-          const parts = (m as any)?.parts || [];
-          for (const p of parts) if (p?.type === 'tool-invocation') toolParts++;
-        }
-        console.log('[API /chat] response messages=', outMsgs.length, 'toolParts=', toolParts);
-      } catch (err) {
-        console.warn('[API /chat] logging response failed:', err);
-      }
-      const seedMessages = promptAuditMessage ? [promptAuditMessage, ...messages] : messages;
-      const allMessages = appendResponseMessages({
-        messages: seedMessages,
-        responseMessages: response.messages,
-      });
 
-      await saveChat({
-        id,
-        userId: effectiveUserId,
-        messages: allMessages,
-      });
+  let streamResult;
 
-      const dbMessages = convertToDBMessages(allMessages, id);
-      await saveMessages({ messages: dbMessages });
-
-      // Clean up resources - now this just closes the client connections
-      // not the actual servers which persist in the MCP context
-      await cleanup();
-    }
-  });
-
-  // Ensure cleanup happens if the request is terminated early
-  req.signal.addEventListener('abort', async () => {
-    if (!responseCompleted) {
-      console.log("Request aborted, cleaning up resources");
-      try {
-        await cleanup();
-      } catch (error) {
-        console.error("Error during cleanup on abort:", error);
-      }
-    }
-  });
-
-  // Add chat ID to response headers so client can know which chat was created
   try {
-    // Stream response optimized for speed
-    const streamResponse = result.toDataStreamResponse({
-      sendReasoning: true,
-      headers: {
-        'X-Chat-ID': id,
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no' // Disable nginx buffering for faster streaming
+    streamResult = await streamText({
+      model: model.languageModel(effectiveModel),
+      system: systemPrompt,
+      messages: modelMessages,
+      tools: toolsWithCache,
+      toolChoice: 'auto',
+      stopWhen: stepCountIs(20),
+      temperature: 1,
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingBudget: 2048,
+          },
+        },
+        anthropic: {
+          thinking: {
+            type: 'enabled',
+            budgetTokens: 12000,
+          },
+          headers: {
+            'anthropic-beta': 'prompt-caching-2024-07-31',
+          },
+        },
       },
-      getErrorMessage: (error) => {
-        console.error("Error in getErrorMessage:", error);
-        
-        // Helper function to extract rate limit details from various error structures
-        const extractRateLimitInfo = (err: any) => {
-          const errorStr = err?.toString() || '';
-          const messageStr = err?.message || '';
-          const responseBodyStr = err?.responseBody || '';
-          const fullErrorStr = JSON.stringify(err, null, 2);
-          
-          // Check if this is a rate limit error from various sources
-          const isRateLimit = 
-            /rate limit/i.test(errorStr) || 
-            /rate limit/i.test(messageStr) || 
-            /rate limit/i.test(responseBodyStr) ||
-            err?.statusCode === 429;
-            
-          if (!isRateLimit) return null;
-          
-          // Extract provider information
-          let provider = 'Unknown';
-          if (/groq/i.test(fullErrorStr) || /llama/i.test(messageStr)) provider = 'Groq';
-          else if (/openai/i.test(fullErrorStr) || /gpt/i.test(messageStr)) provider = 'OpenAI';
-          else if (/anthropic/i.test(fullErrorStr) || /claude/i.test(messageStr)) provider = 'Anthropic';
-          else if (/google/i.test(fullErrorStr) || /gemini/i.test(messageStr)) provider = 'Google';
-          
-          // Extract model name
-          let model = '';
-          const modelMatch = messageStr.match(/model `([^`]+)`/) || 
-                           messageStr.match(/model ([a-zA-Z0-9\-\/]+)/);
-          if (modelMatch) model = modelMatch[1];
-          
-          // Extract retry time
-          let retryTime = '';
-          const retryMatch = messageStr.match(/try again in ([0-9.]+s)/i) ||
-                           messageStr.match(/retry-after.*?([0-9.]+)/i);
-          if (retryMatch) {
-            const seconds = parseFloat(retryMatch[1]);
-            if (seconds < 60) {
-              retryTime = `${Math.ceil(seconds)} seconds`;
-            } else {
-              retryTime = `${Math.ceil(seconds / 60)} minutes`;
-            }
-          }
-          
-          // Extract token usage info if available
-          let tokenInfo = '';
-          const tokenMatch = messageStr.match(/Limit ([0-9,]+), Used ([0-9,]+), Requested ([0-9,]+)/);
-          if (tokenMatch) {
-            const [, limit, used] = tokenMatch;
-            const remaining = parseInt(limit.replace(/,/g, '')) - parseInt(used.replace(/,/g, ''));
-            tokenInfo = `${remaining.toLocaleString()} tokens remaining of ${limit} limit`;
-          }
-          
-          return {
-            provider,
-            model,
-            retryTime,
-            tokenInfo,
-            hasUpgradeInfo: /upgrade/i.test(messageStr) || /billing/i.test(messageStr)
-          };
-        };
-        
-        // Check if this is the typeName error we're seeing
-        if (error && error.toString && error.toString().includes('typeName')) {
-          console.log("Detected typeName error in stream processing");
-          return "Response processing error occurred.";
+      experimental_transform: smoothStream(),
+      onError: (error: any) => {
+        console.error('[API /chat] Stream error:', JSON.stringify(error, null, 2));
+      },
+      onFinish: (event) => {
+        try {
+          const toolPartCount = event.steps.reduce((count, step) => {
+            const toolCalls = step.toolCalls ?? [];
+            return count + toolCalls.length;
+          }, 0);
+          console.log(
+            '[API /chat] stream finished with',
+            event.steps.length,
+            'steps and',
+            toolPartCount,
+            'tool call entries',
+          );
+        } catch (error) {
+          console.warn('[API /chat] logging finish event failed:', error);
         }
-        
-        // Enhanced rate limit error handling
-        const rateLimitInfo = extractRateLimitInfo(error);
-        if (rateLimitInfo) {
-          let message = `Rate limit exceeded for ${rateLimitInfo.provider}`;
-          if (rateLimitInfo.model) {
-            message += ` (${rateLimitInfo.model})`;
-          }
-          
-          if (rateLimitInfo.retryTime) {
-            message += `. Please try again in ${rateLimitInfo.retryTime}`;
-          } else {
-            message += '. Please try again later';
-          }
-          
-          if (rateLimitInfo.tokenInfo) {
-            message += `. ${rateLimitInfo.tokenInfo}`;
-          }
-          
-          if (rateLimitInfo.hasUpgradeInfo) {
-            message += '. Consider upgrading your account for higher limits';
-          }
-          
-          message += '.';
-          return message;
-        }
-        
-        // Legacy rate limit detection
-        if (error instanceof Error) {
-          if (error.message.includes("Rate limit")) {
-            return "Rate limit exceeded. Please try again later.";
-          }
-          if (error.message.includes("typeName")) {
-            return "Response processing error occurred.";
-          }
-        }
-        
-        console.error("Final error log:", error);
-        return "An error occurred.";
       },
     });
+  } catch (error: any) {
+    console.error('streamText failed:', error);
+    await cleanup().catch((cleanupError) =>
+      console.error('cleanup after streamText failure failed:', cleanupError),
+    );
 
-    // Mark response as completed and return the stream
-    responseCompleted = true;
-    return streamResponse;
-  } catch (responseError: any) {
-    console.error("Error creating data stream response:", responseError);
-    
-    // If it's a typeName error, handle gracefully
-    if (responseError.message && responseError.message.includes('typeName')) {
-      console.log("Detected typeName error, attempting fallback...");
-      
-      // Return a simple error response for now
+    if (typeof error?.message === 'string' && error.message.includes('typeName')) {
       return new Response(
-        JSON.stringify({ error: "Response processing error. This is a known issue being investigated." }),
+        JSON.stringify({
+          error: 'Response processing error. This is a known issue being investigated.',
+        }),
         {
           status: 500,
           headers: {
             'Content-Type': 'application/json',
-            'X-Chat-ID': id
-          }
-        }
+            'X-Chat-ID': id,
+          },
+        },
       );
     }
-    
-    throw responseError;
+
+    throw error;
   }
+
+  const originalMessages = (promptAuditMessage ? [promptAuditMessage, ...messages] : messages).map(
+    (message) => sanitizeForStorage(message),
+  );
+
+  const streamResponse = streamResult.toUIMessageStreamResponse({
+    headers: {
+      'X-Chat-ID': id,
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+    sendReasoning: true,
+    originalMessages,
+    generateMessageId: () => nanoid(),
+    onError: (error) => {
+      console.error('Error surfaced from UI stream:', error);
+
+      const stringifyProviderError = (err: any) => {
+        const stringified = typeof err === 'string' ? err : err?.message || '';
+        if (!stringified) return null;
+
+        const providerMatch = stringified.match(/provider:\s*([A-Za-z]+)/i);
+        const modelMatch =
+          stringified.match(/model `([^`]+)`/) || stringified.match(/model ([A-Za-z0-9\-\/]+)/);
+        const retryMatch =
+          stringified.match(/try again in ([0-9.]+s)/i) ||
+          stringified.match(/retry-after.*?([0-9.]+)/i);
+
+        const retry =
+          retryMatch &&
+          (() => {
+            const seconds = parseFloat(retryMatch[1]);
+            if (!Number.isFinite(seconds)) return null;
+            if (seconds < 60) return `${Math.ceil(seconds)} seconds`;
+            return `${Math.ceil(seconds / 60)} minutes`;
+          })();
+
+        return {
+          provider: providerMatch?.[1] ?? 'Unknown provider',
+          model: modelMatch?.[1],
+          retry,
+        };
+      };
+
+      const rateLimitDetails = stringifyProviderError(error);
+      if (rateLimitDetails) {
+        let message = `Rate limit exceeded for ${rateLimitDetails.provider}`;
+        if (rateLimitDetails.model) {
+          message += ` (${rateLimitDetails.model})`;
+        }
+        message += rateLimitDetails.retry
+          ? `. Please try again in ${rateLimitDetails.retry}.`
+          : '. Please try again later.';
+        return message;
+      }
+
+      if (typeof error === 'string') {
+        return error;
+      }
+
+      if (error instanceof Error) {
+        if (error.message.includes('typeName')) {
+          return 'Response processing error occurred.';
+        }
+        if (error.message.includes('Rate limit')) {
+          return 'Rate limit exceeded. Please try again later.';
+        }
+        return error.message;
+      }
+
+      return 'An error occurred.';
+    },
+    onFinish: async ({ messages: finalMessages }) => {
+      responseCompleted = true;
+      try {
+        await saveChat({
+          id,
+          userId: effectiveUserId,
+          messages: finalMessages,
+        });
+
+        const dbMessages = convertToDBMessages(finalMessages, id);
+        await saveMessages({ messages: dbMessages });
+      } finally {
+        await cleanup().catch((cleanupError) =>
+          console.error('cleanup after stream completion failed:', cleanupError),
+        );
+      }
+    },
+  });
+
+  req.signal.addEventListener('abort', async () => {
+    if (!responseCompleted) {
+      console.log('Request aborted, cleaning up resources');
+      try {
+        await cleanup();
+      } catch (error) {
+        console.error('Error during cleanup on abort:', error);
+      }
+    }
+  });
+
+  return streamResponse;
 }

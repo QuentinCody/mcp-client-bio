@@ -22,12 +22,12 @@
   },
   "bin": {},
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.2.12",
-    "@ai-sdk/google": "^1.2.22",
-    "@ai-sdk/groq": "^1.2.9",
-    "@ai-sdk/openai": "1.3.23",
-    "@ai-sdk/react": "1.2.12",
-    "@ai-sdk/xai": "^1.2.18",
+    "@ai-sdk/anthropic": "^2.0.27",
+    "@ai-sdk/google": "^2.0.20",
+    "@ai-sdk/groq": "^2.0.24",
+    "@ai-sdk/openai": "^2.0.52",
+    "@ai-sdk/react": "^2.0.68",
+    "@ai-sdk/xai": "^2.0.26",
     "@modelcontextprotocol/sdk": "^1.15.1",
     "@neondatabase/serverless": "^1.0.1",
     "@radix-ui/react-accordion": "^1.2.7",
@@ -44,7 +44,7 @@
     "@tanstack/react-query": "^5.83.0",
     "@vercel/analytics": "^1.5.0",
     "@vercel/speed-insights": "^1.2.0",
-    "ai": "4.3.19",
+    "ai": "^5.0.68",
     "botid": "^1.4.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -70,7 +70,7 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.3.5",
-    "zod": "3.23.8"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",

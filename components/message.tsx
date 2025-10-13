@@ -18,8 +18,10 @@ import { Avatar, AvatarFallback } from "./ui/avatar";
 
 interface ReasoningPart {
   type: "reasoning";
-  reasoningText: string;
-  details: Array<{ type: "text"; text: string }>;
+  text?: string;
+  reasoningText?: string;
+  details?: Array<{ type: "text"; text: string }>;
+  state?: "streaming" | "done";
 }
 
 interface ReasoningMessagePartProps {
@@ -42,6 +44,13 @@ export function ReasoningMessagePart({
     memoizedSetIsExpanded(isReasoning);
   }, [isReasoning, memoizedSetIsExpanded]);
 
+  const detailItems =
+    Array.isArray(part.details) && part.details.length > 0
+      ? part.details
+      : part.text || part.reasoningText
+        ? [{ type: "text", text: part.text ?? part.reasoningText ?? "" }]
+        : [];
+
   return (
     <div className="mb-2 flex flex-col group">
       {isReasoning ? (
@@ -59,7 +68,7 @@ export function ReasoningMessagePart({
             <div className="text-xs font-medium tracking-tight">Thinking...</div>
           </div>
           {/* Show reasoning content immediately while thinking */}
-          {part.details && part.details.length > 0 && (
+          {detailItems.length > 0 && (
             <div
               className={cn(
                 "ml-0.5 flex flex-col gap-2 border-l-2 border-[#fde68a] pl-3",
@@ -69,7 +78,7 @@ export function ReasoningMessagePart({
               <div className="pl-1 text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
                 The assistant&apos;s thought process:
               </div>
-              {part.details.map((detail, detailIndex) =>
+              {detailItems.map((detail, detailIndex) =>
                 detail.type === "text" ? (
                   <div
                     key={detailIndex}
@@ -77,7 +86,7 @@ export function ReasoningMessagePart({
                   >
                     <div className="relative">
                       <Markdown>{detail.text}</Markdown>
-                      {detailIndex === part.details.length - 1 && (
+                      {detailIndex === detailItems.length - 1 && (
                         <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
                       )}
                     </div>
@@ -129,7 +138,7 @@ export function ReasoningMessagePart({
       )}
 
       {/* Show expandable block only after reasoning (streaming) phase ends to avoid duplication */}
-      {!isReasoning && isExpanded && (
+      {!isReasoning && isExpanded && detailItems.length > 0 && (
         <div
           className={cn(
             "mt-2 ml-0.5 flex flex-col gap-2 border-l-2 border-[#fde68a] pl-3",
@@ -139,7 +148,7 @@ export function ReasoningMessagePart({
           <div className="pl-1 text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
             The assistant&apos;s thought process:
           </div>
-          {part.details.map((detail, detailIndex) =>
+          {detailItems.map((detail, detailIndex) =>
             detail.type === "text" ? (
               <div
                 key={detailIndex}
@@ -147,7 +156,7 @@ export function ReasoningMessagePart({
               >
                 <div className="relative">
                   <Markdown>{detail.text}</Markdown>
-                  {isReasoning && detailIndex === part.details.length - 1 && (
+                  {isReasoning && detailIndex === detailItems.length - 1 && (
                     <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
                   )}
                 </div>
@@ -284,86 +293,72 @@ const PurePreviewMessage = ({
               )}
             >
               {message.parts?.map((part, i) => {
-                switch (part.type) {
-                  case "text": {
-                    try {
-                      const maybe = JSON.parse(part.text || "null");
-                      if (
-                        maybe &&
-                        typeof maybe === "object" &&
-                        maybe.toolInvocation &&
-                        typeof maybe.toolInvocation === "object"
-                      ) {
-                        const ti = maybe.toolInvocation;
-                        return (
-                          <ToolInvocation
-                            key={`message-${message.id}-part-${i}`}
-                            toolName={ti.toolName || "unknown"}
-                            state={ti.state || "call"}
-                            args={ti.args}
-                            result={"result" in ti ? ti.result : undefined}
-                            isLatestMessage={isLatestMessage}
-                            status={status}
-                          />
-                        );
-                      }
-                    } catch (err) {
-                      // ignore parse errors
-                    }
+                const key = `message-${message.id}-part-${i}`;
 
-                    const isStreamingText =
-                      isLatestMessage &&
-                      status === "streaming" &&
-                      i === (message.parts?.length ?? 0) - 1;
+                if (part.type === "text") {
+                  const isStreamingText =
+                    isLatestMessage &&
+                    status === "streaming" &&
+                    i === (message.parts?.length ?? 0) - 1;
 
-                    return (
-                      <div
-                        key={`message-${message.id}-part-${i}`}
-                        className="relative"
-                      >
-                        <Markdown>{part.text}</Markdown>
-                        {isStreamingText && (
-                          <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-[#34d399] dark:bg-[#10b981]" />
-                        )}
-                      </div>
-                    );
-                  }
-                  case "tool-invocation": {
-                    const { toolName, state, args } = part.toolInvocation;
-                    const result =
-                      "result" in part.toolInvocation
-                        ? part.toolInvocation.result
-                        : null;
-
-                    return (
-                      <ToolInvocation
-                        key={`message-${message.id}-part-${i}`}
-                        toolName={toolName}
-                        state={state}
-                        args={args}
-                        result={result}
-                        isLatestMessage={isLatestMessage}
-                        status={status}
-                      />
-                    );
-                  }
-                  case "reasoning":
-                    return (
-                      <ReasoningMessagePart
-                        key={`message-${message.id}-${i}`}
-                        // @ts-expect-error part
-                        part={part}
-                        isReasoning={
-                          (message.parts &&
-                            status === "streaming" &&
-                            i === message.parts.length - 1) ??
-                          false
-                        }
-                      />
-                    );
-                  default:
-                    return null;
+                  return (
+                    <div key={key} className="relative">
+                      <Markdown>{part.text}</Markdown>
+                      {isStreamingText && (
+                        <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-[#34d399] dark:bg-[#10b981]" />
+                      )}
+                    </div>
+                  );
                 }
+
+                if (part.type === "reasoning") {
+                  return (
+                    <ReasoningMessagePart
+                      key={key}
+                      part={part}
+                      isReasoning={
+                        (message.parts &&
+                          status === "streaming" &&
+                          i === message.parts.length - 1) ??
+                        false
+                      }
+                    />
+                  );
+                }
+
+                if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
+                  const toolPart = part as any;
+                  const toolName =
+                    part.type === "dynamic-tool"
+                      ? toolPart.toolName || "dynamic-tool"
+                      : part.type.replace(/^tool-/, "") || "tool";
+                  const result =
+                    toolPart.output !== undefined
+                      ? toolPart.output
+                      : toolPart.errorText
+                        ? { error: toolPart.errorText }
+                        : undefined;
+
+                  return (
+                    <ToolInvocation
+                      key={key}
+                      toolName={toolName}
+                      state={toolPart.state}
+                      args={toolPart.input}
+                      result={result}
+                      errorText={toolPart.errorText}
+                      callId={toolPart.toolCallId}
+                      isLatestMessage={isLatestMessage}
+                      status={status}
+                    />
+                  );
+                }
+
+                if (part.type.startsWith("data-") || part.type === "step-start") {
+                  return null;
+                }
+
+                return null;
               })}
             </div>
           </div>
@@ -377,8 +372,6 @@ export const Message = memo(PurePreviewMessage, (prevProps, nextProps) => {
   if (prevProps.status !== nextProps.status) return false;
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (prevProps.isLatestMessage !== nextProps.isLatestMessage) return false;
-  if (prevProps.message.annotations !== nextProps.message.annotations)
-    return false;
   if (prevProps.message.id !== nextProps.message.id) return false;
   if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
   return true;

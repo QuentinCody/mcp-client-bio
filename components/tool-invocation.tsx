@@ -10,6 +10,7 @@ import {
   Code,
   ArrowRight,
   Circle,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,8 @@ interface ToolInvocationProps {
   state: string;
   args: any;
   result: any;
+  errorText?: string;
+  callId?: string;
   isLatestMessage: boolean;
   status: string;
 }
@@ -27,35 +30,75 @@ export function ToolInvocation({
   state,
   args,
   result,
+  errorText,
+  callId,
   isLatestMessage,
   status,
 }: ToolInvocationProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const statusMeta = (() => {
+    switch (state) {
+      case "input-streaming":
+        return { label: "Running", tone: "running" as const };
+      case "input-available":
+        return { label: "Waiting", tone: "waiting" as const };
+      case "approval-requested":
+        return { label: "Approval Needed", tone: "waiting" as const };
+      case "approval-responded":
+        return { label: "Approved", tone: "completed" as const };
+      case "output-available":
+        return { label: "Completed", tone: "completed" as const };
+      case "output-error":
+        return { label: "Error", tone: "error" as const };
+      case "output-denied":
+        return { label: "Denied", tone: "error" as const };
+      case "call":
+        return { label: "Running", tone: "running" as const };
+      default:
+        return { label: state || "Pending", tone: "waiting" as const };
+    }
+  })();
+
+  const isStreamingState =
+    statusMeta.tone === "running" ||
+    (statusMeta.tone === "waiting" && isLatestMessage && status !== "ready");
+
   const getStatusIcon = () => {
-    if (state === "call") {
-      if (isLatestMessage && status !== "ready") {
-        return <Loader2 className="animate-spin h-3.5 w-3.5 text-primary/70" />;
-      }
+    if (statusMeta.tone === "completed") {
+      return <CheckCircle2 size={14} className="text-primary/90" />;
+    }
+    if (statusMeta.tone === "error") {
       return (
-        <Circle className="h-3.5 w-3.5 fill-muted-foreground/10 text-muted-foreground/70" />
+        <AlertTriangle className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />
       );
     }
-    return <CheckCircle2 size={14} className="text-primary/90" />;
+    if (isStreamingState) {
+      return <Loader2 className="animate-spin h-3.5 w-3.5 text-primary/70" />;
+    }
+    return (
+      <Circle className="h-3.5 w-3.5 fill-muted-foreground/10 text-muted-foreground/70" />
+    );
   };
 
   const getStatusClass = () => {
-    if (state === "call") {
-      if (isLatestMessage && status !== "ready") {
-        return "text-primary";
-      }
-      return "text-muted-foreground";
+    if (statusMeta.tone === "completed") {
+      return "text-primary";
     }
-    return "text-primary";
+    if (statusMeta.tone === "error") {
+      return "text-red-600 dark:text-red-400";
+    }
+    if (isStreamingState) {
+      return "text-primary";
+    }
+    return "text-muted-foreground";
   };
 
   const formatContent = (content: any): string => {
     try {
+      if (content === undefined || content === null) {
+        return "";
+      }
       if (typeof content === "string") {
         try {
           const parsed = JSON.parse(content);
@@ -110,11 +153,7 @@ export function ToolInvocation({
           </span>
           <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
           <span className={cn("font-medium", getStatusClass())}>
-            {state === "call"
-              ? isLatestMessage && status !== "ready"
-                ? "Running"
-                : "Waiting"
-              : "Completed"}
+            {statusMeta.label}
           </span>
         </div>
         <div className="flex items-center gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
@@ -131,6 +170,11 @@ export function ToolInvocation({
 
       {isExpanded && (
         <div className="space-y-2 px-3 pb-3">
+          {callId && (
+            <div className="text-[10px] text-muted-foreground/70 select-all">
+              Call ID: {callId}
+            </div>
+          )}
           {!!args && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pt-1.5">
@@ -148,7 +192,7 @@ export function ToolInvocation({
             </div>
           )}
 
-          {state === "call" && isLatestMessage && status !== "ready" && !result && (
+          {isStreamingState && !result && !errorText && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
                 <Loader2 className="animate-spin h-3 w-3" />
@@ -170,6 +214,23 @@ export function ToolInvocation({
                 )}
               >
                 {formatContent(result)}
+              </pre>
+            </div>
+          )}
+
+          {errorText && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400">
+                <AlertTriangle className="h-3 w-3" />
+                <span className="font-medium">Error</span>
+              </div>
+              <pre
+                className={cn(
+                  "text-xs font-mono p-2.5 rounded-md overflow-x-auto max-h-[300px] overflow-y-auto",
+                  "border border-border/40 bg-muted/10 text-red-600 dark:text-red-400"
+                )}
+              >
+                {formatContent(errorText)}
               </pre>
             </div>
           )}
