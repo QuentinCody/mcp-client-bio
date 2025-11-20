@@ -60,3 +60,7 @@ nextjs.log
 
 # workers dependencies
 /workers/node_modules/
+
+# SECRET FILES - DO NOT COMMIT
+/workers/codemode/wrangler.toml
+/setup-codemode.sh
