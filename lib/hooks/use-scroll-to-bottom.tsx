@@ -71,16 +71,27 @@ export function useScrollToBottom(): [
 
     container.addEventListener("scroll", handleScroll, { passive: true });
 
+    let intersectionTimeoutId: number | null = null;
     const intersectionObserver = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
-        setPinnedState(entry.isIntersecting ?? false);
+        
+        // Debounce intersection updates to prevent state thrashing during streaming
+        if (intersectionTimeoutId !== null) {
+          window.clearTimeout(intersectionTimeoutId);
+        }
+        
+        intersectionTimeoutId = window.setTimeout(() => {
+          setPinnedState(entry.isIntersecting ?? false);
+          intersectionTimeoutId = null;
+        }, 50);
       },
       { root: container, threshold: 1 }
     );
 
     intersectionObserver.observe(sentinel);
 
+    let mutationTimeoutId: number | null = null;
     const mutationObserver = new MutationObserver((mutations) => {
       if (!isAtBottomRef.current || isProgrammaticRef.current) return;
 
@@ -90,8 +101,15 @@ export function useScrollToBottom(): [
 
       if (!hasContentChange) return;
 
-      requestAnimationFrame(() => {
-        scrollToBottom("smooth");
+      // Debounce mutations and use instant scroll to prevent jitter during streaming
+      if (mutationTimeoutId !== null) {
+        window.cancelAnimationFrame(mutationTimeoutId);
+      }
+      
+      mutationTimeoutId = requestAnimationFrame(() => {
+        // Use instant scroll during rapid updates to prevent smooth scroll conflicts
+        scrollToBottom("instant");
+        mutationTimeoutId = null;
       });
     });
 
@@ -102,10 +120,20 @@ export function useScrollToBottom(): [
     });
 
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimeoutId: number | null = null;
     if (typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         if (!isAtBottomRef.current || isProgrammaticRef.current) return;
-        scrollToBottom("auto");
+        
+        // Debounce resize events to prevent scroll fighting with mutation observer
+        if (resizeTimeoutId !== null) {
+          window.clearTimeout(resizeTimeoutId);
+        }
+        
+        resizeTimeoutId = window.setTimeout(() => {
+          scrollToBottom("instant");
+          resizeTimeoutId = null;
+        }, 16); // ~1 frame delay
       });
 
       resizeObserver.observe(container);
@@ -113,6 +141,15 @@ export function useScrollToBottom(): [
 
     return () => {
       window.clearTimeout(initial);
+      if (mutationTimeoutId !== null) {
+        window.cancelAnimationFrame(mutationTimeoutId);
+      }
+      if (resizeTimeoutId !== null) {
+        window.clearTimeout(resizeTimeoutId);
+      }
+      if (intersectionTimeoutId !== null) {
+        window.clearTimeout(intersectionTimeoutId);
+      }
       container.removeEventListener("scroll", handleScroll);
       intersectionObserver.disconnect();
       mutationObserver.disconnect();
