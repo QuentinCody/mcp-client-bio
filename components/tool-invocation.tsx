@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CodeExecutionDisplay } from "./code-execution-display";
 
 interface ToolInvocationProps {
   toolName: string;
@@ -128,6 +129,20 @@ export function ToolInvocation({
       return String(content);
     }
   };
+
+  // Special handling for code execution
+  if (toolName === 'codemode_sandbox') {
+    return (
+      <CodeExecutionDisplay
+        code={args?.code}
+        result={result?.result || result}
+        error={errorText || result?.error}
+        logs={result?.logs || result?.console || []}
+        executionTime={result?.executionTime}
+        state={state}
+      />
+    );
+  }
 
   return (
     <div

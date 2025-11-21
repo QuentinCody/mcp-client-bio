@@ -8,8 +8,14 @@ import { eq, and } from 'drizzle-orm';
 import { initializeMCPClients, type MCPServerConfig, transformMCPToolsForResponsesAPI } from '@/lib/mcp-client';
 import { generateTitle } from '@/app/actions';
 import { z } from 'zod';
-
 import { checkBotId } from "botid/server";
+import {
+  groupToolsByServer,
+  generateHelpersMetadata,
+  createToolRegistry,
+  type ToolRegistry,
+} from '@/lib/code-mode/dynamic-helpers';
+import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -139,29 +145,41 @@ export async function POST(req: Request) {
     return complexityKeywords.some((keyword) => text.includes(keyword));
   });
 
-  // Check if codemode is available
+  // Check if codemode is available and generate dynamic helper docs
   const codemodeWorkerUrl = process.env.CODEMODE_WORKER_URL;
   const useCodeMode = !!codemodeWorkerUrl;
 
+  // Generate dynamic helper documentation from connected MCP servers
+  let helpersDocs = '';
+  let helpersMetadata: ReturnType<typeof generateHelpersMetadata> | undefined;
+
+  if (useCodeMode && mcpServers.length > 0) {
+    // Group tools by server for dynamic helper generation
+    const serverToolMap = groupToolsByServer(rawTools, mcpServers);
+    helpersMetadata = generateHelpersMetadata(serverToolMap);
+
+    // Generate compact documentation for system prompt
+    helpersDocs = generateCompactHelperDocs(serverToolMap, {
+      maxToolsPerServer: 10,
+      includeParameters: false,
+    });
+  }
+
   // Use shorter system prompt for simple queries
-  const shortSystemPrompt = useCodeMode 
+  const shortSystemPrompt = useCodeMode
     ? `You are a helpful assistant with the ability to write and execute JavaScript code.
 
-When answering questions, write JavaScript code (NOT TypeScript - no type annotations) using the codemode_sandbox tool. The code has access to a helpers API:
+When answering questions, write JavaScript code (NOT TypeScript - no type annotations) using the codemode_sandbox tool.
 
-helpers.datacite.invoke(tool, args) - Query DataCite database
-helpers.ncigdc.invoke(tool, args) - Query NCI GDC database
-helpers.entrez.invoke(tool, args) - Query Entrez databases
-helpers.datacite.listTools() - List available DataCite tools
-helpers.ncigdc.listTools() - List available NCI GDC tools
-helpers.entrez.listTools() - List available Entrez tools
+${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
 
 The code also has access to console.log() for debugging.
 
 Example:
-const tools = await helpers.datacite.listTools();
+const tools = await helpers.myserver.listTools();
 console.log("Available tools:", tools);
-return { toolCount: tools.length };
+const result = await helpers.myserver.invoke('tool_name', { param: 'value' });
+return { result };
 
 Always return a result from your code. IMPORTANT: Do not use TypeScript syntax like type annotations (': string', 'as Type', or 'x is Type')!`
     : `You are a helpful assistant with access to tools.
@@ -179,14 +197,9 @@ Today's date is ${new Date().toISOString().split('T')[0]}.
 
 IMPORTANT: When answering user questions, write JavaScript code (NOT TypeScript) using the codemode_sandbox tool. DO NOT call MCP tools directly.
 
-Your code has access to a helpers API that provides access to scientific databases:
+Your code has access to a helpers API that provides access to various databases and services:
 
-helpers.datacite.invoke(toolName, args) - Query DataCite for research publications
-helpers.ncigdc.invoke(toolName, args) - Query NCI GDC for genomic data
-helpers.entrez.invoke(toolName, args) - Query NCBI Entrez databases (PubMed, Gene, etc.)
-helpers.datacite.listTools() - List available DataCite tools
-helpers.ncigdc.listTools() - List available NCI GDC tools
-helpers.entrez.listTools() - List available Entrez tools
+${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
 
 Your code also has access to console.log() for debugging output.
 
@@ -196,13 +209,26 @@ When responding:
 - Use console.log() to show your work
 - Always return a structured result object
 - Handle errors gracefully
+- Use helpers.serverName.searchTools(query) to discover relevant tools
+- Use helpers.serverName.listTools() to see all available tools
 
 Example code pattern:
 async (helpers, console) => {
   console.log("Starting query...");
-  const result1 = await helpers.entrez.invoke("entrez_query", { operation: "search", db: "pubmed", term: "breast cancer", retmax: 5 });
-  const result2 = await helpers.ncigdc.invoke("graphql_query", { query: "..." });
-  return { entrez: result1, nci: result2 };
+
+  // Discover available tools
+  const allServers = Object.keys(helpers);
+  console.log("Available servers:", allServers);
+
+  // Search for relevant tools
+  if (helpers.entrez) {
+    const tools = await helpers.entrez.searchTools("pubmed");
+    console.log("Found tools:", tools);
+  }
+
+  // Invoke tools
+  const result1 = await helpers.myserver.invoke("tool_name", { param: "value" });
+  return { success: true, data: result1 };
 }`
     : `You are a helpful assistant with access to a variety of tools.
 
@@ -247,12 +273,15 @@ async (helpers, console) => {
   // When Code Mode is enabled, ONLY expose the codemode_sandbox tool (not direct MCP tools)
   const codemodeWorkerUrl2 = process.env.CODEMODE_WORKER_URL;
   let toolsWithCache: Record<string, any> | undefined;
-  
+
   if (codemodeWorkerUrl2) {
+    // Create tool registry for code execution
+    const toolRegistry = createToolRegistry(rawTools);
+
     // Code Mode enabled: create codemode_sandbox tool
     const codemodeTool = dynamicTool({
       description:
-        "Execute JavaScript code inside a sandboxed Cloudflare isolate. The code has access to a helpers API: helpers.datacite.invoke(toolName, args), helpers.ncigdc.invoke(toolName, args), helpers.entrez.invoke(toolName, args), helpers.datacite.listTools(), helpers.ncigdc.listTools(), helpers.entrez.listTools(). Use console.log() for debugging. Return structured JSON results.",
+        "Execute JavaScript code inside a sandboxed environment. The code has access to a helpers API that provides access to all connected MCP servers. Use helpers.serverName.invoke(toolName, args) to call tools, helpers.serverName.listTools() to list available tools, and helpers.serverName.searchTools(query) to search for relevant tools. Use console.log() for debugging. Return structured JSON results.",
       inputSchema: z.object({
         code: z
           .string()
@@ -263,18 +292,25 @@ async (helpers, console) => {
       execute: async (input) => {
         const { code } = input as { code: string };
         if (!code || typeof code !== 'string') {
-          return { error: "Provide a TypeScript code string in 'code'" };
+          return { error: "Provide a JavaScript code string in 'code'" };
         }
 
         const headers: Record<string, string> = { "content-type": "application/json" };
         const workerToken = process.env.CODEMODE_WORKER_TOKEN;
         if (workerToken) headers["x-codemode-token"] = workerToken;
 
+        // Prepare payload with code, tool registry, and helpers metadata
+        const payload = {
+          code,
+          toolRegistry: Object.keys(toolRegistry), // Send tool names only
+          helpersMetadata: helpersMetadata || { servers: [], totalTools: 0 },
+        };
+
         try {
           const res = await fetch(codemodeWorkerUrl2, {
             method: "POST",
             headers,
-            body: JSON.stringify({ code }),
+            body: JSON.stringify(payload),
           });
           const text = await res.text();
           let parsed: any = null;
