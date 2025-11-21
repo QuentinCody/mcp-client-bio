@@ -3,6 +3,7 @@
 import { type modelID, modelDetails } from "@/ai/providers";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/model-picker";
+import { CodeModeToggle } from "@/components/code-mode-toggle";
 import { cn } from "@/lib/utils";
 import { Activity, Loader2, Plus, ServerIcon, Sparkles } from "lucide-react";
 
@@ -81,6 +82,7 @@ export function ChatHeader({
           )}
           {statusLabel}
         </span>
+        <CodeModeToggle />
         <button
           onClick={onOpenServerManager}
           type="button"

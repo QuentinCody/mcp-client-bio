@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./markdown";
@@ -33,6 +34,38 @@ export function CodeExecutionDisplay({
   const [isExpanded, setIsExpanded] = useState(true);
   const hasError = !!error || state === "output-error";
   const isCompleted = state === "output-available" || hasError;
+  const logCount = logs?.length ?? 0;
+  const statusTag = hasError ? "Error" : isCompleted ? "Completed" : "Running";
+  const statusBadgeClass = hasError
+    ? "bg-red-100 text-red-600 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700"
+    : isCompleted
+      ? "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700"
+      : "bg-primary/10 text-primary border-primary/40";
+  const statusHint = (() => {
+    switch (state) {
+      case "input-streaming":
+        return "Streaming data into the sandbox";
+      case "input-available":
+        return "Helpers are ready for this call";
+      case "approval-requested":
+        return "Waiting on approval";
+      case "approval-responded":
+        return "Approval granted";
+      case "output-available":
+        return "Sandbox returned a result";
+      case "output-error":
+        return "Sandbox reported an error";
+      case "output-denied":
+        return "Sandbox denied the call";
+      case "call":
+        return "Tool call initiated";
+      default:
+        return state || "In progress";
+    }
+  })();
+  const dynamicWorkerDoc =
+    "https://developers.cloudflare.com/workers/runtime-apis/bindings/worker-loader/";
+  const codeModeBlog = "https://blog.cloudflare.com/code-mode/";
 
   const formatCode = (code: string) => {
     // Remove function wrapper if present
@@ -92,32 +125,49 @@ export function CodeExecutionDisplay({
           <Code2 className="h-3.5 w-3.5" />
         </div>
 
-        <div className="flex items-center gap-2 text-sm font-medium flex-1">
-          <span
-            className={cn(
-              hasError
-                ? "text-red-700 dark:text-red-300"
-                : "text-blue-700 dark:text-blue-300"
+        <div className="flex flex-1 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            {hasError ? (
+              <AlertTriangle className="h-3 w-3 text-red-600 dark:text-red-300" />
+            ) : isCompleted ? (
+              <CheckCircle2 className="h-3 w-3 text-blue-600 dark:text-blue-300" />
+            ) : (
+              <Loader2 className="h-3 w-3 animate-spin text-primary/70" />
             )}
-          >
-            Code Execution
-          </span>
-          {isCompleted && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {hasError ? (
-                <AlertTriangle className="h-3 w-3" />
-              ) : (
-                <CheckCircle2 className="h-3 w-3" />
+            <span
+              className={cn(
+                "text-sm tracking-tight",
+                hasError ? "text-red-700 dark:text-red-300" : "text-blue-700 dark:text-blue-300"
               )}
-              <span>{hasError ? "Failed" : "Completed"}</span>
-              {executionTime && (
-                <>
-                  <Clock className="h-3 w-3 ml-1" />
-                  <span>{executionTime}ms</span>
-                </>
+            >
+              Code Execution
+            </span>
+            <div
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                statusBadgeClass
               )}
+            >
+              {statusTag}
             </div>
-          )}
+            {executionTime && (
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>{executionTime}ms</span>
+              </div>
+            )}
+            <div className="text-[11px] text-muted-foreground">
+              {logCount} log{logCount !== 1 ? "s" : ""}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80">
+            <span>{statusHint}</span>
+            {!hasError && logCount === 0 && (
+              <span className="rounded-full bg-muted/10 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                Waiting for logs
+              </span>
+            )}
+          </div>
         </div>
 
         <div
@@ -134,6 +184,28 @@ export function CodeExecutionDisplay({
             <ChevronUpIcon className="h-4 w-4" />
           )}
         </div>
+      </div>
+
+      <div className="px-4 pt-1 pb-2 text-[11px] text-muted-foreground/80 flex flex-wrap items-center gap-2">
+        <span>
+          Runs inside Cloudflare Code Mode via the Dynamic Worker Loader.
+        </span>
+        <a
+          href={dynamicWorkerDoc}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          Read the worker loader docs ↗
+        </a>
+        <a
+          href={codeModeBlog}
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          Learn about Code Mode ↗
+        </a>
       </div>
 
       {/* Expanded Content */}
@@ -173,6 +245,11 @@ export function CodeExecutionDisplay({
               </div>
             </div>
           )}
+          {(logs?.length ?? 0) === 0 && (
+            <div className="px-4 py-3 text-[11px] text-muted-foreground/70">
+              Console output will appear here once the sandbox starts executing the snippet.
+            </div>
+          )}
 
           {/* Result Section */}
           {result && !hasError && (
@@ -186,6 +263,11 @@ export function CodeExecutionDisplay({
                   {`\`\`\`json\n${formatResult(result)}\n\`\`\``}
                 </Markdown>
               </div>
+            </div>
+          )}
+          {!result && !hasError && (
+            <div className="px-4 py-3 text-[11px] text-muted-foreground/70">
+              Awaiting the Code Mode sandbox to return structured output. Logs may update while you wait.
             </div>
           )}
 

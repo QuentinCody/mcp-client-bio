@@ -41,23 +41,59 @@ export function ToolInvocation({
   const statusMeta = (() => {
     switch (state) {
       case "input-streaming":
-        return { label: "Running", tone: "running" as const };
+        return {
+          label: "Running",
+          tone: "running" as const,
+          description: "Streaming input to the tool",
+        };
       case "input-available":
-        return { label: "Waiting", tone: "waiting" as const };
+        return {
+          label: "Waiting",
+          tone: "waiting" as const,
+          description: "Waiting for helpers or approvals",
+        };
       case "approval-requested":
-        return { label: "Approval Needed", tone: "waiting" as const };
+        return {
+          label: "Approval Needed",
+          tone: "waiting" as const,
+          description: "Human approval requested",
+        };
       case "approval-responded":
-        return { label: "Approved", tone: "completed" as const };
+        return {
+          label: "Approved",
+          tone: "completed" as const,
+          description: "Approval granted, continuing tool call",
+        };
       case "output-available":
-        return { label: "Completed", tone: "completed" as const };
+        return {
+          label: "Completed",
+          tone: "completed" as const,
+          description: "Tool returned a result",
+        };
       case "output-error":
-        return { label: "Error", tone: "error" as const };
+        return {
+          label: "Error",
+          tone: "error" as const,
+          description: "Tool execution threw an error",
+        };
       case "output-denied":
-        return { label: "Denied", tone: "error" as const };
+        return {
+          label: "Denied",
+          tone: "error" as const,
+          description: "Tool access was denied",
+        };
       case "call":
-        return { label: "Running", tone: "running" as const };
+        return {
+          label: "Running",
+          tone: "running" as const,
+          description: "Tool call is in progress",
+        };
       default:
-        return { label: state || "Pending", tone: "waiting" as const };
+        return {
+          label: state || "Pending",
+          tone: "waiting" as const,
+          description: "Waiting for the tool",
+        };
     }
   })();
 
@@ -95,6 +131,20 @@ export function ToolInvocation({
     return "text-muted-foreground";
   };
 
+  const getBadgeToneClass = () => {
+    switch (statusMeta.tone) {
+      case "completed":
+        return "bg-primary/10 text-primary border border-primary/30";
+      case "error":
+        return "bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/40 dark:text-red-200 dark:border-red-700";
+      case "running":
+        return "bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700";
+      case "waiting":
+      default:
+        return "bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700";
+    }
+  };
+
   const formatContent = (content: any): string => {
     try {
       if (content === undefined || content === null) {
@@ -130,6 +180,37 @@ export function ToolInvocation({
     }
   };
 
+  const previewSnippet = (content: any): string | null => {
+    const formatted = formatContent(content);
+    if (!formatted) return null;
+    const inline = formatted.replace(/\s+/g, " ").trim();
+    if (!inline) return null;
+    return inline.length > 140 ? `${inline.slice(0, 140)}…` : inline;
+  };
+
+  const previewLabel = () => {
+    if (errorText) return "Error";
+    if (result) return "Result";
+    if (args) return "Arguments";
+    return null;
+  };
+
+  const previewContent = errorText ?? result ?? args;
+  const previewLabelText = previewLabel();
+  const previewText = previewLabelText
+    ? previewSnippet(previewContent)
+    : null;
+  const isCodemode = toolName === "codemode_sandbox";
+  const previewLine =
+    previewText && previewLabelText ? (
+      <div className="text-[11px] text-muted-foreground/75 overflow-hidden text-ellipsis whitespace-nowrap">
+        <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground">
+          {previewLabelText}:
+        </span>{" "}
+        <span className="font-mono text-foreground/90">{previewText}</span>
+      </div>
+    ) : null;
+
   // Special handling for code execution
   if (toolName === 'codemode_sandbox') {
     return (
@@ -147,31 +228,53 @@ export function ToolInvocation({
   return (
     <div
       className={cn(
-        "flex flex-col mb-2 rounded-md border border-border/50 overflow-hidden",
+        "flex flex-col mb-2 rounded-md border overflow-hidden",
         "bg-gradient-to-b from-background to-muted/30 backdrop-blur-sm",
-        "transition-all duration-200 hover:border-border/80 group"
+        "transition-all duration-200 hover:border-border/80 group",
+        isCodemode && "border-blue-500/60 hover:border-blue-600"
       )}
     >
       <div
         className={cn(
-          "flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors",
+          "flex items-start gap-2.5 px-3 py-2 cursor-pointer transition-colors",
           "hover:bg-muted/20"
         )}
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center justify-center rounded-full w-5 h-5 bg-primary/5 text-primary">
+        <div className="flex items-center justify-center rounded-full w-5 h-5 bg-primary/5 text-primary mt-0.5">
           <TerminalSquare className="h-3.5 w-3.5" />
         </div>
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground flex-1">
-          <span className="text-foreground font-semibold tracking-tight">
-            {toolName}
-          </span>
-          <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-          <span className={cn("font-medium", getStatusClass())}>
-            {statusMeta.label}
-          </span>
+        <div className="flex flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+            <span className="text-foreground font-semibold tracking-tight">
+              {toolName}
+            </span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                getBadgeToneClass()
+              )}
+            >
+              {statusMeta.label}
+            </span>
+            {isCodemode && (
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+                Code Mode
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80">
+            <span>{statusMeta.description}</span>
+            {!isExpanded && callId && (
+              <span className="rounded-full border border-border/40 bg-muted/10 px-2 py-0.5 text-[10px] text-muted-foreground/80">
+                Call ID {callId}
+              </span>
+            )}
+          </div>
+          {!isExpanded && previewLine}
         </div>
-        <div className="flex items-center gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-2 opacity-70 group-hover:opacity-100 transition-opacity mt-1">
           {getStatusIcon()}
           <div className="bg-muted/30 rounded-full p-0.5 border border-border/30">
             {isExpanded ? (

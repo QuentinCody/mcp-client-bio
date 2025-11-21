@@ -63,17 +63,18 @@ export function CodeModeToggle({ className }: CodeModeToggleProps) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={className}
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-full border border-[#d4d4d4] bg-white px-3 py-1 text-[11px] font-semibold text-[#1f2937] shadow-sm transition hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93c5fd] dark:border-[#2b2b2b] dark:bg-[#181818] dark:text-[#e5e5e5] dark:hover:bg-[#202020]"
         >
-          <Code2 className="h-4 w-4" />
-          <span className="ml-2 hidden sm:inline">Code Mode</span>
+          <Code2 className="h-3.5 w-3.5" />
+          <span>Code Mode</span>
           {isCodeModeEnabled && (
-            <Badge variant="default" className="ml-2">ON</Badge>
+            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
+              ON
+            </span>
           )}
-        </Button>
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-96" align="end">
         <div className="space-y-4">
