@@ -122,7 +122,20 @@ export async function POST(req: Request) {
 
   // Initialize MCP clients using the already running persistent HTTP/SSE servers
   try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
-  const { tools: rawTools, cleanup } = await initializeMCPClients(mergedMcpServers, req.signal);
+  const { tools: rawTools, toolsByServer, cleanup } = await initializeMCPClients(mergedMcpServers, req.signal);
+
+  const codeModeRawTools = (() => {
+    if (!useCodeMode || codeModeServers.length === 0) return {};
+    const collected: Record<string, any>[] = [];
+    for (const server of codeModeServers) {
+      const entry = toolsByServer.get(server.url);
+      if (entry?.tools && Object.keys(entry.tools).length > 0) {
+        collected.push(entry.tools);
+      }
+    }
+    if (collected.length === 0) return {};
+    return Object.assign({}, ...collected);
+  })();
 
   // Transform MCP tools for compatibility with AI providers
   const tools = transformMCPToolsForResponsesAPI(rawTools);
@@ -176,7 +189,7 @@ export async function POST(req: Request) {
   if (useCodeMode && mergedMcpServers.length > 0) {
     // Group tools by server for dynamic helper generation
     // Only use Code Mode servers (datacite, ncigdc, entrez) for helper generation
-    const serverToolMap = groupToolsByServer(rawTools, codeModeServers);
+    const serverToolMap = groupToolsByServer(codeModeRawTools, codeModeServers);
     helpersMetadata = generateHelpersMetadata(serverToolMap);
 
     // Generate compact documentation for system prompt

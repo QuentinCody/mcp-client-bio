@@ -20,6 +20,7 @@ export interface MCPClientManager {
   tools: Record<string, any>;
   clients: any[];
   cleanup: () => Promise<void>;
+  toolsByServer: Map<string, { config: MCPServerConfig; tools: Record<string, any> }>;
 }
 
 // Simple in-memory cache (per server URL + headers signature) to avoid reconnecting every request
@@ -487,6 +488,7 @@ export async function initializeMCPClients(
 ): Promise<MCPClientManager> {
   let aggregatedTools: Record<string, any> = {};
   const acquiredClients: any[] = [];
+  const toolsByServer = new Map<string, { config: MCPServerConfig; tools: Record<string, any> }>();
 
   // Filter duplicates by URL + headers signature
   const uniqueServers: MCPServerConfig[] = [];
@@ -506,6 +508,7 @@ export async function initializeMCPClients(
       cached.lastUsed = Date.now();
       aggregatedTools = { ...aggregatedTools, ...cached.tools };
       acquiredClients.push(cached.client); // track so caller can cleanup if needed
+      toolsByServer.set(server.url, { config: server, tools: cached.tools });
       return;
     }
 
@@ -541,6 +544,7 @@ export async function initializeMCPClients(
       clientCache.set(key, { client, tools: sanitizedTools, lastUsed: Date.now() });
       aggregatedTools = { ...aggregatedTools, ...sanitizedTools };
       acquiredClients.push(client);
+      toolsByServer.set(server.url, { config: server, tools: sanitizedTools });
     })();
 
     // Enforce timeout
@@ -576,6 +580,7 @@ export async function initializeMCPClients(
 
   return {
     tools: aggregatedTools,
+    toolsByServer,
     clients: acquiredClients,
     cleanup: async () => await cleanupMCPClients(acquiredClients)
   };
