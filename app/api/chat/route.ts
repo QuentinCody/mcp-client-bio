@@ -371,6 +371,19 @@ async (helpers, console) => {
             return {
               error: parsed?.error || text || `Codemode worker error (${res.status})`,
               status: res.status,
+              logs: parsed?.logs || [],
+            };
+          }
+
+          // Include console logs in the response
+          const result = parsed?.result;
+          const logs = parsed?.logs || [];
+
+          if (logs.length > 0) {
+            return {
+              result,
+              console: logs,  // Return as array for UI compatibility
+              _meta: { logsCount: logs.length }
             };
           }
 
