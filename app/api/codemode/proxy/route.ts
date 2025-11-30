@@ -1,23 +1,6 @@
 import { NextResponse } from "next/server";
-import { initializeMCPClients, type MCPServerConfig } from "@/lib/mcp-client";
-
-type AllowedServerKey = "datacite" | "ncigdc" | "entrez";
-
-// Three static, non-SQL MCP servers exposed to the sandbox
-const CODEMODE_SERVERS: Record<AllowedServerKey, MCPServerConfig> = {
-  datacite: {
-    url: "https://datacite-mcp-server.quentincody.workers.dev/sse",
-    type: "sse",
-  },
-  ncigdc: {
-    url: "https://nci-gdc-mcp-server.quentincody.workers.dev/mcp",
-    type: "http",
-  },
-  entrez: {
-    url: "https://entrez-mcp-server.quentincody.workers.dev/mcp",
-    type: "http",
-  },
-};
+import { initializeMCPClients } from "@/lib/mcp-client";
+import { CODEMODE_SERVERS, type CodeModeServerKey } from "@/lib/codemode/servers";
 
 function corsHeaders() {
   return {
@@ -70,7 +53,7 @@ export async function GET(req: Request) {
   if (!validateToken(req.headers)) return unauthorizedResponse();
 
   const url = new URL(req.url);
-  const serverKey = url.searchParams.get("server") as AllowedServerKey | null;
+  const serverKey = url.searchParams.get("server") as CodeModeServerKey | null;
   if (!serverKey || !(serverKey in CODEMODE_SERVERS)) {
     return badRequest("Unknown server. Use datacite, ncigdc, or entrez.");
   }
@@ -105,7 +88,7 @@ export async function POST(req: Request) {
     return badRequest("Invalid JSON body");
   }
 
-  const server = payload?.server as AllowedServerKey | undefined;
+  const server = payload?.server as CodeModeServerKey | undefined;
   const tool = typeof payload?.tool === "string" ? payload.tool : undefined;
   const args = payload?.args ?? {};
 

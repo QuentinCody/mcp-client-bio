@@ -15,36 +15,45 @@ export interface HelpersObject {
   [serverKey: string]: HelperAPI;
 }
 
+function normalizeKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/^_+|_+$/g, '');
+}
+
 /**
  * Extract server key from MCP server config
- * Uses URL path or domain as identifier
  */
 export function extractServerKey(server: MCPServerConfig): string {
+  if (server.name) {
+    const fromName = normalizeKey(server.name);
+    if (fromName) return fromName;
+  }
+
   try {
     const url = new URL(server.url);
     const pathParts = url.pathname.split('/').filter(Boolean);
 
-    // Prefer last path segment as key (e.g., /mcp/entrez -> entrez)
     if (pathParts.length > 0) {
       const lastPart = pathParts[pathParts.length - 1];
-      return lastPart.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const sanitized = normalizeKey(lastPart);
+      if (sanitized) return sanitized;
     }
 
-    // Fallback to subdomain if available
     const hostParts = url.hostname.split('.');
     if (hostParts.length > 2) {
-      return hostParts[0].toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const sanitized = normalizeKey(hostParts[0]);
+      if (sanitized) return sanitized;
     }
 
-    // Fallback to domain name
-    return url.hostname.replace(/\./g, '_').replace(/[^a-z0-9_]/g, '');
+    const fallback = normalizeKey(url.hostname.replace(/\./g, ''));
+    if (fallback) return fallback;
   } catch {
-    // If URL parsing fails, create key from entire URL
-    return server.url
-      .replace(/^https?:\/\//, '')
-      .replace(/[^a-z0-9]/gi, '_')
-      .toLowerCase();
+    // ignore
   }
+
+  return 'mcp';
 }
 
 /**
@@ -98,7 +107,8 @@ export function groupToolsByServer(
  * This creates the actual JavaScript code that implements the helpers object
  */
 export function generateHelpersImplementation(
-  serverToolMap: Map<string, { config: MCPServerConfig; tools: Record<string, any> }>
+  serverToolMap: Map<string, { config: MCPServerConfig; tools: Record<string, any> }>,
+  aliasMap: Record<string, string> = {}
 ): string {
   const lines: string[] = [
     '// Auto-generated helpers implementation',
@@ -118,7 +128,7 @@ export function generateHelpersImplementation(
     lines.push(`    if (typeof __invokeMCPTool !== 'function') {`);
     lines.push(`      throw new Error('MCP tool invocation not available in this environment');`);
     lines.push(`    }`);
-    lines.push(`    return await __invokeMCPTool(toolName, args);`);
+    lines.push(`    return await __invokeMCPTool('${serverKey}', toolName, args);`);
     lines.push(`  },`);
     lines.push(`  async searchTools(query) {`);
     lines.push(`    const q = query.toLowerCase();`);
@@ -135,6 +145,13 @@ export function generateHelpersImplementation(
     lines.push(`  },`);
     lines.push(`};`);
     lines.push('');
+  }
+
+  for (const [aliasName, targetKey] of Object.entries(aliasMap)) {
+    if (!aliasName || !targetKey) continue;
+    lines.push(`if (helpers.${targetKey}) {`);
+    lines.push(`  helpers.${aliasName} = helpers.${targetKey};`);
+    lines.push(`}`);
   }
 
   lines.push('// Export helpers for code execution');

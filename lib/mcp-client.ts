@@ -8,6 +8,7 @@ export interface KeyValuePair {
 }
 
 export interface MCPServerConfig {
+  name?: string;
   url: string;
   type: 'sse' | 'http';
   headers?: KeyValuePair[];

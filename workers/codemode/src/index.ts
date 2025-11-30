@@ -35,22 +35,14 @@ export class OutboundProxy extends WorkerEntrypoint<OutboundProps> {
 }
 
 // Helper to build a module that wraps user code
-function buildRunnerModule(userCode: string): string {
-  // Check if the code looks like a complete function
-  const trimmed = userCode.trim();
-  const isFunction = trimmed.startsWith('async ') || 
-                     trimmed.startsWith('function') || 
-                     (trimmed.startsWith('(') && trimmed.includes('=>'));
-  
-  const executionCode = isFunction
-    ? `const userFunction = ${userCode};`
-    : `const userFunction = async (helpers, console) => {
+function buildRunnerModule(userCode: string, helpersImplementation: string): string {
+  const executionCode = `const userFunction = async (helpers, console) => {
          ${userCode}
        };`;
   
   return `
     const logs = [];
-    
+
     const safeConsole = {
       log: (...args) => {
         try {
@@ -67,73 +59,68 @@ function buildRunnerModule(userCode: string): string {
       warn: (...args) => safeConsole.log(...args),
       info: (...args) => safeConsole.log(...args),
     };
-    
-    async function callProxy(env, server, tool, args) {
-      const headers = new Headers({ 'content-type': 'application/json' });
-      if (env.PROXY_TOKEN) headers.set('x-codemode-token', env.PROXY_TOKEN);
-      const res = await fetch(env.PROXY_URL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ server, tool, args })
-      });
-      const text = await res.text();
-      let parsed = null;
-      try { parsed = text ? JSON.parse(text) : null; } catch {}
-      if (!res.ok) {
-        throw new Error(parsed?.error || text || ('Proxy error ' + res.status));
-      }
-      return parsed?.result ?? null;
-    }
-    
-    async function listTools(env, server) {
-      const headers = new Headers();
-      if (env.PROXY_TOKEN) headers.set('x-codemode-token', env.PROXY_TOKEN);
-      const url = new URL(env.PROXY_URL);
-      url.searchParams.set('server', server);
-      const res = await fetch(url.toString(), { headers });
-      const text = await res.text();
-      let parsed = null;
-      try { parsed = text ? JSON.parse(text) : null; } catch {}
-      if (!res.ok) {
-        throw new Error(parsed?.error || text || ('Proxy list error ' + res.status));
-      }
-      return parsed?.tools ?? [];
-    }
-    
+
+    ${helpersImplementation || ''}
+
     export default {
       async fetch(request, env) {
-        const helpers = {
-          datacite: {
-            invoke: (tool, args) => callProxy(env, 'datacite', tool, args || {}),
-            listTools: () => listTools(env, 'datacite'),
-          },
-          ncigdc: {
-            invoke: (tool, args) => callProxy(env, 'ncigdc', tool, args || {}),
-            listTools: () => listTools(env, 'ncigdc'),
-          },
-          entrez: {
-            invoke: (tool, args) => callProxy(env, 'entrez', tool, args || {}),
-            listTools: () => listTools(env, 'entrez'),
-          },
+        // Define proxy functions inside fetch handler where env is available
+        async function callProxy(server, tool, args) {
+          const headers = new Headers({ 'content-type': 'application/json' });
+          if (env.PROXY_TOKEN) headers.set('x-codemode-token', env.PROXY_TOKEN);
+          let res;
+          try {
+            res = await fetch(env.PROXY_URL, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ server, tool, args })
+            });
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new Error(
+              "Failed to reach Code Mode proxy (" +
+                env.PROXY_URL +
+                ") while calling " +
+                server +
+                "/" +
+                tool +
+                ": " +
+                reason
+            );
+          }
+          const text = await res.text();
+          let parsed = null;
+          try { parsed = text ? JSON.parse(text) : null; } catch {}
+          if (!res.ok) {
+            throw new Error(parsed?.error || text || ('Proxy error ' + res.status));
+          }
+          return parsed?.result ?? null;
+        }
+
+        // Make __invokeMCPTool available globally for helpers
+        globalThis.__invokeMCPTool = async function(server, tool, args) {
+          return callProxy(server, tool, args);
         };
-        
+
+        const helpers = globalThis.helpers || {};
+
         try {
           ${executionCode}
-          
+
           const result = await userFunction(helpers, safeConsole);
-          
-          return new Response(JSON.stringify({ result, logs }), { 
-            status: 200, 
-            headers: { 'content-type': 'application/json' } 
+
+          return new Response(JSON.stringify({ result, logs }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
           });
         } catch (err) {
           safeConsole.log('[error]', err && err.message ? err.message : String(err));
-          return new Response(JSON.stringify({ 
-            error: err instanceof Error ? err.message : String(err), 
-            logs 
-          }), { 
-            status: 500, 
-            headers: { 'content-type': 'application/json' } 
+          return new Response(JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+            logs
+          }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' }
           });
         }
       }
@@ -180,7 +167,19 @@ export default {
     })();
 
     // Build a dynamic module with the user's code embedded
-    const runnerModule = buildRunnerModule(code);
+    let helpersImplementation = typeof payload?.helpersImplementation === 'string' ? payload.helpersImplementation : '';
+    if (!helpersImplementation) {
+      console.log("[CodeMode Worker] payload missing helpersImplementation, injecting stub");
+      helpersImplementation = "const helpers = {}; globalThis.helpers = helpers;";
+    }
+    // Log first 500 chars to debug
+    console.log("[CodeMode Worker] helpersImplementation preview:", helpersImplementation.substring(0, 500));
+    const helperMatches = Array.from(
+      new Set((helpersImplementation.match(/helpers\\.([a-z0-9_]+)/gi) || []).map((m) => m.replace(/^helpers\\./, "")))
+    );
+    console.log("[CodeMode Worker] helpersImplementation length=", helpersImplementation.length);
+    console.log("[CodeMode Worker] helper keys:", helperMatches.join(", "));
+    const runnerModule = buildRunnerModule(code, helpersImplementation);
 
     const isolateId = `codemode-${crypto.randomUUID()}`;
     const loaderConfig: any = {

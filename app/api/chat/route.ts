@@ -11,11 +11,13 @@ import { z } from 'zod';
 import { checkBotId } from "botid/server";
 import {
   groupToolsByServer,
+  generateHelpersImplementation,
   generateHelpersMetadata,
   createToolRegistry,
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
+import { CODEMODE_SERVERS } from '@/lib/codemode/servers';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -25,6 +27,24 @@ export async function POST(req: Request) {
   const selectedModel: modelID = (body as any).selectedModel || headerModel;
   const userId: string = (body as any).userId;
   const mcpServers: MCPServerConfig[] = Array.isArray((body as any).mcpServers) ? (body as any).mcpServers : [];
+  const codemodeWorkerUrl = process.env.CODEMODE_WORKER_URL;
+  const useCodeMode = !!codemodeWorkerUrl;
+  const codeModeServers = useCodeMode ? Object.values(CODEMODE_SERVERS) : [];
+  const mergedMcpServers = useCodeMode
+    ? (() => {
+        const existingUrls = new Set(mcpServers.map(server => server.url));
+        const extras = codeModeServers.filter(server => !existingUrls.has(server.url));
+        return [...mcpServers, ...extras];
+      })()
+    : mcpServers;
+  if (useCodeMode) {
+    try {
+      console.log('[API /chat] Code Mode servers added:', codeModeServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
+      console.log('[API /chat] merged MCP servers:', mergedMcpServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
+    } catch (err) {
+      console.error('[API /chat] failed to log merged MCP servers', err);
+    }
+  }
   const promptContext: {
     entries?: Array<{ id: string; namespace: string; name: string; title?: string; origin?: string; sourceServerId?: string; version?: string; args?: Record<string, string>; messages?: Array<{ role: string; text: string }> }>;
     flattened?: Array<{ role: string; text: string }>;
@@ -102,7 +122,7 @@ export async function POST(req: Request) {
 
   // Initialize MCP clients using the already running persistent HTTP/SSE servers
   try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
-  const { tools: rawTools, cleanup } = await initializeMCPClients(mcpServers, req.signal);
+  const { tools: rawTools, cleanup } = await initializeMCPClients(mergedMcpServers, req.signal);
 
   // Transform MCP tools for compatibility with AI providers
   const tools = transformMCPToolsForResponsesAPI(rawTools);
@@ -146,16 +166,17 @@ export async function POST(req: Request) {
   });
 
   // Check if codemode is available and generate dynamic helper docs
-  const codemodeWorkerUrl = process.env.CODEMODE_WORKER_URL;
-  const useCodeMode = !!codemodeWorkerUrl;
+  // (Variables already defined earlier)
 
   // Generate dynamic helper documentation from connected MCP servers
   let helpersDocs = '';
   let helpersMetadata: ReturnType<typeof generateHelpersMetadata> | undefined;
+  let helpersImplementation: string | undefined;
 
-  if (useCodeMode && mcpServers.length > 0) {
+  if (useCodeMode && mergedMcpServers.length > 0) {
     // Group tools by server for dynamic helper generation
-    const serverToolMap = groupToolsByServer(rawTools, mcpServers);
+    // Only use Code Mode servers (datacite, ncigdc, entrez) for helper generation
+    const serverToolMap = groupToolsByServer(rawTools, codeModeServers);
     helpersMetadata = generateHelpersMetadata(serverToolMap);
 
     // Generate compact documentation for system prompt
@@ -163,6 +184,35 @@ export async function POST(req: Request) {
       maxToolsPerServer: 10,
       includeParameters: false,
     });
+    const aliasMap: Record<string, string> = {};
+    if (!aliasMap.mcp) {
+      const httpServer = Array.from(serverToolMap.entries()).find(
+        ([, data]) => data.config.type === "http"
+      );
+      if (httpServer) aliasMap.mcp = httpServer[0];
+    }
+    if (!aliasMap.sse) {
+      const sseServer = Array.from(serverToolMap.entries()).find(
+        ([, data]) => data.config.type === "sse"
+      );
+      if (sseServer) aliasMap.sse = sseServer[0];
+    }
+    if (!aliasMap.mcp && serverToolMap.size > 0) {
+      aliasMap.mcp = Array.from(serverToolMap.keys())[0];
+    }
+    const counts = Array.from(serverToolMap.entries())
+      .map(([key, data]) => `${key}:${Object.keys(data.tools).length}`)
+      .join(", ");
+    console.log("[API /chat] Code Mode server tool counts:", counts.slice(0, 400));
+
+    helpersImplementation = generateHelpersImplementation(serverToolMap, aliasMap);
+    if (helpersImplementation) {
+      console.log("[API /chat] helpersImplementation length=", helpersImplementation.length);
+      const matches = Array.from(new Set(helpersImplementation.match(/helpers\.([a-z0-9_]+)/gi) || []));
+      console.log("[API /chat] Code Mode helpers emitted:", matches.join(", ").slice(0, 400));
+    } else {
+      console.log("[API /chat] helpersImplementation was empty, skipping helper injection");
+    }
   }
 
   // Use shorter system prompt for simple queries
@@ -286,7 +336,7 @@ async (helpers, console) => {
         code: z
           .string()
           .describe(
-            "JavaScript code (NOT TypeScript) to execute. Can be either an async function expression like 'async (helpers, console) => { ... }' or just the function body. IMPORTANT: Do not use TypeScript type annotations (like ': string' or 'x is string'). The code has access to helpers (for MCP tools) and console (for logging)."
+            "JavaScript code (NOT TypeScript) to execute. Write the body of an async function that takes helpers and console as arguments, e.g. 'const result = await helpers.myserver.invoke(...); return result;'. IMPORTANT: Do not use TypeScript type annotations (like ': string' or 'x is string')."
           ),
       }),
       execute: async (input) => {
@@ -303,8 +353,9 @@ async (helpers, console) => {
         const payload = {
           code,
           toolRegistry: Object.keys(toolRegistry), // Send tool names only
-          helpersMetadata: helpersMetadata || { servers: [], totalTools: 0 },
-        };
+        helpersMetadata: helpersMetadata || { servers: [], totalTools: 0 },
+        helpersImplementation: helpersImplementation || '',
+      };
 
         try {
           const res = await fetch(codemodeWorkerUrl2, {

@@ -48,8 +48,8 @@
     },
     {
       "name": "DataCite",
-      "type": "sse",
-      "url": "https://datacite-mcp-server.quentincody.workers.dev/sse"
+      "type": "streamable-http",
+      "url": "https://datacite-mcp-server.quentincody.workers.dev/mcp"
     },
     {
       "name": "RCSB PDB",
