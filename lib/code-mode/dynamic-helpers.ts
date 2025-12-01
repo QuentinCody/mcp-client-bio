@@ -60,43 +60,15 @@ export function extractServerKey(server: MCPServerConfig): string {
  * Group tools by server
  */
 export function groupToolsByServer(
-  tools: Record<string, any>,
+  toolsByServer: Map<string, { config: MCPServerConfig; tools: Record<string, any> }>,
   serverConfigs: MCPServerConfig[]
 ): Map<string, { config: MCPServerConfig; tools: Record<string, any> }> {
   const serverMap = new Map<string, { config: MCPServerConfig; tools: Record<string, any> }>();
 
-  // Initialize map with server configs
   for (const config of serverConfigs) {
     const key = extractServerKey(config);
-    serverMap.set(key, { config, tools: {} });
-  }
-
-  // If we only have one server, assign all tools to it
-  if (serverConfigs.length === 1) {
-    const key = extractServerKey(serverConfigs[0]);
-    serverMap.set(key, { config: serverConfigs[0], tools });
-    return serverMap;
-  }
-
-  // For multiple servers, try to group by tool name prefixes or assign to generic
-  for (const [toolName, toolDef] of Object.entries(tools)) {
-    let assigned = false;
-
-    // Try to match tool to server by name patterns
-    for (const [serverKey, serverData] of serverMap.entries()) {
-      if (toolName.toLowerCase().includes(serverKey) ||
-          serverKey.includes(toolName.split('_')[0].toLowerCase())) {
-        serverData.tools[toolName] = toolDef;
-        assigned = true;
-        break;
-      }
-    }
-
-    // If no match found, assign to first server (fallback)
-    if (!assigned && serverMap.size > 0) {
-      const firstKey = Array.from(serverMap.keys())[0];
-      serverMap.get(firstKey)!.tools[toolName] = toolDef;
-    }
+    const entry = toolsByServer.get(config.url);
+    serverMap.set(key, { config, tools: entry?.tools || {} });
   }
 
   return serverMap;
