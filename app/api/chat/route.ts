@@ -17,7 +17,7 @@ import {
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
-import { CODEMODE_SERVERS } from '@/lib/codemode/servers';
+import { getCodeModeServers } from '@/lib/codemode/servers';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const mcpServers: MCPServerConfig[] = Array.isArray((body as any).mcpServers) ? (body as any).mcpServers : [];
   const codemodeWorkerUrl = process.env.CODEMODE_WORKER_URL;
   const useCodeMode = !!codemodeWorkerUrl;
-  const codeModeServers = useCodeMode ? Object.values(CODEMODE_SERVERS) : [];
+  const codeModeServers = useCodeMode ? getCodeModeServers() : [];
   const mergedMcpServers = useCodeMode
     ? (() => {
         const existingUrls = new Set(mcpServers.map(server => server.url));

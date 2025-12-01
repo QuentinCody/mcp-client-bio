@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { initializeMCPClients } from "@/lib/mcp-client";
-import { CODEMODE_SERVERS, type CodeModeServerKey } from "@/lib/codemode/servers";
+import { CODEMODE_SERVERS, getCodeModeServerByKey } from "@/lib/codemode/servers";
 
 function corsHeaders() {
   return {
@@ -53,12 +53,12 @@ export async function GET(req: Request) {
   if (!validateToken(req.headers)) return unauthorizedResponse();
 
   const url = new URL(req.url);
-  const serverKey = url.searchParams.get("server") as CodeModeServerKey | null;
-  if (!serverKey || !(serverKey in CODEMODE_SERVERS)) {
-    return badRequest("Unknown server. Use datacite, ncigdc, or entrez.");
+  const serverKey = url.searchParams.get("server");
+  const serverConfig = serverKey ? getCodeModeServerByKey(serverKey) : undefined;
+  if (!serverConfig) {
+    return badRequest(`Unknown server. Use one of: ${Object.keys(CODEMODE_SERVERS).join(", ")}`);
   }
 
-  const serverConfig = CODEMODE_SERVERS[serverKey];
   const { tools, cleanup } = await initializeMCPClients([serverConfig], req.signal);
 
   try {
@@ -88,17 +88,17 @@ export async function POST(req: Request) {
     return badRequest("Invalid JSON body");
   }
 
-  const server = payload?.server as CodeModeServerKey | undefined;
+  const serverKey = typeof payload?.server === "string" ? payload.server : undefined;
+  const server = serverKey ? getCodeModeServerByKey(serverKey) : undefined;
   const tool = typeof payload?.tool === "string" ? payload.tool : undefined;
   const args = payload?.args ?? {};
 
-  if (!server || !(server in CODEMODE_SERVERS)) {
-    return badRequest("Unknown server. Use datacite, ncigdc, or entrez.");
+  if (!server) {
+    return badRequest(`Unknown server. Use one of: ${Object.keys(CODEMODE_SERVERS).join(", ")}`);
   }
   if (!tool) return badRequest("Missing tool name");
 
-  const serverConfig = CODEMODE_SERVERS[server];
-  const { tools, cleanup } = await initializeMCPClients([serverConfig], req.signal);
+  const { tools, cleanup } = await initializeMCPClients([server], req.signal);
 
   try {
     const selected = tools?.[tool];
