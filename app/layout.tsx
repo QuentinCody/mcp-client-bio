@@ -7,8 +7,18 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { BotIdClient } from "botid/client";
+import { Inter } from 'next/font/google';
 
-const bodyClassName = "font-sans antialiased";
+// Optimize font loading with Next.js font optimization
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+  preload: true,
+  adjustFontFallback: true,
+});
+
+const bodyClassName = `${inter.variable} font-sans antialiased`;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://mcp-client-bio.vercel.app"),

@@ -17,7 +17,7 @@ import { Markdown } from "./markdown";
 interface CodeExecutionDisplayProps {
   code?: string;
   result?: any;
-  error?: string;
+  error?: string | any; // Can be a string or error object
   logs?: string[];
   executionTime?: number;
   state: string;
@@ -239,7 +239,7 @@ export function CodeExecutionDisplay({
                     key={index}
                     className="text-xs font-mono text-foreground/80 bg-background rounded px-2 py-1 border border-border/30"
                   >
-                    {log}
+                    {typeof log === 'string' ? log : JSON.stringify(log)}
                   </div>
                 ))}
               </div>
@@ -279,7 +279,7 @@ export function CodeExecutionDisplay({
                 <span>Error</span>
               </div>
               <div className="text-sm font-mono text-red-700 dark:text-red-300 bg-red-100/50 dark:bg-red-900/20 rounded px-3 py-2 border border-red-200 dark:border-red-800">
-                {error}
+                {typeof error === 'string' ? error : JSON.stringify(error, null, 2)}
               </div>
             </div>
           )}

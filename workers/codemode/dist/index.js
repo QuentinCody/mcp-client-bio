@@ -1,58 +1,44 @@
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// src/index.ts
 import { WorkerEntrypoint } from "cloudflare:workers";
-
-type Env = {
-  LOADER: any;
-  PROXY_URL: string;
-  PROXY_TOKEN: string;
-  CODEMODE_CLIENT_TOKEN?: string;
-};
-
-type OutboundProps = { allowedHost: string; proxyToken?: string };
-
-function jsonResponse(body: any, status = 200) {
+function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json" }
   });
 }
-
-// Outbound guard to keep the dynamic worker confined to the proxy endpoint
-export class OutboundProxy extends WorkerEntrypoint<OutboundProps> {
-  async fetch(request: Request): Promise<Response> {
+__name(jsonResponse, "jsonResponse");
+var OutboundProxy = class extends WorkerEntrypoint {
+  static {
+    __name(this, "OutboundProxy");
+  }
+  async fetch(request) {
     const url = new URL(request.url);
     if (url.host !== this.ctx.props.allowedHost) {
       return new Response("Blocked outbound host", { status: 403 });
     }
-
     const headers = new Headers(request.headers);
     if (this.ctx.props.proxyToken) {
       headers.set("x-codemode-token", this.ctx.props.proxyToken);
     }
-
     const forwarded = new Request(request, { headers });
     return fetch(forwarded);
   }
-}
-
-// Helper to build a module that wraps user code
-function buildRunnerModule(userCode: string, helpersImplementation: string): string {
-  const trimmed = userCode.trim();
-  const definesFunction =
-    /^async\s+function\b|^async\s*\(|^function\b/i.test(trimmed);
-
-  const functionCode = definesFunction
-    ? trimmed
-    : `async (helpers, console) => {
-${userCode}
-    }`;
-
+};
+function buildRunnerModule(userCode, helpersImplementation) {
+  const userLines = userCode.split(/\r?\n/);
   const executionLines = [
-    `    const userFunction = ${functionCode};`,
+    "    const userFunction = async (helpers, console) => {",
+    "      return (async () => {",
+    ...userLines.map((line) => `        ${line}`),
+    "      })();",
+    "    };"
   ];
   const executionCode = executionLines.join("\n");
-  
   return `
-    ${helpersImplementation || ''}
+    ${helpersImplementation || ""}
 
     export default {
       async fetch(request, env) {
@@ -117,7 +103,7 @@ ${userCode}
         try {
           ${executionCode}
 
-        const result = await userFunction(helpers, safeConsole);
+          const result = await userFunction(helpers, safeConsole);
           const payload = {
             logs,
             result: result === undefined ? null : result,
@@ -141,52 +127,46 @@ ${userCode}
     };
   `;
 }
-
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+__name(buildRunnerModule, "buildRunnerModule");
+var index_default = {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*" } });
     }
-
     if (env.CODEMODE_CLIENT_TOKEN) {
       const headerToken = request.headers.get("x-codemode-token");
       if (headerToken !== env.CODEMODE_CLIENT_TOKEN) {
         return jsonResponse({ error: "Unauthorized" }, 401);
       }
     }
-
     if (request.method !== "POST") {
       return jsonResponse({ error: "Use POST" }, 405);
     }
-
     if (!env.PROXY_URL) {
       return jsonResponse({ error: "Missing PROXY_URL binding" }, 500);
     }
-
-    // Parse the request to get the user's code
-    let payload: any = {};
+    let payload = {};
     try {
       payload = await request.json();
     } catch {
       return jsonResponse({ error: "Invalid JSON" }, 400);
     }
-
-    const code = typeof payload?.code === 'string' ? payload.code : '';
+    const code = typeof payload?.code === "string" ? payload.code : "";
     if (!code) {
       return jsonResponse({ error: "Missing code" }, 400);
     }
-
     const proxyHost = (() => {
-      try { return new URL(env.PROXY_URL).host; } catch { return ""; }
+      try {
+        return new URL(env.PROXY_URL).host;
+      } catch {
+        return "";
+      }
     })();
-
-    // Build a dynamic module with the user's code embedded
-    let helpersImplementation = typeof payload?.helpersImplementation === 'string' ? payload.helpersImplementation : '';
+    let helpersImplementation = typeof payload?.helpersImplementation === "string" ? payload.helpersImplementation : "";
     if (!helpersImplementation) {
       console.log("[CodeMode Worker] payload missing helpersImplementation, injecting stub");
       helpersImplementation = "const helpers = {}; globalThis.helpers = helpers;";
     }
-    // Log first 500 chars to debug
     console.log("[CodeMode Worker] helpersImplementation preview:", helpersImplementation.substring(0, 500));
     const helperMatches = Array.from(
       new Set((helpersImplementation.match(/helpers\\.([a-z0-9_]+)/gi) || []).map((m) => m.replace(/^helpers\\./, "")))
@@ -194,32 +174,32 @@ export default {
     console.log("[CodeMode Worker] helpersImplementation length=", helpersImplementation.length);
     console.log("[CodeMode Worker] helper keys:", helperMatches.join(", "));
     const runnerModule = buildRunnerModule(code, helpersImplementation);
-
     const isolateId = `codemode-${crypto.randomUUID()}`;
-    const loaderConfig: any = {
+    const loaderConfig = {
       compatibilityDate: "2025-06-01",
       mainModule: "runner.js",
       modules: {
-        "runner.js": runnerModule,
+        "runner.js": runnerModule
       },
       env: {
         PROXY_URL: env.PROXY_URL,
-        PROXY_TOKEN: env.PROXY_TOKEN,
-      },
+        PROXY_TOKEN: env.PROXY_TOKEN
+      }
     };
-    
-    // Only set globalOutbound in production where ctx.exports is available
     if (ctx.exports && ctx.exports.OutboundProxy) {
       loaderConfig.globalOutbound = ctx.exports.OutboundProxy({ props: { allowedHost: proxyHost, proxyToken: env.PROXY_TOKEN } });
     }
-    
     const loader = env.LOADER.get(isolateId, () => loaderConfig);
-
     const entrypoint = loader.getEntrypoint();
     return entrypoint.fetch(new Request("https://sandbox.internal/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({})
     }));
-  },
+  }
 };
+export {
+  OutboundProxy,
+  index_default as default
+};
+//# sourceMappingURL=index.js.map

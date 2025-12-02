@@ -369,10 +369,27 @@ const PurePreviewMessage = ({
 };
 
 export const Message = memo(PurePreviewMessage, (prevProps, nextProps) => {
+  // Fast path: check primitives first
   if (prevProps.status !== nextProps.status) return false;
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (prevProps.isLatestMessage !== nextProps.isLatestMessage) return false;
   if (prevProps.message.id !== nextProps.message.id) return false;
-  if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
+
+  // Optimize parts comparison with shallow checks first
+  const prevParts = prevProps.message.parts;
+  const nextParts = nextProps.message.parts;
+
+  // Same reference check (fastest path)
+  if (prevParts === nextParts) return true;
+
+  // Null/undefined checks
+  if (!prevParts || !nextParts) return false;
+
+  // Length check (very fast)
+  if (prevParts.length !== nextParts.length) return false;
+
+  // Deep compare ONLY the parts array (not entire message)
+  if (!equal(prevParts, nextParts)) return false;
+
   return true;
 });

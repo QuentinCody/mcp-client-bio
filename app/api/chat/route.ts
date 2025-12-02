@@ -9,6 +9,7 @@ import { initializeMCPClients, type MCPServerConfig, transformMCPToolsForRespons
 import { generateTitle } from '@/app/actions';
 import { z } from 'zod';
 import { checkBotId } from "botid/server";
+import { parse } from "acorn";
 import {
   groupToolsByServer,
   generateHelpersImplementation,
@@ -18,6 +19,11 @@ import {
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
 import { getCodeModeServers } from '@/lib/codemode/servers';
+
+function validateCodeModeSnippet(code: string) {
+  const wrapped = `(async () => {\n${code}\n})();`;
+  parse(wrapped, { ecmaVersion: "latest", sourceType: "script" });
+}
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -343,6 +349,19 @@ async (helpers, console) => {
         const { code } = input as { code: string };
         if (!code || typeof code !== 'string') {
           return { error: "Provide a JavaScript code string in 'code'" };
+        }
+
+        try {
+          validateCodeModeSnippet(code);
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : "Failed to parse code";
+          return {
+            error: `Syntax error in Code Mode snippet: ${message}`,
+            status: 400,
+          };
         }
 
         const headers: Record<string, string> = { "content-type": "application/json" };

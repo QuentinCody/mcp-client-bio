@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   MessageSquare,
@@ -40,6 +40,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { getUserId, updateUserId } from "@/lib/user-id";
 import { useChats } from "@/lib/hooks/use-chats";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   DropdownMenu,
@@ -78,6 +79,8 @@ export function ChatSidebar() {
   const [editUserIdOpen, setEditUserIdOpen] = useState(false);
   const [newUserId, setNewUserId] = useState("");
   const [locked, setLocked] = useState(false);
+  const queryClient = useQueryClient();
+  const prefetchedChatKeys = useRef<Set<string>>(new Set());
 
   // Check if servers are locked
   useEffect(() => {
@@ -99,6 +102,94 @@ export function ChatSidebar() {
     setSelectedMcpServers,
   } = useMCP();
 
+  const prefetchChatData = useCallback(
+    async (chatId: string) => {
+      if (!userId || !chatId) return;
+      const queryKey = ["chat", chatId, userId] as const;
+
+      // Check if data exists and is fresh (less than 1 minute old)
+      const existingQueryState = queryClient.getQueryState(queryKey);
+      if (existingQueryState) {
+        const dataAge = Date.now() - (existingQueryState.dataUpdatedAt || 0);
+        if (dataAge < 60000) { // Skip if data is < 1 minute old
+          return;
+        }
+      }
+
+      try {
+        await queryClient.prefetchQuery({
+          queryKey,
+          queryFn: async () => {
+            const response = await fetch(`/api/chats/${chatId}`, {
+              headers: {
+                "x-user-id": userId,
+              },
+            });
+
+            if (!response.ok) {
+              if (response.status === 404) {
+                return {
+                  id: chatId,
+                  messages: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+              }
+              throw new Error("Failed to fetch chat");
+            }
+
+            return response.json();
+          },
+          staleTime: 1000 * 60 * 5,
+        });
+      } catch (error) {
+        console.debug("Prefetch chat failed", { chatId, error });
+      }
+    },
+    [queryClient, userId]
+  );
+
+  // Debounced prefetch handler to prevent excessive calls
+  const debouncedPrefetchTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  const handleNavigationPrefetch = useCallback(
+    (chatId: string) => {
+      if (!chatId || !userId) return;
+      const cacheKey = `${userId}:${chatId}`;
+      if (prefetchedChatKeys.current.has(cacheKey)) return;
+
+      // Clear existing timeout for this chat
+      const existingTimeout = debouncedPrefetchTimeouts.current.get(cacheKey);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
+      // Debounce prefetch by 300ms
+      const timeoutId = setTimeout(() => {
+        prefetchedChatKeys.current.add(cacheKey);
+        prefetchChatData(chatId);
+        router.prefetch(`/chat/${chatId}`);
+        debouncedPrefetchTimeouts.current.delete(cacheKey);
+      }, 300);
+
+      debouncedPrefetchTimeouts.current.set(cacheKey, timeoutId);
+    },
+    [prefetchedChatKeys, prefetchChatData, router, userId]
+  );
+
+  useEffect(() => {
+    prefetchedChatKeys.current.clear();
+  }, [userId]);
+
+  // Cleanup debounce timeouts on unmount
+  useEffect(() => {
+    const timeouts = debouncedPrefetchTimeouts.current;
+    return () => {
+      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.clear();
+    };
+  }, []);
+
   // Initialize userId
   useEffect(() => {
     setUserId(getUserId());
@@ -106,6 +197,11 @@ export function ChatSidebar() {
 
   // Use TanStack Query to fetch chats
   const { chats, isLoading, deleteChat, refreshChats } = useChats(userId);
+
+  useEffect(() => {
+    if (isLoading || chats.length === 0 || !userId) return;
+    handleNavigationPrefetch(chats[0].id);
+  }, [chats, handleNavigationPrefetch, isLoading, userId]);
 
   // Start a new chat
   const handleNewChat = () => {
@@ -195,8 +291,8 @@ export function ChatSidebar() {
                 width={24}
                 height={24}
                 className="absolute transform scale-75"
-                unoptimized
-                quality={100}
+                priority
+                quality={90}
               />
             </div>
             {!isCollapsed && (
@@ -268,6 +364,9 @@ export function ChatSidebar() {
                           <Link
                             href={`/chat/${chat.id}`}
                             className="flex items-center justify-between w-full gap-1"
+                            onPointerEnter={() => handleNavigationPrefetch(chat.id)}
+                            onFocus={() => handleNavigationPrefetch(chat.id)}
+                            onTouchStart={() => handleNavigationPrefetch(chat.id)}
                           >
                             <div className="flex items-center min-w-0 overflow-hidden flex-1 pr-2">
                               <MessageSquare

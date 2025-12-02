@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "codemode-sandbox" generated at 2025-12-02T02:30:53.501Z.
