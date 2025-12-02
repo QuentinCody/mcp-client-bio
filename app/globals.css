@@ -6,6 +6,9 @@
 @custom-variant sunset (&:is(.sunset *));
 @custom-variant black (&:is(.black *));
 
+/* Custom breakpoint for extra small screens */
+@custom-media --xs (min-width: 475px);
+
 :root {
   --background: 0 0% 98%;
   --foreground: 240 6% 20%;
@@ -255,6 +258,16 @@
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
   }
+  html {
+    min-height: 100%;
+    background: radial-gradient(circle at top, rgba(15, 118, 255, 0.15), transparent 55%), linear-gradient(180deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.6)), var(--background);
+  }
+  body {
+    min-height: 100vh;
+  }
+  #__next {
+    min-height: 100vh;
+  }
 }
 
 @layer utilities {
@@ -268,5 +281,56 @@
     -ms-overflow-style: none;  /* IE and Edge */
     /* Use Firefox-specific scrollbar hiding when supported */
     scrollbar-width: none;
+  }
+
+  /* Mobile-specific touch optimizations */
+  @media (hover: none) and (pointer: coarse) {
+    /* Optimize scrolling on mobile */
+    * {
+      -webkit-overflow-scrolling: touch;
+      scroll-behavior: smooth;
+    }
+
+    /* Prevent text size adjustment on mobile */
+    body {
+      -webkit-text-size-adjust: 100%;
+      -moz-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
+    /* Better tap highlighting */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+
+  /* Prevent horizontal overflow on mobile */
+  @media (max-width: 640px) {
+    * {
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+
+    /* Optimize font rendering on mobile */
+    body {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+  }
+
+  /* Safe area insets for notched devices */
+  @supports (padding: max(0px)) {
+    body {
+      padding-left: max(0px, env(safe-area-inset-left));
+      padding-right: max(0px, env(safe-area-inset-right));
+    }
+  }
+
+  @media (max-width: 640px) {
+    body {
+      background-image: radial-gradient(circle at 30% 5%, rgba(59, 130, 246, 0.15), transparent 45%), radial-gradient(circle at 70% 0%, rgba(16, 185, 129, 0.18), transparent 40%), var(--background);
+    }
   }
 }

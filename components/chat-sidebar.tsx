@@ -380,15 +380,15 @@ export function ChatSidebar() {
                               {!isCollapsed && (
                                 <span
                                   className={cn(
-                                    "ml-2 truncate text-sm",
+                                    "ml-2 truncate text-sm leading-snug",
                                     pathname === `/chat/${chat.id}`
                                       ? "font-medium text-[#f7f7f8]"
                                       : "text-[#d1d5db]"
                                   )}
                                   title={chat.title}
                                 >
-                                  {chat.title.length > 18
-                                    ? `${chat.title.slice(0, 18)}...`
+                                  {chat.title.length > 24
+                                    ? `${chat.title.slice(0, 24)}...`
                                     : chat.title}
                                 </span>
                               )}
@@ -397,11 +397,11 @@ export function ChatSidebar() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 flex-shrink-0 text-[#9ca3af] hover:text-[#f7f7f8]"
+                                className="h-8 w-8 flex-shrink-0 text-[#9ca3af] hover:text-[#f7f7f8] hover:bg-[#2f2f2f] active:scale-95 transition-all"
                                 onClick={(e) => handleDeleteChat(chat.id, e)}
                                 title="Delete chat"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </Link>
@@ -516,14 +516,14 @@ export function ChatSidebar() {
             <Button
               variant="default"
               className={cn(
-                "w-full bg-[#343541] text-[#f7f7f8] hover:bg-[#3f414a]",
-                isCollapsed ? "h-8 w-8 p-0" : ""
+                "w-full bg-[#343541] text-[#f7f7f8] hover:bg-[#3f414a] active:bg-[#4a4c55] transition-all",
+                isCollapsed ? "h-10 w-10 p-0" : "min-h-[44px]"
               )}
               onClick={handleNewChat}
               title={isCollapsed ? "New Chat" : undefined}
             >
-              <PlusCircle className={`${isCollapsed ? "" : "mr-2"} h-4 w-4`} />
-              {!isCollapsed && <span>New Chat</span>}
+              <PlusCircle className={`${isCollapsed ? "" : "mr-2"} h-4 w-4 flex-shrink-0`} />
+              {!isCollapsed && <span className="text-sm font-medium">New Chat</span>}
             </Button>
           </motion.div>
 

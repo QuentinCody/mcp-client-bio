@@ -181,13 +181,17 @@ function Sidebar({
   }
 
   if (isMobile) {
+    const mobileClassName = cn(
+      "bg-sidebar/95 text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden backdrop-blur-3xl shadow-2xl border border-border/40",
+      className
+    );
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className={mobileClassName}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,

@@ -23,7 +23,6 @@
   },
   "bin": {},
   "dependencies": {
-    "acorn": "^8.11.1",
     "@ai-sdk/anthropic": "^2.0.27",
     "@ai-sdk/google": "^2.0.20",
     "@ai-sdk/groq": "^2.0.24",
@@ -47,6 +46,7 @@
     "@tanstack/react-query": "^5.83.0",
     "@vercel/analytics": "^1.5.0",
     "@vercel/speed-insights": "^1.2.0",
+    "acorn": "^8.11.1",
     "ai": "^5.0.68",
     "botid": "^1.4.2",
     "class-variance-authority": "^0.7.1",
@@ -59,7 +59,7 @@
     "lucide-react": "^0.525.0",
     "motion": "^12.23.3",
     "nanoid": "^5.1.5",
-    "next": "^15.4.1",
+    "next": "^16.0.6",
     "next-themes": "^0.4.6",
     "node-fetch": "^3.3.2",
     "or": "^0.2.0",
@@ -76,7 +76,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "vitest": "^4.0.14",
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^22.14.1",
@@ -91,7 +90,8 @@
     "eslint-config-next": "15.3.5",
     "pg-pool": "^3.10.1",
     "tailwindcss": "^4.1.11",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.14"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

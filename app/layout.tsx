@@ -72,8 +72,8 @@ export default function RootLayout({
               <div className="relative z-20 flex flex-1 min-h-0 flex-col bg-[#ffffff] shadow-[0_-1px_0_#e3e3e3] dark:bg-[#111111]">
                 <div className="absolute left-4 top-4 z-30 md:hidden">
                   <SidebarTrigger>
-                    <button className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dcdcdc] bg-white text-[#2f2f2f] shadow-sm transition hover:bg-[#f7f7f8] dark:border-[#2f2f2f] dark:bg-[#1a1a1a] dark:text-[#ececec] dark:hover:bg-[#252525]">
-                      <Menu className="h-4 w-4" />
+                    <button className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e5e5e5] bg-white/98 text-[#1f2937] shadow-sm backdrop-blur-md transition-all duration-200 hover:bg-[#f9fafb] hover:border-[#d1d5db] active:scale-95 active:bg-[#f3f4f6] dark:border-[#2b2b2b] dark:bg-[#1a1a1a]/98 dark:text-[#e5e7eb] dark:hover:bg-[#232323] dark:hover:border-[#333]">
+                      <Menu className="h-[18px] w-[18px]" />
                     </button>
                   </SidebarTrigger>
                 </div>

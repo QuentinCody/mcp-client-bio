@@ -178,14 +178,14 @@ export const ModelPicker = ({
         <SelectContent
           align="start"
           className={cn(
-            "bg-background/95 dark:bg-muted/95 backdrop-blur-sm border-border/80 rounded-lg overflow-hidden p-0 w-[280px] sm:w-[350px] md:w-[515px]",
+            "bg-white/95 text-[#111827] dark:bg-[#111111]/95 dark:text-[#f7f8fb] backdrop-blur-2xl border border-border/80 rounded-2xl overflow-hidden p-0 w-[280px] sm:w-[350px] md:w-[515px]",
             isInline && "w-[300px] sm:w-[380px] md:w-[520px]"
           )}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] md:grid-cols-[200px_1fr] items-start">
+          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] md:grid-cols-[200px_1fr] items-start max-h-[70vh]">
             {/* Model selector column */}
-            <div className="sm:border-r border-border/40 bg-muted/20 p-0 pr-1">
-              <SelectGroup className="space-y-1">
+            <div className="sm:border-r border-border/40 bg-white/80 dark:bg-[#0d0d0d] p-0 pr-1 overflow-y-auto max-h-[70vh]">
+              <SelectGroup className="space-y-1 p-1 sm:p-2">
                 {MODELS.map((id) => {
                   const modelId = id as modelID;
                   return (

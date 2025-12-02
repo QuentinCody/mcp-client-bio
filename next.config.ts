@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  // Turbopack config (Next.js 16 default bundler)
+  turbopack: {},
+
   // Compiler optimizations
   compiler: {
     // Remove console.log in production

@@ -56,22 +56,22 @@ export function ChatHeader({
   })();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#e3e3e3] bg-white/95 px-4 shadow-sm backdrop-blur-sm dark:border-[#1f1f1f] dark:bg-[#0f0f0f]/95">
-      <div className="flex items-center gap-3 md:gap-4">
-        <div className="flex items-center gap-3 overflow-x-auto md:overflow-visible">
+    <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-[#e3e3e3] bg-white/95 px-3 py-3 shadow-sm backdrop-blur-sm dark:border-[#1f1f1f] dark:bg-[#0f0f0f]/95 sm:flex-row sm:h-16 sm:items-center sm:px-4 sm:py-0">
+      <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+        <div className="flex items-center gap-2 md:gap-3 overflow-x-auto no-scrollbar flex-1 min-w-0">
           <ModelPicker
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
             variant="inline"
-            className="min-w-[200px] sm:min-w-[220px]"
+            className="min-w-[140px] sm:min-w-[200px] max-w-full flex-1 sm:max-w-none"
           />
         </div>
       </div>
 
-      <div className="flex items-center gap-3 text-[11px] font-medium text-[#6b7280] dark:text-[#9ca3af]">
+      <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 text-[11px] font-medium text-[#6b7280] dark:text-[#9ca3af] flex-shrink-0 sm:justify-end">
         <span
           className={cn(
-            "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px]",
+            "inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px]",
             statusTone
           )}
         >
@@ -80,16 +80,19 @@ export function ChatHeader({
           ) : (
             <Activity className="h-3 w-3" />
           )}
-          {statusLabel}
+          <span className="hidden sm:inline">{statusLabel}</span>
         </span>
-        <CodeModeToggle />
+        <div className="hidden sm:block">
+          <CodeModeToggle />
+        </div>
         <button
           onClick={onOpenServerManager}
           type="button"
-          className="inline-flex items-center gap-2 rounded-full border border-[#d4d4d4] bg-white px-3 py-1 text-[11px] font-semibold text-[#1f2937] shadow-sm transition hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93c5fd] dark:border-[#2b2b2b] dark:bg-[#181818] dark:text-[#e5e5e5] dark:hover:bg-[#202020]"
+          className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-[#d4d4d4] bg-white px-2 sm:px-3 py-1 text-[10px] sm:text-[11px] font-semibold text-[#1f2937] shadow-sm transition hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93c5fd] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#181818] dark:text-[#e5e5e5] dark:hover:bg-[#202020] min-h-[44px] sm:min-h-0"
         >
-          <ServerIcon className="h-3.5 w-3.5" />
-          {onlineServers}/{activeServers} servers
+          <ServerIcon className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="hidden xs:inline">{onlineServers}/{activeServers}</span>
+          <span className="xs:hidden">{onlineServers}</span>
         </button>
       </div>
     </header>

@@ -1,6 +1,6 @@
 "use client";
 
-import { defaultModel, modelDetails, type modelID } from "@/ai/providers";
+import { defaultModel, modelDetails, MODELS, type modelID } from "@/ai/providers";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
@@ -18,8 +18,9 @@ import { type Message as DBMessage } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { ToolMetricsPanel } from "./tool-metrics";
 import { Button } from "./ui/button";
-import { ServerIcon, ArrowDown } from "lucide-react";
+import { ServerIcon, ArrowDown, Plus, Loader2, Sparkles, ChevronsDown } from "lucide-react";
 import { useMCP } from "@/lib/context/mcp-context";
+import { cn } from "@/lib/utils";
 import type { SlashCommandMeta } from "@/lib/slash/types";
 import { slashRegistry } from "@/lib/slash";
 import type { PromptMessage } from "@/lib/context/mcp-context";
@@ -35,6 +36,13 @@ import { getSlashRuntimeActions, setSlashRuntimeActions } from "@/lib/slash/runt
 import { useScrollToBottom } from "@/lib/hooks/use-scroll-to-bottom";
 import { AnimatePresence, motion } from "motion/react";
 import { ChatHeader } from "./chat-header";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "./ui/sheet";
 
 // Type for chat data from DB
 interface ChatData {
@@ -52,6 +60,7 @@ export default function Chat() {
   
   const [selectedModel, setSelectedModel] = useLocalStorage<modelID>("selectedModel", defaultModel);
   const [userId, setUserId] = useState<string>('');
+  const [isModelSheetOpen, setIsModelSheetOpen] = useState(false);
   // Generate chatId immediately if not provided, don't use useState to avoid async issues
   const generatedChatId = useMemo(() => {
     return chatId ? '' : nanoid();
@@ -620,10 +629,37 @@ export default function Chat() {
     return counts;
   }, [mcpServers, selectedMcpServers]);
 
+  const statusLabel = (() => {
+    if (status === "streaming") return "Streaming";
+    if (status === "submitted") return "Thinking";
+    if (status === "error") return "Error";
+    return "Ready";
+  })();
+
+  const mobileStatusTone = (() => {
+    if (status === "streaming") {
+      return "bg-[#dcfce7] text-[#047857] dark:bg-[#064e3b] dark:text-[#34d399]";
+    }
+    if (status === "submitted") {
+      return "bg-[#fef9c3] text-[#854d0e] dark:bg-[#713f12] dark:text-[#fcd34d]";
+    }
+    if (status === "error") {
+      return "bg-[#fee2e2] text-[#b91c1c] dark:bg-[#7f1d1d] dark:text-[#fecaca]";
+    }
+    return "bg-[#e0f2fe] text-[#0369a1] dark:bg-[#1e3a8a]/40 dark:text-[#93c5fd]";
+  })();
+
+  const serverSummary =
+    serverStatusCounts.total > 0
+      ? `${serverStatusCounts.online}/${serverStatusCounts.total} online`
+      : "No servers configured";
+
+  const mobileModelName = modelInfo?.name ?? "Model";
+
   return (
     <div className="relative flex h-full min-h-0 w-full flex-1 flex-col bg-[#f7f7f8] dark:bg-[#0d0d0d]">
-      <ToolMetricsPanel />
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="hidden sm:block">
+        <ToolMetricsPanel />
         <ChatHeader
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
@@ -632,6 +668,42 @@ export default function Chat() {
           serverStatusCounts={serverStatusCounts}
           status={status as "error" | "submitted" | "streaming" | "ready"}
         />
+      </div>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="sm:hidden border-b border-[#e5e5e5] bg-white/98 backdrop-blur-xl shadow-sm dark:border-[#1f1f1f] dark:bg-[#0f0f0f]/98">
+          <div className="px-4 py-3 pt-[60px]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setIsModelSheetOpen(true)}
+                  className="flex w-full items-center justify-between rounded-full border border-[#e5e5e5] bg-white px-4 py-2.5 text-left text-[15px] font-semibold text-[#1f2937] shadow-sm transition-all duration-200 hover:border-[#d1d5db] hover:bg-[#f9fafb] active:scale-[0.98] active:bg-[#f3f4f6] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f3f4f6] dark:hover:border-[#333] dark:hover:bg-[#1a1a1a]"
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Sparkles className="h-[18px] w-[18px] flex-shrink-0 text-[#0ea5e9] dark:text-[#38bdf8]" />
+                    <span className="truncate font-medium">{mobileModelName}</span>
+                  </span>
+                  <ChevronsDown className="h-4 w-4 flex-shrink-0 text-[#9ca3af] dark:text-[#6b7280]" />
+                </button>
+              </div>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap flex-shrink-0 shadow-sm",
+                  mobileStatusTone
+                )}
+              >
+                {status === "streaming" || status === "submitted" ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                ) : null}
+                {statusLabel}
+              </span>
+            </div>
+            <div className="mt-2.5 flex items-center gap-2 text-[12px] text-[#6b7280] dark:text-[#9ca3af]">
+              <ServerIcon className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="font-medium">{serverSummary}</span>
+            </div>
+          </div>
+        </div>
         <div
           className="relative flex-1 min-h-0 overflow-hidden"
         >
@@ -640,29 +712,31 @@ export default function Chat() {
             ref={containerRef}
           >
             {showWelcomeState ? (
-              <div className="flex h-full items-center justify-center px-6 py-12">
-                <div className="w-full max-w-2xl space-y-4 text-center">
-                  <h1 className="text-6xl font-bold text-[#202123] dark:text-[#f7f7f8]">
-                    Bio MCP Chat
-                  </h1>
-                  <p className="text-sm text-[#5f6368] dark:text-[#9ca3af]">
-                    {modelInfo
-                      ? `Using ${modelInfo.name} with ${
-                          serverStatusCounts.total > 0
-                            ? `${serverStatusCounts.online}/${serverStatusCounts.total}`
-                            : "0"
-                        } servers active`
-                      : "Configure your model and servers to get started"}
-                  </p>
+              <div className="flex h-full items-center justify-center px-4 sm:px-6 py-12 sm:py-16">
+                <div className="w-full max-w-2xl space-y-6 sm:space-y-8 text-center">
+                  <div className="space-y-3 sm:space-y-4">
+                    <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#374151] bg-clip-text text-transparent dark:from-[#f9fafb] dark:via-[#e5e7eb] dark:to-[#d1d5db] leading-tight">
+                      Bio MCP Chat
+                    </h1>
+                    <p className="text-sm sm:text-base text-[#6b7280] dark:text-[#9ca3af] max-w-md mx-auto">
+                      {modelInfo
+                        ? `Powered by ${modelInfo.name}${
+                            serverStatusCounts.total > 0
+                              ? ` with ${serverStatusCounts.online}/${serverStatusCounts.total} servers connected`
+                              : ""
+                          }`
+                        : "Configure your model and servers to get started"}
+                    </p>
+                  </div>
                   {serverStatusCounts.total === 0 && (
-                    <div className="flex items-center justify-center">
+                    <div className="flex items-center justify-center pt-4">
                       <Button
                         variant="outline"
                         onClick={openServerManager}
-                        className="gap-2 border-[#d4d4d4] bg-white text-[#202123] hover:bg-[#f2f2f2] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f7f7f8] dark:hover:bg-[#1f1f1f]"
+                        className="gap-2 border-[#d4d4d4] bg-white text-[#202123] hover:bg-[#f2f2f2] hover:border-[#bfbfbf] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f7f7f8] dark:hover:bg-[#1f1f1f] min-h-[48px] px-6 sm:px-8 rounded-full shadow-sm active:scale-95 transition-all"
                       >
-                        <ServerIcon className="h-4 w-4" />
-                        Setup MCP Servers
+                        <ServerIcon className="h-5 w-5" />
+                        <span className="text-sm sm:text-base font-medium">Connect Servers</span>
                       </Button>
                     </div>
                   )}
@@ -682,21 +756,130 @@ export default function Chat() {
       <AnimatePresence>
         {!isPinned && (
           <motion.button
+            key="new-mobile-chat"
             type="button"
             initial={{ opacity: 0, scale: 0.8, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 10 }}
             transition={{ duration: 0.2 }}
             onClick={() => scrollToBottom("smooth")}
-            className="group absolute bottom-24 right-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/95 px-3 py-2 text-xs font-medium text-foreground shadow-lg backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-xl"
+            className="group absolute bottom-[140px] sm:bottom-24 right-3 sm:right-6 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-background px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-medium text-foreground shadow-lg backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-xl active:scale-95 min-h-[40px] sm:min-h-0"
             aria-label="Scroll to bottom to follow conversation"
           >
-            <ArrowDown className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-            {status === "streaming" ? "Follow stream" : "Resume live view"}
+            <ArrowDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground transition-colors group-hover:text-primary flex-shrink-0" />
+            <span className="hidden xs:inline">{status === "streaming" ? "Follow stream" : "Resume live view"}</span>
           </motion.button>
         )}
       </AnimatePresence>
-      <div className="shrink-0 border-t border-[#e3e3e3] bg-white/95 px-4 py-5 shadow-[0_-8px_24px_rgba(15,15,15,0.05)] dark:border-[#1f1f1f] dark:bg-[#090909]/95">
+
+      <Sheet open={isModelSheetOpen} onOpenChange={setIsModelSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="z-[60] w-full max-w-full rounded-t-2xl border border-[#e5e7eb] bg-white px-0 pt-6 pb-8 shadow-2xl backdrop-blur-2xl dark:border-[#1f1f1f] dark:bg-[#0b0b0d]"
+        >
+          <div className="px-4 pb-4">
+            <SheetHeader>
+              <SheetTitle className="text-lg font-semibold">
+                Select Model
+              </SheetTitle>
+              <SheetDescription className="text-sm text-muted-foreground">
+                Choose an AI model to continue the conversation
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          {/* Scrollable model list */}
+          <div className="max-h-[60vh] overflow-y-auto px-2">
+            <div className="space-y-1">
+              {MODELS.map((id) => {
+                const modelId = id as modelID;
+                const model = modelDetails[modelId];
+                const isSelected = selectedModel === modelId;
+
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedModel(modelId);
+                      setIsModelSheetOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between rounded-lg px-4 py-3 text-left transition-all",
+                      isSelected
+                        ? "bg-primary/10 border-2 border-primary/30 dark:bg-primary/20 dark:border-primary/40"
+                        : "bg-white border-2 border-transparent hover:bg-gray-50 active:bg-gray-100 dark:bg-[#141414] dark:hover:bg-[#1a1a1a] dark:active:bg-[#202020]"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="flex-shrink-0">
+                        <Sparkles className={cn(
+                          "h-5 w-5",
+                          model.provider === "Anthropic" && "text-orange-500",
+                          model.provider === "OpenAI" && "text-green-500",
+                          model.provider === "Google" && "text-blue-500",
+                          model.provider === "Groq" && "text-purple-500",
+                          model.provider === "XAI" && "text-yellow-500"
+                        )} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-[15px] text-gray-900 dark:text-gray-100">
+                          {model.name}
+                        </div>
+                        <div className="text-[13px] text-gray-500 dark:text-gray-400">
+                          {model.provider}
+                        </div>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="flex-shrink-0 ml-2">
+                        <div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Floating Action Buttons for Mobile */}
+      <div className="sm:hidden absolute bottom-[140px] left-3 flex flex-col gap-2">
+        <AnimatePresence>
+          <motion.button
+            key="new-mobile-chat"
+            type="button"
+            initial={{ opacity: 0, scale: 0.8, x: -10 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.8, x: -10 }}
+            transition={{ duration: 0.2 }}
+            onClick={handleNewChat}
+            className="group flex h-12 w-12 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#374151] shadow-lg backdrop-blur-md transition-all hover:bg-[#f9fafb] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#1a1a1a] dark:text-[#e5e5e5] dark:hover:bg-[#252525]"
+            aria-label="New chat"
+          >
+            <Plus className="h-5 w-5" />
+          </motion.button>
+          <motion.button
+            key="servers-mobile"
+            type="button"
+            initial={{ opacity: 0, scale: 0.8, x: -10 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.8, x: -10 }}
+            transition={{ duration: 0.2, delay: 0.05 }}
+            onClick={openServerManager}
+            className="group flex h-12 w-12 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#374151] shadow-lg backdrop-blur-md transition-all hover:bg-[#f9fafb] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#1a1a1a] dark:text-[#e5e5e5] dark:hover:bg-[#252525]"
+            aria-label="MCP Servers"
+          >
+            <ServerIcon className="h-5 w-5" />
+          </motion.button>
+        </AnimatePresence>
+      </div>
+      <div className="shrink-0 border-t border-[#e3e3e3] bg-white px-3 sm:px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 sm:py-5 shadow-[0_-2px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl dark:border-[#1f1f1f] dark:bg-[#090909] dark:shadow-[0_-2px_20px_rgba(0,0,0,0.4)]">
         <div className="mx-auto w-full max-w-4xl">
           <form onSubmit={handleFormSubmit} className="flex flex-col gap-4">
             <Textarea
