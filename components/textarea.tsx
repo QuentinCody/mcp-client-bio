@@ -214,46 +214,6 @@ export const Textarea = ({
 
   const characterCount = input.length;
 
-  const quickSnippets = useMemo(
-    () => [
-      {
-        id: "summary",
-        label: "Summarize context",
-        value:
-          "Summarize the key points and open questions from our conversation so far.",
-      },
-      {
-        id: "next-steps",
-        label: "Suggest next steps",
-        value:
-          "Suggest the next three actions I should take based on this discussion, including why each matters.",
-      },
-      {
-        id: "critique",
-        label: "Spot risks",
-        value:
-          "Review the current approach and outline potential risks, missing data, or validation steps we should address before proceeding.",
-      },
-    ],
-    []
-  );
-
-  const handleSnippetInsert = useCallback(
-    (value: string) => {
-      if (promptPreview) {
-        onPromptPreviewCancel();
-      }
-      handleInputChange({ target: { value } } as any);
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-    },
-    [handleInputChange, onPromptPreviewCancel, promptPreview]
-  );
-
-  const showQuickSnippets =
-    !menuOpen && !promptPreview && input.trim().length === 0;
-
   function toPromptSummary(def: MenuItem): PromptSummary {
     return {
       name: def.name,
@@ -630,23 +590,6 @@ export const Textarea = ({
           </span>
         </div>
       </div>
-
-      {/* Mobile: Simplified status - just quick snippets if shown */}
-      {showQuickSnippets && quickSnippets.length > 0 && (
-        <div className="hidden sm:flex flex-wrap gap-2">
-          {quickSnippets.map((snippet) => (
-            <button
-              key={snippet.id}
-              type="button"
-              onClick={() => handleSnippetInsert(snippet.value)}
-              className="group inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-background/70 px-3 py-2 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary active:scale-[0.98]"
-            >
-              <Sparkles className="h-3 w-3 flex-shrink-0 text-primary/70 transition-colors group-hover:text-primary" />
-              <span className="truncate">{snippet.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="relative overflow-visible rounded-2xl border-2 border-border/30 bg-background shadow-sm focus-within:border-primary/50 focus-within:shadow-lg focus-within:ring-4 focus-within:ring-primary/10 transition-all duration-200">
         {menuOpen && (

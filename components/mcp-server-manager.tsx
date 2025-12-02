@@ -176,47 +176,33 @@ const StatusIndicator = ({
 const ToolsList = ({ tools }: { tools?: MCPTool[] }) => {
   if (!tools || tools.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground italic">
-        No tools available
-      </div>
+      <div className="text-xs text-muted-foreground italic">No tools available</div>
     );
   }
 
   return (
-    <div className="space-y-1">
-      <div className="text-xs font-medium text-muted-foreground mb-1">
-        Tools ({tools.length}):
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        Tools ({tools.length})
       </div>
-      <div className="flex flex-wrap gap-1">
+      <div className="divide-y divide-border/40 rounded-2xl border border-border/40 bg-white/60 shadow-sm">
         {tools.slice(0, 3).map((tool, index) => (
-          <TooltipProvider key={index}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-secondary text-secondary-foreground cursor-help">
-                  {tool.name}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                align="start"
-                className="max-w-[250px]"
-              >
-                <div className="space-y-1">
-                  <div className="font-medium">{tool.name}</div>
-                  {tool.description && (
-                    <div className="text-xs text-muted-foreground">
-                      {tool.description}
-                    </div>
-                  )}
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div
+            key={index}
+            className="flex flex-col gap-0.5 px-3 py-2 first:rounded-t-2xl last:rounded-b-2xl hover:bg-primary/5 transition-colors"
+          >
+            <span className="text-sm font-semibold text-foreground">
+              {tool.name}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {tool.description || "Tool loaded from MCP server"}
+            </span>
+          </div>
         ))}
         {tools.length > 3 && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">
-            +{tools.length - 3} more
-          </span>
+          <div className="px-3 py-2 text-[11px] text-muted-foreground">
+            +{tools.length - 3} more tools available
+          </div>
         )}
       </div>
     </div>
@@ -663,33 +649,47 @@ export const MCPServerManager = ({
         </DialogHeader>
 
         {view === "list" ? (
-            <div className="flex-1 overflow-y-auto px-6 pb-24">
+          <div className="flex-1 overflow-y-auto px-6 pb-24">
             {/* Server Overview Stats */}
             <div className="mb-6 mt-4 rounded-2xl border border-primary/15 bg-white/95 p-5 shadow-[0_20px_45px_-30px_rgba(79,70,229,0.35)] dark:bg-slate-950/80">
               <div className="mb-4 flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
                   <Activity className="h-4 w-4" />
                 </span>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Server Overview</h3>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">
+                  Server Overview
+                </h3>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-xl border border-primary/30 bg-white/90 px-3 py-4 text-center shadow-sm dark:bg-slate-900/70">
                   <div className="text-xl font-semibold text-primary">
-                    {servers.filter(s => selectedServers.includes(s.id) && s.status === "connected").length}
+                    {servers.filter(
+                      (s) => selectedServers.includes(s.id) && s.status === "connected"
+                    ).length}
                   </div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Active
+                  </div>
                 </div>
                 <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/85 px-3 py-4 text-center shadow-sm dark:border-emerald-300/30 dark:bg-emerald-500/20">
                   <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-200">
-                    {servers.filter(s => selectedServers.includes(s.id)).flatMap(s => s.tools || []).length}
+                    {
+                      servers
+                        .filter((s) => selectedServers.includes(s.id))
+                        .flatMap((s) => s.tools || []).length
+                    }
                   </div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-700/80 dark:text-emerald-200/80">Tools</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-700/80 dark:text-emerald-200/80">
+                    Tools
+                  </div>
                 </div>
                 <div className="rounded-xl border border-amber-200/70 bg-amber-50/85 px-3 py-4 text-center shadow-sm dark:border-amber-300/30 dark:bg-amber-500/20">
                   <div className="text-xl font-semibold text-amber-600 dark:text-amber-200">
-                    {servers.filter(s => s.status === "error").length}
+                    {servers.filter((s) => s.status === "error").length}
                   </div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-200/80">Issues</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-200/80">
+                    Issues
+                  </div>
                 </div>
               </div>
               {selectedServers.length > 0 && (
@@ -698,197 +698,216 @@ export const MCPServerManager = ({
                     <Zap className="h-3.5 w-3.5" />
                   </span>
                   <span>
-                      {selectedServers.length} server{selectedServers.length !== 1 ? 's' : ''} enabled for chat
-                    </span>
+                    {selectedServers.length} server
+                    {selectedServers.length !== 1 ? "s" : ""} enabled for chat
+                  </span>
                 </div>
               )}
             </div>
 
             {servers.length > 0 ? (
               <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-foreground">Available Servers</h3>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (typeof window !== "undefined") {
-                            window.dispatchEvent(new CustomEvent("tool-metrics:toggle"));
-                          }
-                        }}
-                        className="gap-1.5 h-7 text-xs"
-                      >
-                        <BarChart3 className="h-3 w-3" />
-                        Metrics
-                      </Button>
-                      <span className="text-xs text-muted-foreground">
-                        Select multiple servers to combine tools
-                      </span>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-foreground">Available Servers</h3>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(new CustomEvent("tool-metrics:toggle"));
+                        }
+                      }}
+                      className="gap-1.5 h-7 text-xs"
+                    >
+                      <BarChart3 className="h-3 w-3" />
+                      Metrics
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Select multiple servers to combine tools
+                    </span>
                   </div>
-                  <div className="space-y-3 rounded-2xl border border-primary/15 bg-white/95 p-4 shadow-[0_16px_40px_-30px_rgba(79,70,229,0.45)] dark:bg-slate-950/75 dark:border-slate-700/50">
-                    {servers
-                      .sort((a, b) => {
-                        const aActive = selectedServers.includes(a.id);
-                        const bActive = selectedServers.includes(b.id);
-                        if (aActive && !bActive) return -1;
-                        if (!aActive && bActive) return 1;
-                        return 0;
-                      })
-                      .map((server) => {
-                        const isActive = selectedServers.includes(server.id);
-                        const isRunning =
-                          server.status === "connected" ||
-                          server.status === "connecting";
+                </div>
 
-                        return (
-                          <div
-                            key={server.id}
-                            className={cn(
-                              "relative flex flex-col gap-4 rounded-xl border transition-all duration-200",
-                              isActive
-                                ? "border-primary/35 bg-gradient-to-br from-primary/20 via-white/90 to-primary/8 shadow-[0_22px_55px_-26px_rgba(79,70,229,0.55)] dark:from-primary/15 dark:via-slate-900/95 dark:to-primary/10"
-                                : "border-border/70 bg-white/95 shadow-sm hover:border-primary/25 hover:shadow-lg dark:bg-slate-950/70 dark:border-slate-800/60"
-                            )}
-                          >
-                            {/* Server Header with Type Badge and Actions */}
-                            <div className="flex items-center justify-between px-4 pt-4">
-                              <div className="flex items-center gap-3 truncate">
-                                <span className={cn(
-                                  "flex h-8 w-8 items-center justify-center rounded-lg",
-                                  isActive ? "bg-primary/20 text-primary" : "bg-muted/60 text-muted-foreground"
-                                )}>
-                                  <Globe className="h-4 w-4" />
-                                </span>
-                                <div className="min-w-0">
-                                  <h4 className="truncate text-sm font-semibold text-foreground">
-                                    {server.name || server.id}
-                                  </h4>
-                                  <p className="text-xs text-muted-foreground">
-                                    {getServerDisplayUrl(server)}
-                                  </p>
-                                </div>
-                                {server.auth?.type === "oauth" && (
-                                  <span className="flex-shrink-0 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                                    OAuth
-                                  </span>
-                                )}
-                                {hasAdvancedConfig(server) && (
-                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
-                                    <Cog className="h-3 w-3" />
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground">
-                                  {server.url?.endsWith("/sse") ? "SSE" : "HTTP"}
-                                </span>
-                                <StatusIndicator
-                                  status={server.status}
-                                  onClick={() => server.errorMessage && toast.error(server.errorMessage)}
-                                  hoverInfo={getServerStatusHoverInfo(server)}
-                                />
-                                <div className="flex items-center gap-1 rounded-full bg-muted/40 px-1 py-0.5">
-                                  <button
-                                    onClick={(e) => toggleServerStatus(server, e)}
-                                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
-                                    aria-label={isRunning ? "Stop server" : "Start server"}
-                                    title={isRunning ? "Stop server" : "Start server"}
-                                  >
-                                    <Power className={cn("h-3.5 w-3.5", isRunning ? "text-red-500" : "text-emerald-500")} />
-                                  </button>
-                                  <button
-                                    onClick={(e) => restartServer(server, e)}
-                                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
-                                    aria-label="Restart server"
-                                    title="Restart server"
-                                    disabled={server.status === "connecting"}
-                                  >
-                                    <RefreshCw
-                                      className={cn(
-                                        "h-3.5 w-3.5",
-                                        server.status === "connecting" && "opacity-50"
-                                      )}
-                                    />
-                                  </button>
-                                  {!locked && (
-                                    <button
-                                      onClick={(e) => removeServer(server.id, e)}
-                                      className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
-                                      aria-label="Remove server"
-                                      title="Remove server"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                  {!locked && (
-                                    <button
-                                      onClick={() => startEditing(server)}
-                                      className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background"
-                                      aria-label="Edit server"
-                                      title="Edit server"
-                                    >
-                                      <Edit2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                <div className="space-y-4 rounded-3xl border border-primary/15 bg-white/90 p-5 shadow-sm dark:bg-slate-950/80 dark:border-slate-800/60">
+                  {servers
+                    .sort((a, b) => {
+                      const aActive = selectedServers.includes(a.id);
+                      const bActive = selectedServers.includes(b.id);
+                      if (aActive && !bActive) return -1;
+                      if (!aActive && bActive) return 1;
+                      return 0;
+                    })
+                    .map((server) => {
+                      const isActive = selectedServers.includes(server.id);
+                      const isRunning =
+                        server.status === "connected" || server.status === "connecting";
 
-                            {/* Server Details */}
-                            <div className="px-4 text-xs text-muted-foreground">
-                              <p className="truncate">
-                                {server.description || getServerDisplayUrl(server)}
-                              </p>
-                            </div>
-
-                            {/* Tools & Prompts */}
-                            {server.status === "connected" && (
-                              <div className="mb-2.5 space-y-2 px-4">
-                                <ToolsList tools={server.tools} />
-                                {server.prompts && server.prompts.length > 0 && (
-                                  <div>
-                                    <div className="text-xs font-medium text-muted-foreground mb-1">Prompts</div>
-                                    <div className="grid grid-cols-1 gap-1">
-                                      {server.prompts.slice(0, 8).map((p) => (
-                                        <div key={p.name} className="text-xs rounded-md border border-primary/20 bg-primary/10/20 px-2 py-1">
-                                          <span className="font-medium">{p.title || p.name}</span>
-                                          {p.description && (
-                                            <span className="text-muted-foreground"> — {p.description}</span>
-                                          )}
-                                        </div>
-                                      ))}
-                                      {server.prompts.length > 8 && (
-                                        <div className="text-xs text-muted-foreground">+{server.prompts.length - 8} more…</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Action Button */}
-                            <div className="px-4 pb-4">
-                              <Button
-                                size="sm"
+                      return (
+                        <div
+                          key={server.id}
+                          className={cn(
+                            "flex flex-col gap-4 overflow-hidden rounded-[28px] border border-border/60 bg-white/95 p-5 transition-all duration-200 dark:border-slate-800/60 dark:bg-slate-950/70",
+                            isActive
+                              ? "border-primary/30 bg-white shadow-[0_28px_60px_-32px_rgba(79,70,229,0.35)]"
+                              : "hover:border-primary/40 hover:shadow-[0_20px_45px_-32px_rgba(15,23,42,0.3)]"
+                          )}
+                        >
+                          {/* Server Header with Type Badge and Actions */}
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span
                                 className={cn(
-                                  "w-full gap-1.5 rounded-lg transition-all duration-200",
-                                  isActive
-                                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
-                                    : "border border-primary/25 bg-white/70 hover:bg-primary/10 hover:text-primary"
+                                  "flex h-10 w-10 items-center justify-center rounded-2xl border border-border/50 bg-muted/10 text-muted-foreground",
+                                  isActive ? "border-primary/40 bg-primary/10 text-primary" : ""
                                 )}
-                                variant={isActive ? "default" : "outline"}
-                                onClick={() => toggleServer(server.id)}
                               >
-                                {isActive && <CheckCircle className="h-3.5 w-3.5" />}
-                                {isActive ? "Active" : "Enable Server"}
-                              </Button>
+                                <Globe className="h-4 w-4" />
+                              </span>
+                              <div>
+                                <h4 className="text-sm font-semibold text-foreground">
+                                  {server.name || server.id}
+                                </h4>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {getServerDisplayUrl(server)}
+                                </p>
+                              </div>
+                              {server.auth?.type === "oauth" && (
+                                <span className="ml-1 flex-shrink-0 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                  OAuth
+                                </span>
+                              )}
+                              {hasAdvancedConfig(server) && (
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
+                                  <Cog className="h-3 w-3" />
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px]">
+                              <span className="rounded-full border border-border/40 bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground shadow-inner">
+                                {server.url?.endsWith("/sse") ? "SSE" : "HTTP"}
+                              </span>
+                              <StatusIndicator
+                                status={server.status}
+                                onClick={() =>
+                                  server.errorMessage && toast.error(server.errorMessage)
+                                }
+                                hoverInfo={getServerStatusHoverInfo(server)}
+                              />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => toggleServerStatus(server, e)}
+                                className="rounded-full border border-border/40 bg-muted/10 p-1 text-muted-foreground transition-all hover:border-primary hover:text-primary"
+                                aria-label={isRunning ? "Stop server" : "Start server"}
+                                title={isRunning ? "Stop server" : "Start server"}
+                              >
+                                <Power
+                                  className={cn(
+                                    "h-3.5 w-3.5",
+                                    isRunning ? "text-red-500" : "text-emerald-600"
+                                  )}
+                                />
+                              </button>
+                              <button
+                                onClick={(e) => restartServer(server, e)}
+                                className="rounded-full border border-border/40 bg-muted/10 p-1 text-muted-foreground transition-all hover:border-primary hover:text-primary"
+                                aria-label="Restart server"
+                                title="Restart server"
+                                disabled={server.status === "connecting"}
+                              >
+                                <RefreshCw
+                                  className={cn(
+                                    "h-3.5 w-3.5",
+                                    server.status === "connecting" && "opacity-50"
+                                  )}
+                                />
+                              </button>
+                              {!locked && (
+                                <button
+                                  onClick={(e) => removeServer(server.id, e)}
+                                  className="rounded-full border border-border/40 bg-muted/10 p-1 text-muted-foreground transition-all hover:border-rose-400 hover:text-rose-500"
+                                  aria-label="Remove server"
+                                  title="Remove server"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {!locked && (
+                                <button
+                                  onClick={() => startEditing(server)}
+                                  className="rounded-full border border-border/40 bg-muted/10 p-1 text-muted-foreground transition-all hover:border-primary hover:text-primary"
+                                  aria-label="Edit server"
+                                  title="Edit server"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
-                        );
-                      })}
-                  </div>
+
+                          {/* Server Details */}
+                          <div className="rounded-2xl border border-border/40 bg-muted/10 px-4 py-3 text-sm text-muted-foreground">
+                            {server.description || getServerDisplayUrl(server)}
+                          </div>
+
+                          {/* Tools & Prompts */}
+                          {server.status === "connected" && (
+                            <div className="space-y-3 rounded-2xl border border-border/50 bg-muted/5 p-4">
+                              <ToolsList tools={server.tools} />
+                              {server.prompts && server.prompts.length > 0 && (
+                                <div className="space-y-2">
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                    Prompts
+                                  </div>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    {server.prompts.slice(0, 6).map((p) => (
+                                      <div
+                                        key={p.name}
+                                        className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-xs text-muted-foreground"
+                                      >
+                                        <div className="font-semibold text-foreground">
+                                          {p.title || p.name}
+                                        </div>
+                                        {p.description && (
+                                          <div className="text-[11px] text-muted-foreground/80">
+                                            {p.description}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {server.prompts.length > 6 && (
+                                      <div className="text-xs text-muted-foreground">
+                                        +{server.prompts.length - 6} more…
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action Button */}
+                          <div className="pt-2 pb-1">
+                            <Button
+                              size="sm"
+                              className={cn(
+                                "w-full gap-1.5 rounded-2xl border transition-all duration-200",
+                                isActive
+                                  ? "border-primary/30 bg-primary/70 text-primary-foreground shadow-[0_10px_30px_-10px_rgba(79,70,229,0.7)]"
+                                  : "border border-primary/25 bg-white/70 text-foreground hover:border-primary/40 hover:bg-primary/10"
+                              )}
+                              variant={isActive ? "default" : "outline"}
+                              onClick={() => toggleServer(server.id)}
+                            >
+                              {isActive && <CheckCircle className="h-3.5 w-3.5" />}
+                              {isActive ? "Active" : "Enable Server"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center space-y-4 rounded-2xl border border-primary/20 bg-white/95 py-12 text-foreground shadow-[0_24px_60px_-35px_rgba(79,70,229,0.35)] dark:bg-slate-950/80">
