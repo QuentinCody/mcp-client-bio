@@ -512,10 +512,14 @@ export async function initializeMCPClients(
       return;
     }
 
-    const headersObj = server.headers?.reduce((acc, header) => {
-      if (header.key) acc[header.key] = header.value || '';
-      return acc;
-    }, {} as Record<string, string>);
+    const headersObj =
+      server.headers?.reduce((acc, header) => {
+        if (header.key) acc[header.key] = header.value || '';
+        return acc;
+      }, {} as Record<string, string>) ?? {};
+    if (server.type !== 'sse') {
+      headersObj['Accept'] = headersObj['Accept'] ?? 'application/json, text/event-stream';
+    }
 
     const connectTimeoutMs = server.type === 'sse' ? 8000 : 6000;
 
