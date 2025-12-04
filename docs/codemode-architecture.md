@@ -50,12 +50,13 @@ Acts as a secure gateway between the sandbox and MCP servers.
 **Responsibilities:**
 ```typescript
 const CODEMODE_SERVERS: Record<AllowedServerKey, MCPServerConfig> = {
-  datacite: { url: "...", type: "sse" },
-  ncigdc: { url: "...", type: "http" },
+  datacite: { url: "https://datacite-mcp-server.quentincody.workers.dev/mcp", type: "sse" },
+  ncigdc: { url: "https://nci-gdc-mcp-server.quentincody.workers.dev/mcp", type: "http" },
+  entrez: { url: "https://entrez-mcp-server.quentincody.workers.dev/mcp", type: "http" },
 };
 ```
 
-- **Whitelist MCP Servers**: Only allows access to approved servers (datacite, ncigdc)
+- **Whitelist MCP Servers**: Only allows access to approved servers (DataCite, NCI GDC, Entrez)
 - **Token Validation**: Authenticates requests from the Cloudflare Worker
 - **Tool Execution**: Manages MCP client connections and cleanup
 - **Error Handling**: Provides consistent error responses
@@ -147,6 +148,10 @@ const helpers = {
     invoke: (tool: string, args: object) => Promise<any>,
     listTools: () => Promise<string[]>,
   },
+  entrez: {
+    invoke: (tool: string, args: object) => Promise<any>,
+    listTools: () => Promise<string[]>,
+  },
 };
 
 // Safe console for logging
@@ -173,8 +178,38 @@ async (helpers, console, goal) => {
     p.publicationYear >= 2020
   );
   
-  return { papers: filtered, count: filtered.length };
+return { papers: filtered, count: filtered.length };
 }
+```
+
+### Querying Entrez through MCP helpers
+
+Because Code Mode sandbox outbound `fetch` calls are restricted, you cannot hit `https://eutils.ncbi.nlm.nih.gov` directly—the worker simply returns `fetch failed`. Instead, call the Entrez MCP helper via `helpers.entrez.invoke()`, which proxies through `/api/codemode/proxy`.
+
+```javascript
+const searchResponse = await helpers.entrez.invoke('entrez_query', {
+  term: 'KRAS',
+  retmax: 5,
+  retmode: 'json',
+});
+
+const ids = searchResponse?.idList ?? searchResponse?.ids ?? [];
+if (!ids.length) {
+  return { markdown: 'No PubMed records found for KRAS.' };
+}
+
+const details = await helpers.entrez.invoke('entrez_data', {
+  ids,
+  retmode: 'json',
+});
+
+return {
+  markdown: ids
+    .map((id, index) => `- PubMed ID ${id}: ${details?.[index]?.title ?? 'Title unknown'}`)
+    .join('\n'),
+  ids,
+  details,
+};
 ```
 
 ## Benefits of This Approach
@@ -395,4 +430,3 @@ This Code Mode implementation represents a **significant advancement** in how AI
 - Code generation instead of direct tool calls
 
 We achieve better performance, lower costs, and more flexible agent capabilities while maintaining strong security boundaries.
-

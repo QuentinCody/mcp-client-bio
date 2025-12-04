@@ -1,0 +1,14 @@
+# Local development environment variables for Code Mode Worker
+# Copy this file to .dev.vars and fill in your actual values
+
+# Token for authenticating proxy requests (generate a random secure token)
+PROXY_TOKEN=your_secure_random_token_here
+
+# Token for authenticating Code Mode client requests (generate a random secure token)
+CODEMODE_CLIENT_TOKEN=your_secure_random_token_here
+
+# Note: These tokens should match the values in your main app's environment:
+# - PROXY_TOKEN should match the token used in your Next.js app's CODEMODE_WORKER_URL
+# - CODEMODE_CLIENT_TOKEN should be set in both the worker and the Next.js app
+#
+# Generate secure random tokens with: openssl rand -hex 32

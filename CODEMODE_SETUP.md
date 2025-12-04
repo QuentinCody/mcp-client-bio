@@ -156,6 +156,39 @@ published after 2020, and return just the titles.
 
 **Check the browser console/network tab** to see the tool call happening!
 
+### Use Entrez via MCP helpers instead of `fetch`
+
+Code Mode forbids reaching `https://eutils.ncbi.nlm.nih.gov` directly, so any `fetch` to Entrez will fail with “fetch failed.” Instead, let the sandbox call the Entrez MCP helper that’s already wired through `app/api/codemode/proxy`.
+
+```javascript
+const response = await helpers.entrez.invoke('entrez_query', {
+  term: 'KRAS',
+  retmax: 10,
+  retmode: 'json',
+});
+
+const ids = response?.idList || response?.ids || [];
+
+if (!ids.length) {
+  return { markdown: 'No PubMed IDs found for KRAS.' };
+}
+
+const summaries = await helpers.entrez.invoke('entrez_data', {
+  ids,
+  retmode: 'json',
+});
+
+return {
+  markdown: ids
+    .map((id, index) => `- PubMed ID ${id}: ${summaries?.[index]?.title ?? 'Title missing'}`)
+    .join('\n'),
+  ids,
+  summaries,
+};
+```
+
+This keeps the HTTP request inside the MCP server (which can reach Entrez) while the sandbox only talks to your helper API.
+
 ---
 
 ## Verification Checklist
