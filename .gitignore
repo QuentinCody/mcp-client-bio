@@ -63,4 +63,5 @@ nextjs.log
 
 # SECRET FILES - DO NOT COMMIT
 /workers/codemode/wrangler.toml
+/workers/codemode/.dev.vars
 /setup-codemode.sh

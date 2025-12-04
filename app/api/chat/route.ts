@@ -17,12 +17,41 @@ import {
   createToolRegistry,
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
+import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
 import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
 function validateCodeModeSnippet(code: string) {
+  // First, check for forbidden patterns
+  const forbiddenPatterns = [
+    {
+      pattern: /^\s*(?:async\s+)?function\s+\w+/m,
+      message: 'Function declarations are not allowed. Use arrow functions or top-level code instead.\n\nGOOD:\nconst result = await helpers.server.invoke(...);\nreturn result;\n\nBAD:\nasync function myFunc() { ... }\nreturn myFunc();'
+    },
+    {
+      pattern: /:\s*(?:string|number|boolean|any|void|object)\s*[,;=)]/,
+      message: 'TypeScript type annotations are not allowed. Remove type annotations.\n\nGOOD:\nconst name = "value";\n\nBAD:\nconst name: string = "value";'
+    },
+    {
+      pattern: /\bas\s+(?:string|number|boolean|any|unknown|object)\b/,
+      message: 'TypeScript type assertions (as Type) are not allowed.\n\nGOOD:\nconst value = someVar;\n\nBAD:\nconst value = someVar as string;'
+    }
+  ];
+
+  for (const { pattern, message } of forbiddenPatterns) {
+    if (pattern.test(code)) {
+      throw new Error(message);
+    }
+  }
+
+  // Then validate syntax
   const wrapped = `(async () => {\n${code}\n})();`;
-  parse(wrapped, { ecmaVersion: "latest", sourceType: "script" });
+  try {
+    parse(wrapped, { ecmaVersion: "latest", sourceType: "script" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Syntax error: ${message}`);
+  }
 }
 
 export async function POST(req: Request) {
@@ -211,7 +240,8 @@ export async function POST(req: Request) {
       .join(", ");
     console.log("[API /chat] Code Mode server tool counts:", counts.slice(0, 400));
 
-    helpersImplementation = generateHelpersImplementation(serverToolMap, aliasMap);
+    // Use transforming helpers implementation for automatic response parsing
+    helpersImplementation = generateTransformingHelpersImplementation(serverToolMap, aliasMap);
     if (helpersImplementation) {
       console.log("[API /chat] helpersImplementation length=", helpersImplementation.length);
       const matches = Array.from(new Set(helpersImplementation.match(/helpers\.([a-z0-9_]+)/gi) || []));
@@ -225,19 +255,27 @@ export async function POST(req: Request) {
   const shortSystemPrompt = useCodeMode
     ? `You are a helpful assistant with the ability to write and execute JavaScript code.
 
-When answering questions, write JavaScript code (NOT TypeScript - no type annotations) using the codemode_sandbox tool.
+CRITICAL RULES:
+1. NO function declarations - use top-level code only
+2. NO TypeScript syntax (no ': string', 'as Type', etc.)
+3. Use await directly - don't wrap in functions
 
 ${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
 
-The code also has access to console.log() for debugging.
+IMPORTANT: Use helpers.server.getData() instead of invoke() - it handles data staging automatically!
 
 Example:
-const tools = await helpers.myserver.listTools();
-console.log("Available tools:", tools);
-const result = await helpers.myserver.invoke('tool_name', { param: 'value' });
-return { result };
+const data = await helpers.myserver.getData('tool_name', { param: 'value' });
+console.log("Found:", data.length, "results");
+return data;
 
-Always return a result from your code. IMPORTANT: Do not use TypeScript syntax like type annotations (': string', 'as Type', or 'x is Type')!`
+GOOD:
+const proteins = await helpers.uniprot.getData('uniprot_search', { query: 'TP53' });
+return proteins[0];
+
+BAD:
+async function fetchData() { ... }  // ❌ Function declarations not allowed
+const name: string = "value";  // ❌ TypeScript not allowed`
     : `You are a helpful assistant with access to tools.
 
 The tools are powerful - choose the most relevant one for the user's question.
@@ -251,41 +289,76 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
 Today's date is ${new Date().toISOString().split('T')[0]}.
 
-IMPORTANT: When answering user questions, write JavaScript code (NOT TypeScript) using the codemode_sandbox tool. DO NOT call MCP tools directly.
+CRITICAL CODE MODE RULES:
+1. NO function declarations (function foo() {}) - they will fail at runtime
+2. NO TypeScript syntax (': string', 'as Type', 'x is Type')
+3. Write TOP-LEVEL CODE only - use await directly
+4. Use helpers.server.getData() for automatic data handling
 
 Your code has access to a helpers API that provides access to various databases and services:
 
 ${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
 
+HELPER METHODS (use these!):
+- helpers.server.getData(tool, args) - Automatically handles data staging, returns actual data
+- helpers.server.invoke(tool, args) - Returns raw response (use getData instead)
+- helpers.server.queryStagedData(id, sql) - Query staged data directly
+- helpers.server.listTools() - See all available tools
+- helpers.server.searchTools(query) - Find relevant tools
+
 Your code also has access to console.log() for debugging output.
 
+GOOD CODE EXAMPLES:
+
+// Simple query (getData handles everything)
+const proteins = await helpers.uniprot.getData('uniprot_search', {
+  query: 'TP53'
+});
+console.log(\`Found \${proteins.length} proteins\`);
+return proteins[0];
+
+// Multi-step workflow
+const uniprotData = await helpers.uniprot.getData('uniprot_search', {
+  query: 'TP53'
+});
+const ensemblId = uniprotData[0].ensemblId;
+
+const diseases = await helpers.opentargets.getData('get_associated_diseases', {
+  ensembl_id: ensemblId
+});
+
+return { protein: uniprotData[0], diseases };
+
+// Discovery
+const servers = Object.keys(helpers);
+console.log("Available:", servers);
+
+const geneTools = await helpers.uniprot.searchTools('gene');
+console.log("Gene tools:", geneTools.map(t => t.name));
+
+return geneTools;
+
+BAD CODE EXAMPLES (these will FAIL):
+
+// ❌ Function declarations are NOT allowed
+async function fetchData(query) {
+  return await helpers.server.getData('search', { query });
+}
+return fetchData('TP53');  // FAILS: executeScientificWorkflow is not defined
+
+// ❌ TypeScript syntax not allowed
+const name: string = "TP53";  // FAILS: Syntax error
+const result = data as Protein[];  // FAILS: Syntax error
+
+// ❌ Don't use invoke() when getData() is better
+const response = await helpers.uniprot.invoke('uniprot_search', { query: 'TP53' });
+// Now you have to manually parse markdown, extract data_access_id, etc.
+
 When responding:
-- Write JavaScript code (NOT TypeScript - no type annotations like ': string', 'as Type', or 'x is Type')
-- You can make multiple API calls in a single code block
+- Use getData() not invoke() - it's MUCH easier
 - Use console.log() to show your work
-- Always return a structured result object
-- Handle errors gracefully
-- Use helpers.serverName.searchTools(query) to discover relevant tools
-- Use helpers.serverName.listTools() to see all available tools
-
-Example code pattern:
-async (helpers, console) => {
-  console.log("Starting query...");
-
-  // Discover available tools
-  const allServers = Object.keys(helpers);
-  console.log("Available servers:", allServers);
-
-  // Search for relevant tools
-  if (helpers.entrez) {
-    const tools = await helpers.entrez.searchTools("pubmed");
-    console.log("Found tools:", tools);
-  }
-
-  // Invoke tools
-  const result1 = await helpers.myserver.invoke("tool_name", { param: "value" });
-  return { success: true, data: result1 };
-}`
+- Always return a structured result
+- Handle errors with try/catch if needed`
     : `You are a helpful assistant with access to a variety of tools.
 
     Today's date is ${new Date().toISOString().split('T')[0]}.
