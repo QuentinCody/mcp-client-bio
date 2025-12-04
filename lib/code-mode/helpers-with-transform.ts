@@ -17,7 +17,25 @@ export function generateTransformingHelpersImplementation(
     'function detectError(response) {',
     '  if (response?.isError === true) return true;',
     '  const text = response?.content?.[0]?.text || "";',
-    '  return /\\berror\\b:|\\bfailed\\b:|Query failed|Manager Error|❌|⚠️/i.test(text);',
+    '',
+    '  // Check for actual error indicators, but NOT warning emojis in informational messages',
+    '  // Informational messages often contain ⚠️ but start with success indicators like 📊, 📄, 🆔',
+    '  const hasSuccessIndicator = /^[📊📄🆔📋💡]/m.test(text);',
+    '  if (hasSuccessIndicator) return false; // Success messages with warnings are not errors',
+    '',
+    '  // Check for actual error patterns',
+    '  const errorPatterns = [',
+    '    /\\berror\\b:/i,           // "error:" or "Error:"',
+    '    /\\bfailed\\b:/i,          // "failed:" or "Failed:"',
+    '    /Query failed/i,          // Specific error message',
+    '    /Manager Error/i,         // Specific error message',
+    '    /^❌/,                    // Error emoji at start',
+    '    /MCP error -\\d+:/,       // MCP protocol errors',
+    '    /validation error:/i,     // Validation errors',
+    '    /Invalid arguments/i,     // Argument errors',
+    '  ];',
+    '',
+    '  return errorPatterns.some(pattern => pattern.test(text));',
     '}',
     '',
     'function extractError(response) {',
@@ -25,6 +43,7 @@ export function generateTransformingHelpersImplementation(
     '',
     '  // Extract error message - handle multi-line errors',
     '  let message = "Tool execution failed";',
+    '  const hints = [];',
     '',
     '  // Try to extract structured error message (stop at double newline or new section)',
     '  const errorMatch = text.match(/(?:Error|Failed|Exception):\\s*(.+?)(?=\\n\\n|\\n(?:[A-Z]|$)|$)/s);',
@@ -38,13 +57,63 @@ export function generateTransformingHelpersImplementation(
     '    message = text.substring(0, 200).trim() + "...";',
     '  }',
     '',
-    '  // Determine error code',
+    '  // Extract required parameter information from validation errors',
+    '  const requiredMatch = text.match(/"path":\\s*\\[\\s*"([^"]+)"\\s*\\]/);',
+    '  if (requiredMatch?.[1]) {',
+    '    hints.push(`Missing required parameter: "${requiredMatch[1]}"`);',
+    '  }',
+    '',
+    '  // Extract expected values from enum validation errors',
+    '  const expectedMatch = text.match(/"expected":\\s*"([^"]+)"/);',
+    '  if (expectedMatch?.[1]) {',
+    '    hints.push(`Expected one of: ${expectedMatch[1]}`);',
+    '  }',
+    '',
+    '  // Extract "received" parameter to suggest corrections',
+    '  const receivedMatch = text.match(/"received":\\s*"([^"]+)"/);',
+    '  if (receivedMatch?.[1]) {',
+    '    const received = receivedMatch[1];',
+    '    // Common parameter name corrections',
+    '    const corrections = {',
+    '      "query": "term",',
+    '      "search": "term",',
+    '      "search_term": "term",',
+    '      "q": "term",',
+    '      "db": "database",',
+    '      "id": "ids",',
+    '      "tool_name": "tool",',
+    '      "toolName": "tool",',
+    '      "retType": "rettype",',
+    '      "retMode": "retmode"',
+    '    };',
+    '    if (corrections[received]) {',
+    '      hints.push(`Did you mean "${corrections[received]}" instead of "${received}"?`);',
+    '    }',
+    '  }',
+    '',
+    '  // Determine error code and add helpful hints',
     '  let code = "UNKNOWN_ERROR";',
-    '  if (text.includes("no such table")) code = "TABLE_NOT_FOUND";',
-    '  else if (text.includes("Invalid arguments")) code = "INVALID_ARGUMENTS";',
-    '  else if (text.includes("timed out")) code = "TIMEOUT";',
-    '  else if (text.includes("required")) code = "MISSING_REQUIRED_PARAM";',
-    '  else if (text.includes("not found")) code = "NOT_FOUND";',
+    '  if (text.includes("no such table")) {',
+    '    code = "TABLE_NOT_FOUND";',
+    '    hints.push("Query the staging schema first to see available tables");',
+    '  } else if (text.includes("Invalid arguments") || text.includes("validation error")) {',
+    '    code = "INVALID_ARGUMENTS";',
+    '    hints.push("Use helpers.serverName.getToolSchema(toolName) to see all required and optional parameters");',
+    '  } else if (text.includes("timed out")) {',
+    '    code = "TIMEOUT";',
+    '    hints.push("Try a simpler query or increase timeout");',
+    '  } else if (text.includes("required") || text.includes("Required")) {',
+    '    code = "MISSING_REQUIRED_PARAM";',
+    '    hints.push("Use helpers.serverName.getToolSchema(toolName) to see required parameters");',
+    '  } else if (text.includes("not found") || text.includes("not callable")) {',
+    '    code = "NOT_FOUND";',
+    '    hints.push("Use helpers.serverName.listTools() to see available tools");',
+    '  }',
+    '',
+    '  // Add hints to message if present',
+    '  if (hints.length > 0) {',
+    '    message += "\\n" + hints.map(h => `  • ${h}`).join("\\n");',
+    '  }',
     '',
     '  return {',
     '    code,',
@@ -102,6 +171,37 @@ export function generateTransformingHelpersImplementation(
     '  // If already in good format, pass through',
     '  if (response?.ok !== undefined || response?.data !== undefined) {',
     '    return { ok: response.ok ?? !response.error, data: response.data ?? response, error: response.error };',
+    '  }',
+    '',
+    '  // PRIORITY: Check for structuredContent first (MCP spec)',
+    '  // This is the primary way servers return structured data for Code Mode',
+    '  if (response?.structuredContent && typeof response.structuredContent === "object") {',
+    '    const structured = response.structuredContent;',
+    '    console.log("[transformResponse] Found structuredContent:", Object.keys(structured).slice(0, 10));',
+    '',
+    '    // Check if it\'s an error in structured format',
+    '    if (structured.success === false || structured.error) {',
+    '      return {',
+    '        ok: false,',
+    '        error: {',
+    '          code: structured.code || structured.error?.code || "STRUCTURED_ERROR",',
+    '          message: structured.message || structured.error?.message || "Tool execution failed",',
+    '          details: structured',
+    '        }',
+    '      };',
+    '    }',
+    '',
+    '    // Return structured data directly (this is what Code Mode needs!)',
+    '    console.log("[transformResponse] Returning structured data with keys:", Object.keys(structured).slice(0, 10));',
+    '    return { ok: true, data: structured };',
+    '  }',
+    '  ',
+    '  // DEBUG: Log what we received if no structuredContent',
+    '  if (response) {',
+    '    console.log("[transformResponse] No structuredContent found. Response keys:", Object.keys(response).slice(0, 10));',
+    '    if (response.content?.[0]) {',
+    '      console.log("[transformResponse] First content item:", Object.keys(response.content[0]));',
+    '    }',
     '  }',
     '',
     '  // Check for errors',
@@ -163,6 +263,52 @@ export function generateTransformingHelpersImplementation(
       }))
     )};`);
     lines.push(`    return tools.filter(t => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q));`);
+    lines.push(`  },`);
+
+    // getToolSchema - NEW: Inspect tool parameters
+    lines.push(`  async getToolSchema(toolName) {`);
+    lines.push(`    const schemas = ${JSON.stringify(
+      Object.fromEntries(
+        toolNames.map(name => [
+          name,
+          {
+            name,
+            description: tools[name].description || '',
+            // MCP client may store schema in parameters, parameters.jsonSchema, or inputSchema
+            inputSchema: tools[name].parameters?.jsonSchema || tools[name].parameters || tools[name].inputSchema || null,
+          }
+        ])
+      )
+    )};`);
+    lines.push(`    const schema = schemas[toolName];`);
+    lines.push(`    if (!schema) {`);
+    lines.push(`      throw new Error(\`Tool '\${toolName}' not found. Available tools: \${Object.keys(schemas).join(', ')}\`);`);
+    lines.push(`    }`);
+    lines.push(`    `);
+    lines.push(`    // Extract required and optional parameters from schema`);
+    lines.push(`    const params = schema.inputSchema?.properties || {};`);
+    lines.push(`    const required = schema.inputSchema?.required || [];`);
+    lines.push(`    `);
+    lines.push(`    const result = {`);
+    lines.push(`      tool: toolName,`);
+    lines.push(`      description: schema.description,`);
+    lines.push(`      required: required.map(name => ({`);
+    lines.push(`        name,`);
+    lines.push(`        type: params[name]?.type || 'unknown',`);
+    lines.push(`        description: params[name]?.description,`);
+    lines.push(`        enum: params[name]?.enum`);
+    lines.push(`      })),`);
+    lines.push(`      optional: Object.keys(params).filter(name => !required.includes(name)).map(name => ({`);
+    lines.push(`        name,`);
+    lines.push(`        type: params[name]?.type || 'unknown',`);
+    lines.push(`        description: params[name]?.description,`);
+    lines.push(`        enum: params[name]?.enum,`);
+    lines.push(`        default: params[name]?.default`);
+    lines.push(`      }))`);
+    lines.push(`    };`);
+    lines.push(`    `);
+    lines.push(`    console.log(\`[getToolSchema] \${toolName} - Required: \${required.join(', ')}\`);`);
+    lines.push(`    return result;`);
     lines.push(`  },`);
 
     // invoke with transformation

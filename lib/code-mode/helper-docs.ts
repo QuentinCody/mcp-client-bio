@@ -338,6 +338,88 @@ export function generateToolSearchIndex(
 }
 
 /**
+ * Generate common usage examples for helper APIs
+ * These examples show typical workflows and correct parameter usage
+ */
+export function generateUsageExamples(): string {
+  return `
+## Common Usage Examples
+
+### Search for articles
+\`\`\`javascript
+const result = await helpers.entrez.invoke('entrez_query', {
+  operation: 'search',
+  database: 'pubmed',
+  term: 'brain cancer',
+  retmax: 10
+});
+// Access structured data: result.idlist, result.count
+\`\`\`
+
+### Get article summaries
+\`\`\`javascript
+const summary = await helpers.entrez.invoke('entrez_query', {
+  operation: 'summary',
+  database: 'pubmed',
+  ids: '41337800,41337574'
+});
+// Access structured data: summary.data (array of article summaries)
+\`\`\`
+
+### Get article abstracts (CORRECT METHOD)
+\`\`\`javascript
+// Step 1: Search for articles
+const search = await helpers.entrez.invoke('entrez_query', {
+  operation: 'search',
+  database: 'pubmed',
+  term: 'brain cancer',
+  retmax: 5
+});
+
+// Step 2: Fetch and stage full article data with abstracts
+const staged = await helpers.entrez.invoke('entrez_data', {
+  operation: 'fetch_and_stage',
+  database: 'pubmed',
+  ids: search.idlist.join(',')
+});
+
+// Step 3: Query the staged data for abstracts
+const abstracts = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: 'SELECT pmid, title, abstract FROM article'
+});
+// Access: abstracts.results[0].abstract
+\`\`\`
+
+### Inspect tool parameters
+\`\`\`javascript
+// See all required and optional parameters for a tool
+const schema = await helpers.entrez.getToolSchema('entrez_query');
+console.log('Required:', schema.required.map(p => p.name));
+console.log('Optional:', schema.optional.map(p => p.name));
+\`\`\`
+
+### Search clinical trials
+\`\`\`javascript
+const trials = await helpers.clinicaltrials.invoke('mcp_clinicaltrial_ctgov_search_studies', {
+  query_cond: 'breast cancer',
+  phase: '3',
+  recrs: 'open',
+  pageSize: 20,
+  jq_filter: '.'
+});
+\`\`\`
+
+**Important Notes:**
+- Always use exact parameter names from schema (e.g., 'term' not 'query', 'ids' not 'id')
+- Use helpers.serverName.getToolSchema(toolName) when unsure about parameters
+- Structured responses provide direct data access (no regex parsing needed)
+- Check result.success to verify operation succeeded
+`.trim();
+}
+
+/**
  * Enhanced search that uses parsed descriptions
  */
 export function searchToolsWithParsing(

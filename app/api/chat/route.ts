@@ -18,7 +18,7 @@ import {
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
-import { generateCompactHelperDocs } from '@/lib/code-mode/helper-docs';
+import { generateCompactHelperDocs, generateUsageExamples } from '@/lib/code-mode/helper-docs';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
 function validateCodeModeSnippet(code: string) {
@@ -219,6 +219,10 @@ export async function POST(req: Request) {
       maxToolsPerServer: 10,
       includeParameters: false,
     });
+
+    // Add usage examples to help LLMs write correct code
+    helpersDocs += '\n\n' + generateUsageExamples();
+
     const aliasMap: Record<string, string> = {};
     if (!aliasMap.mcp) {
       const httpServer = Array.from(serverToolMap.entries()).find(
