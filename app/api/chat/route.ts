@@ -223,6 +223,10 @@ export async function POST(req: Request) {
     // Add usage examples to help LLMs write correct code
     helpersDocs += '\n\n' + generateUsageExamples();
 
+    // Add SQL helper documentation
+    const { generateSQLHelperDocs } = await import('@/lib/code-mode/sql-helpers');
+    helpersDocs += '\n\n' + generateSQLHelperDocs();
+
     const aliasMap: Record<string, string> = {};
     if (!aliasMap.mcp) {
       const httpServer = Array.from(serverToolMap.entries()).find(

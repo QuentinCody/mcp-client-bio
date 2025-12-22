@@ -58,7 +58,7 @@ const googleClient = createGoogleGenerativeAI({
 });
 
 const languageModels = {
-  "claude-sonnet-4": anthropicClient("claude-sonnet-4-20250514"),
+  "claude-sonnet-4.5": anthropicClient("claude-sonnet-4-5-20250929"),
   "gpt-5": openaiClient("gpt-5"),
   "gpt-5-mini": openaiClient("gpt-5-mini"), 
   "gpt-5-nano": openaiClient("gpt-5-nano"),
@@ -74,17 +74,16 @@ const languageModels = {
   "kimi-k2": groqClient('moonshotai/kimi-k2-instruct'),
   "llama4": groqClient('meta-llama/llama-4-scout-17b-16e-instruct'),
   "gemini-2.5-pro": googleClient("gemini-2.5-pro"),
-  "gemini-2.5-flash": googleClient("gemini-2.5-flash"),
-  "gemini-2.5-flash-lite": googleClient("gemini-2.5-flash-lite")
+  "gemini-3-flash-preview": googleClient("gemini-3-flash-preview")
 };
 
 export const modelDetails: Record<keyof typeof languageModels, ModelInfo> = {
-  "claude-sonnet-4": {
+  "claude-sonnet-4.5": {
     provider: "Anthropic",
-    name: "Claude Sonnet 4",
-    description: "High-performance model with exceptional reasoning capabilities and fast response times.",
-    apiVersion: "claude-sonnet-4-20250514",
-    capabilities: ["Reasoning", "Analysis", "Agentic", "Tools", "Fast"]
+    name: "Claude Sonnet 4.5",
+    description: "Anthropic's most intelligent model, with significant improvements in coding, visual reasoning, and agentic capabilities.",
+    apiVersion: "claude-sonnet-4-5-20250929",
+    capabilities: ["Reasoning", "Analysis", "Coding", "Agentic", "Tools", "Vision", "Fast"]
   },
   "gpt-5": {
     provider: "OpenAI",
@@ -156,19 +155,12 @@ export const modelDetails: Record<keyof typeof languageModels, ModelInfo> = {
     apiVersion: "gemini-2.5-pro",
     capabilities: ["Reasoning", "Analysis", "Coding", "Math", "STEM", "Long Context", "Thinking", "Tools"]
   },
-  "gemini-2.5-flash": {
+  "gemini-3-flash-preview": {
     provider: "Google",
-    name: "Gemini 2.5 Flash",
-    description: "Google's best price-performance model with thinking capabilities and well-rounded functionality.",
-    apiVersion: "gemini-2.5-flash",
+    name: "Gemini 3 Flash Preview",
+    description: "Google's next-generation flash model with enhanced speed, efficiency, and reasoning capabilities.",
+    apiVersion: "gemini-3-flash-preview",
     capabilities: ["Reasoning", "Analysis", "Thinking", "Fast", "Efficient", "Tools"]
-  },
-  "gemini-2.5-flash-lite": {
-    provider: "Google",
-    name: "Gemini 2.5 Flash Lite",
-    description: "Lightweight version of Gemini 2.5 Flash optimized for speed and cost efficiency.",
-    apiVersion: "gemini-2.5-flash-lite",
-    capabilities: ["Fast", "Efficient", "Analysis", "Tools"]
   }
 };
 
@@ -190,4 +182,4 @@ export type modelID = keyof typeof languageModels;
 
 export const MODELS = Object.keys(languageModels);
 
-export const defaultModel: modelID = "gemini-2.5-flash";
+export const defaultModel: modelID = "gemini-3-flash-preview";

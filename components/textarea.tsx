@@ -611,25 +611,25 @@ export const Textarea = ({
         )}
 
         {showingSlashHint && !menuOpen && (
-          <div className="pointer-events-none absolute top-3 left-4 z-20 animate-in slide-in-from-left-2 duration-200">
-            <div className="flex items-center gap-2 rounded-lg bg-blue-500/90 px-3 py-1.5 text-[11px] font-medium text-white shadow-md backdrop-blur-sm">
-              <Hash className="h-3 w-3" />
-              <span>Type to search prompts</span>
-              <Sparkles className="h-3 w-3 animate-pulse" />
+          <div className="pointer-events-none absolute top-3 left-4 z-20 animate-in slide-in-from-left-3 fade-in-0 duration-300">
+            <div className="flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-2 text-xs font-bold text-white shadow-2xl shadow-blue-500/40 backdrop-blur-sm ring-2 ring-white/20 dark:ring-white/30">
+              <Hash className="h-3.5 w-3.5 animate-bounce" />
+              <span className="drop-shadow-md">Type to search commands</span>
+              <Sparkles className="h-3.5 w-3.5 animate-pulse drop-shadow-md" />
             </div>
           </div>
         )}
 
         {menuOpen && slashSegments.length > 0 && (
-          <div className="pointer-events-none absolute left-3 top-2 z-10 flex flex-wrap items-center gap-1 text-[10px] font-medium text-blue-700/80">
+          <div className="pointer-events-none absolute left-4 top-3 z-10 flex flex-wrap items-center gap-1.5 animate-in fade-in-0 slide-in-from-top-2 duration-200">
             {slashSegments.map((segment, idx) => (
               <span
                 key={`segment-${idx}-${segment.value}`}
                 className={cn(
-                  "rounded-md border px-2 py-0.5 font-mono uppercase tracking-wide",
+                  "rounded-lg border-2 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wide shadow-sm transition-all",
                   segment.complete
-                    ? "border-blue-200 bg-blue-50"
-                    : "border-blue-100 bg-blue-100/70 text-blue-600"
+                    ? "border-blue-300 dark:border-blue-700 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                    : "border-blue-400 dark:border-blue-600 bg-gradient-to-r from-blue-200 to-blue-100 dark:from-blue-900/60 dark:to-blue-900/40 text-blue-800 dark:text-blue-200 ring-2 ring-blue-400/30 dark:ring-blue-500/30"
                 )}
               >
                 {segment.value || (idx === slashSegments.length - 1 ? "..." : "--")}
@@ -654,22 +654,26 @@ export const Textarea = ({
         />
 
         {menuOpen && highlightedItem && (
-          <div className="pointer-events-none absolute bottom-12 left-3 z-10 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/80">
-            <div className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-primary shadow-sm">
-              <span className="rounded border border-primary/30 bg-white/40 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+          <div className="pointer-events-none absolute bottom-12 left-3 z-10 flex flex-wrap items-center gap-2.5 text-xs animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
+            <div className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500/15 to-indigo-500/15 dark:from-blue-500/20 dark:to-indigo-500/20 px-3 py-1.5 shadow-lg ring-2 ring-blue-400/30 dark:ring-blue-500/40 backdrop-blur-sm">
+              <kbd className="rounded-md border-2 border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400 shadow-sm">
                 Tab
-              </span>
-              <span className="text-primary/80">complete</span>
-              <code className="font-mono text-xs text-primary">
+              </kbd>
+              <span className="font-semibold text-blue-700 dark:text-blue-300">complete</span>
+              <code className="rounded-md bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 font-mono text-xs font-bold text-blue-800 dark:text-blue-200">
                 /
                 {highlightedItem.mode === "command" ? highlightedItem.name : highlightedItem.trigger}
               </code>
             </div>
             {Array.isArray(highlightedItem.args) && highlightedItem.args.length > 0 ? (
-              <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 shadow-sm">
-                <span>{highlightedItem.args.filter((arg) => arg.required).length} required</span>
-                <span>·</span>
-                <span>{highlightedItem.args.length} total</span>
+              <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-100/90 to-orange-100/90 dark:from-amber-900/40 dark:to-orange-900/40 px-3 py-1.5 ring-2 ring-amber-300/40 dark:ring-amber-700/40 shadow-lg">
+                <span className="font-bold text-amber-800 dark:text-amber-300">
+                  {highlightedItem.args.filter((arg) => arg.required).length} required
+                </span>
+                <span className="text-amber-600 dark:text-amber-400">·</span>
+                <span className="font-semibold text-amber-700 dark:text-amber-400">
+                  {highlightedItem.args.length} total
+                </span>
               </div>
             ) : null}
           </div>

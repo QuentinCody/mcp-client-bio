@@ -44,15 +44,15 @@ export function ChatHeader({
 
   const statusTone = (() => {
     if (status === "streaming") {
-      return "bg-[#dcfce7] text-[#047857] dark:bg-[#064e3b] dark:text-[#34d399]";
+      return "bg-gradient-to-r from-success/10 to-success/5 text-success border border-success/20 shadow-sm dark:from-success/20 dark:to-success/10 dark:border-success/30";
     }
     if (status === "submitted") {
-      return "bg-[#fef9c3] text-[#854d0e] dark:bg-[#713f12] dark:text-[#fcd34d]";
+      return "bg-gradient-to-r from-warning/10 to-warning/5 text-warning border border-warning/20 shadow-sm dark:from-warning/20 dark:to-warning/10 dark:border-warning/30";
     }
     if (status === "error") {
-      return "bg-[#fee2e2] text-[#b91c1c] dark:bg-[#7f1d1d] dark:text-[#fecaca]";
+      return "bg-gradient-to-r from-destructive/10 to-destructive/5 text-destructive border border-destructive/20 shadow-sm dark:from-destructive/20 dark:to-destructive/10 dark:border-destructive/30";
     }
-    return "bg-[#e0f2fe] text-[#0369a1] dark:bg-[#1e3a8a]/40 dark:text-[#93c5fd]";
+    return "bg-gradient-to-r from-info/10 to-info/5 text-info border border-info/20 shadow-sm dark:from-info/20 dark:to-info/10 dark:border-info/30";
   })();
 
   return (
@@ -88,9 +88,14 @@ export function ChatHeader({
         <button
           onClick={onOpenServerManager}
           type="button"
-          className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-[#d4d4d4] bg-white px-2 sm:px-3 py-1 text-[10px] sm:text-[11px] font-semibold text-[#1f2937] shadow-sm transition hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93c5fd] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#181818] dark:text-[#e5e5e5] dark:hover:bg-[#202020] min-h-[44px] sm:min-h-0"
+          className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-gradient-to-r from-card to-card/80 px-3 sm:px-4 py-1.5 text-[10px] sm:text-[11px] font-bold text-foreground shadow-sm backdrop-blur-sm transition-all duration-200 hover:shadow-md hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 min-h-[44px] sm:min-h-0 dark:border-border/60 dark:shadow-[0_0_12px_rgba(96,165,250,0.12)] dark:hover:shadow-[0_0_20px_rgba(96,165,250,0.2)]"
         >
-          <ServerIcon className="h-3.5 w-3.5 flex-shrink-0" />
+          <ServerIcon className={cn(
+            "h-3.5 w-3.5 flex-shrink-0 transition-colors",
+            onlineServers > 0
+              ? "text-success dark:drop-shadow-[0_0_4px_rgba(34,197,94,0.8)]"
+              : "text-muted-foreground"
+          )} />
           <span className="hidden xs:inline">{onlineServers}/{activeServers}</span>
           <span className="xs:hidden">{onlineServers}</span>
         </button>

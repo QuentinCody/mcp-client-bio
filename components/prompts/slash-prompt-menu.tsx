@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Command as CommandIcon,
   Loader2,
+  Zap,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EnhancedPromptPreview } from "@/components/prompts/enhanced-prompt-preview";
@@ -18,6 +20,7 @@ import { PromptHelpButton, PromptHelpPanel } from "@/components/prompts/prompt-h
 import { PromptLoadingStates } from "@/components/prompts/prompt-loading-states";
 import { useMCP } from "@/lib/context/mcp-context";
 import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "motion/react";
 
 type MenuItem = SlashPromptDef & {
   commandMeta?: SlashCommandMeta;
@@ -188,13 +191,19 @@ export function SlashPromptMenu({
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+      transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
       role="combobox"
       aria-expanded="true"
       aria-controls={listId}
       aria-haspopup="listbox"
       className={cn(
-        "z-50 w-full max-w-full sm:w-[48rem] max-h-[70vh] overflow-hidden rounded-2xl border border-gray-200/60 bg-white/97 text-sm shadow-2xl backdrop-blur-xl",
+        "z-50 w-full max-w-full sm:w-[52rem] max-h-[75vh] overflow-hidden rounded-2xl border-2 border-gray-200/80 dark:border-gray-700/60",
+        "bg-white/98 dark:bg-[#1a1a1a]/98 text-sm shadow-[0_24px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_24px_64px_rgba(0,0,0,0.6)]",
+        "backdrop-blur-2xl ring-1 ring-black/5 dark:ring-white/10",
         className
       )}
       onKeyDown={(event) => {
@@ -233,131 +242,233 @@ export function SlashPromptMenu({
         }
       }}
     >
-      <div className="border-b border-gray-100/80 bg-gradient-to-r from-gray-50/80 to-white/80 px-4 py-3">
-        <div className="flex items-center gap-2 text-xs text-gray-600">
-          <Hash className="h-3 w-3" />
-          <span className="font-semibold">Slash Commands & MCP Prompts</span>
+      <div className="border-b-2 border-gray-100/80 dark:border-gray-700/40 bg-gradient-to-r from-gray-50/95 via-white/95 to-gray-50/95 dark:from-gray-900/95 dark:via-gray-800/95 dark:to-gray-900/95 px-5 py-3.5 backdrop-blur-xl">
+        <div className="flex items-center gap-2.5 text-xs">
+          <div className="flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 px-2.5 py-1 shadow-lg shadow-blue-500/20">
+            <Zap className="h-3.5 w-3.5 text-white drop-shadow-md" />
+            <span className="font-bold text-white">Commands</span>
+          </div>
           {query && (
-            <>
-              <span>·</span>
-              <div className="flex items-center gap-1">
-                <Search className="h-3 w-3" />
-                <span>“{query}”</span>
-              </div>
-            </>
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-1.5 rounded-full bg-amber-100/80 dark:bg-amber-900/30 px-2.5 py-1 ring-1 ring-amber-200 dark:ring-amber-700/50"
+            >
+              <Search className="h-3 w-3 text-amber-700 dark:text-amber-400" />
+              <span className="font-semibold text-amber-800 dark:text-amber-300">"{query}"</span>
+            </motion.div>
           )}
-          <span className="ml-auto text-gray-500">
-            {items.length} {items.length === 1 ? "result" : "results"}
-          </span>
-          <PromptHelpButton onClick={() => setHelpOpen(true)} className="ml-2" />
+          <div className="ml-auto flex items-center gap-3">
+            <motion.span
+              key={items.length}
+              initial={{ scale: 1.2, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="rounded-full bg-gradient-to-r from-green-500/10 to-emerald-500/10 px-3 py-1 text-xs font-bold text-green-700 dark:text-green-400 ring-1 ring-green-500/20"
+            >
+              {items.length} {items.length === 1 ? "result" : "results"}
+            </motion.span>
+            <PromptHelpButton onClick={() => setHelpOpen(true)} className="ml-1" />
+          </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
-          <Badge variant="outline" className="border-gray-200 text-gray-600">
-            Local · {counts.local}
-          </Badge>
-          <Badge variant="outline" className="border-blue-200 text-blue-600">
-            Client Prompts · {counts.clientPrompts}
-          </Badge>
-          <Badge variant="outline" className="border-gray-200 text-gray-600">
-            Templates · {counts.templates}
-          </Badge>
-          <Badge variant="secondary" className="bg-blue-50 text-blue-700">
-            MCP · {counts.server}
-          </Badge>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <AnimatePresence mode="popLayout">
+            {counts.local > 0 && (
+              <motion.div
+                key="badge-local"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Badge variant="outline" className="border-gray-300 dark:border-gray-600 bg-white/50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 font-semibold shadow-sm">
+                  <CommandIcon className="mr-1 h-3 w-3" />
+                  Local · {counts.local}
+                </Badge>
+              </motion.div>
+            )}
+            {counts.clientPrompts > 0 && (
+              <motion.div
+                key="badge-client-prompts"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.2, delay: 0.05 }}
+              >
+                <Badge variant="outline" className="border-purple-300 dark:border-purple-600 bg-purple-50/50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 font-semibold shadow-sm">
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  Client · {counts.clientPrompts}
+                </Badge>
+              </motion.div>
+            )}
+            {counts.templates > 0 && (
+              <motion.div
+                key="badge-templates"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.2, delay: 0.1 }}
+              >
+                <Badge variant="outline" className="border-green-300 dark:border-green-600 bg-green-50/50 dark:bg-green-900/20 text-green-700 dark:text-green-300 font-semibold shadow-sm">
+                  <FileText className="mr-1 h-3 w-3" />
+                  Templates · {counts.templates}
+                </Badge>
+              </motion.div>
+            )}
+            {counts.server > 0 && (
+              <motion.div
+                key="badge-server"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.2, delay: 0.15 }}
+              >
+                <Badge className="bg-gradient-to-r from-blue-500 to-blue-600 border-0 text-white font-semibold shadow-md shadow-blue-500/20">
+                  <Server className="mr-1 h-3 w-3" />
+                  MCP · {counts.server}
+                </Badge>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2">
-        <div className="max-h-80 overflow-auto">
+        <div className="max-h-96 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
           {loading ? (
-            <div className="flex items-center gap-2 px-4 py-8 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading slash commands…
-            </div>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-3 px-6 py-12 text-sm text-gray-500 dark:text-gray-400"
+            >
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+              <span className="font-medium">Loading commands...</span>
+            </motion.div>
           ) : items.length === 0 ? (
-            <div className="px-4 py-8">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="px-6 py-12"
+            >
               <PromptLoadingStates isLoading={false} isEmpty />
-            </div>
+            </motion.div>
           ) : (
-            <div id={listId} role="listbox" aria-label="Slash commands" className="divide-y divide-gray-100/80">
-              {sections.map((section) => (
-                <GroupSection
-                  key={section.key}
-                  label={section.label}
-                  description={section.description}
-                  badge={section.badge}
-                  entries={section.entries}
-                  currentIndex={index}
-                  onHover={(idx) => {
-                    setIndex(idx);
-                    setActiveIndex?.(idx);
-                  }}
-                  onSelect={onSelect}
-                  highlight={highlight}
-                  getPromptIcon={getPromptIcon}
-                  query={query}
-                />
-              ))}
+            <div id={listId} role="listbox" aria-label="Slash commands" className="divide-y divide-gray-100/60 dark:divide-gray-700/40">
+              <AnimatePresence mode="popLayout">
+                {sections.map((section) => (
+                  <GroupSection
+                    key={section.key}
+                    label={section.label}
+                    description={section.description}
+                    badge={section.badge}
+                    entries={section.entries}
+                    currentIndex={index}
+                    onHover={(idx) => {
+                      setIndex(idx);
+                      setActiveIndex?.(idx);
+                    }}
+                    onSelect={onSelect}
+                    highlight={highlight}
+                    getPromptIcon={getPromptIcon}
+                    query={query}
+                  />
+                ))}
+              </AnimatePresence>
             </div>
           )}
         </div>
 
-        <div className="hidden max-h-80 overflow-auto border-l border-gray-100/80 bg-white/60 p-3 sm:block">
-          {loading ? (
-            <div className="px-4 py-6">
-              <PromptLoadingStates isLoading />
-            </div>
-          ) : (() => {
-            const current = items[index];
-            if (!current) return null;
-            if (current.mode === "command") {
+        <div className="hidden max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent border-l-2 border-gray-100/80 dark:border-gray-700/40 bg-gradient-to-br from-gray-50/60 via-white/60 to-gray-50/60 dark:from-gray-900/60 dark:via-gray-800/60 dark:to-gray-900/60 p-4 sm:block backdrop-blur-sm">
+          <AnimatePresence mode="wait">
+            {loading ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="px-4 py-6"
+              >
+                <PromptLoadingStates isLoading />
+              </motion.div>
+            ) : (() => {
+              const current = items[index];
+              if (!current) return null;
+              if (current.mode === "command") {
+                return (
+                  <motion.div
+                    key={`command-${current.id}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="space-y-3 px-4 py-4 text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <CommandIcon className="h-5 w-5 text-blue-500" />
+                      <code className="rounded bg-gray-100 dark:bg-gray-800 px-2 py-1 font-mono text-sm font-bold text-gray-900 dark:text-gray-100">
+                        /{current.trigger || current.name}
+                      </code>
+                    </div>
+                    {current.description && (
+                      <p className="text-gray-600 dark:text-gray-400 leading-relaxed">{current.description}</p>
+                    )}
+                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <Zap className="h-3.5 w-3.5 text-green-500" />
+                      <span>Press <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded font-mono text-[10px]">Enter</kbd> to execute</span>
+                    </div>
+                  </motion.div>
+                );
+              }
               return (
-                <div className="space-y-2 px-4 py-4 text-sm text-gray-600">
-                  <div className="font-semibold text-gray-900">/{current.trigger || current.name}</div>
-                  {current.description && <p>{current.description}</p>}
-                  <div className="text-xs text-gray-500">Press Enter to run this local command.</div>
-                </div>
+                <motion.div
+                  key={`prompt-${current.id}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <EnhancedPromptPreview
+                    prompt={current}
+                    values={(() => {
+                      try {
+                        const raw = localStorage.getItem(`prompt:${current.id}:args`);
+                        return raw ? JSON.parse(raw) : {};
+                      } catch {
+                        return {};
+                      }
+                    })()}
+                  />
+                </motion.div>
               );
-            }
-            return (
-              <EnhancedPromptPreview
-                prompt={current}
-                values={(() => {
-                  try {
-                    const raw = localStorage.getItem(`prompt:${current.id}:args`);
-                    return raw ? JSON.parse(raw) : {};
-                  } catch {
-                    return {};
-                  }
-                })()}
-              />
-            );
-          })()}
+            })()}
+          </AnimatePresence>
         </div>
       </div>
 
-      <div className="border-t border-gray-100/80 bg-gray-50/40 px-4 py-2">
-        <div className="flex items-center justify-between text-xs text-gray-400">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs">↑↓</kbd>
-              <span>navigate</span>
+      <div className="border-t-2 border-gray-100/80 dark:border-gray-700/40 bg-gradient-to-r from-gray-50/95 via-white/95 to-gray-50/95 dark:from-gray-900/95 dark:via-gray-800/95 dark:to-gray-900/95 px-5 py-2.5 backdrop-blur-xl">
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs font-bold text-gray-700 dark:text-gray-300 shadow-sm">↑↓</kbd>
+              <span className="font-medium text-gray-600 dark:text-gray-400">navigate</span>
             </div>
-            <div className="flex items-center gap-1">
-              <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs">↵</kbd>
-              <span>select</span>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs font-bold text-gray-700 dark:text-gray-300 shadow-sm">↵</kbd>
+              <span className="font-medium text-gray-600 dark:text-gray-400">select</span>
             </div>
-            <div className="flex items-center gap-1">
-              <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs">esc</kbd>
-              <span>close</span>
+            <div className="flex items-center gap-1.5">
+              <kbd className="rounded-md border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs font-bold text-gray-700 dark:text-gray-300 shadow-sm">esc</kbd>
+              <span className="font-medium text-gray-600 dark:text-gray-400">close</span>
             </div>
           </div>
-          <div className="text-gray-300">Slash Commands</div>
+          <div className="flex items-center gap-2 text-gray-400 dark:text-gray-500">
+            <Clock className="h-3 w-3" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Command Palette</span>
+          </div>
         </div>
       </div>
 
       <PromptHelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
-    </div>
+    </motion.div>
   );
 }
 
@@ -386,86 +497,124 @@ function GroupSection({
 }) {
   if (entries.length === 0) return null;
   return (
-    <div className="py-3">
-      <div className="px-4 pb-2">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
-          <span>{label}</span>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="py-3"
+    >
+      <div className="px-5 pb-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</span>
           {badge && (
-            <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
+            <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider shadow-sm">
               {badge}
             </Badge>
           )}
         </div>
-        {description && <p className="mt-1 text-xs text-gray-400">{description}</p>}
+        {description && <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500 leading-relaxed">{description}</p>}
       </div>
       <ul role="presentation">
-        {entries.map(({ item, index: absoluteIndex }) => (
-          <li
-            key={item.id}
-            role="option"
-            aria-selected={absoluteIndex === currentIndex}
-            className={cn(
-              "cursor-pointer px-4 py-2.5 transition-all",
-              absoluteIndex === currentIndex
-                ? "border-l-2 border-l-blue-400 bg-blue-50/70"
-                : "hover:bg-gray-50"
-            )}
-            onMouseEnter={() => onHover(absoluteIndex)}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onSelect(item);
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex-shrink-0 text-blue-500">{getPromptIcon(item)}</div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-900">
-                    {highlight(item.title, query)}
-                  </span>
-                  <span className="font-mono text-[11px] text-gray-400">
-                    /{item.mode === "command" ? item.name : item.trigger}
-                  </span>
-                  {item.args && item.args.length > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                      {item.args.length} {item.args.length === 1 ? "arg" : "args"}
+        {entries.map(({ item, index: absoluteIndex }) => {
+          const isActive = absoluteIndex === currentIndex;
+          return (
+            <motion.li
+              key={item.id}
+              role="option"
+              aria-selected={isActive}
+              layout
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.15, delay: absoluteIndex * 0.02 }}
+              className={cn(
+                "group relative cursor-pointer px-5 py-3 transition-all duration-200",
+                isActive
+                  ? "border-l-4 border-l-blue-500 dark:border-l-blue-400 bg-gradient-to-r from-blue-50/90 to-blue-50/40 dark:from-blue-900/30 dark:to-blue-900/10 shadow-sm"
+                  : "border-l-4 border-l-transparent hover:border-l-gray-300 dark:hover:border-l-gray-600 hover:bg-gray-50/80 dark:hover:bg-gray-800/50"
+              )}
+              onMouseEnter={() => onHover(absoluteIndex)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onSelect(item);
+              }}
+            >
+              <div className="flex items-start gap-3.5">
+                <motion.div
+                  animate={isActive ? { scale: 1.1, rotate: 5 } : { scale: 1, rotate: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="mt-0.5 flex-shrink-0"
+                >
+                  {getPromptIcon(item)}
+                </motion.div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn(
+                      "text-sm font-semibold transition-colors",
+                      isActive ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-gray-100"
+                    )}>
+                      {highlight(item.title, query)}
                     </span>
-                  )}
-                </div>
-                {item.description && (
-                  <p className="mt-1 line-clamp-2 text-xs text-gray-500">
-                    {highlight(item.description, query)}
-                  </p>
-                )}
-                {item.args && item.args.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {item.args.slice(0, 4).map((arg) => (
-                      <span
-                        key={`${item.id}-arg-${arg.name}`}
-                        className={cn(
-                          "rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
-                          arg.required
-                            ? "border-amber-300 bg-amber-50 text-amber-800"
-                            : "border-gray-200 bg-gray-50 text-gray-500"
-                        )}
-                      >
-                        {arg.required ? "*" : ""}
-                        {arg.name}
-                      </span>
-                    ))}
-                    {item.args.length > 4 && (
-                      <span className="rounded-full border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
-                        +{item.args.length - 4}
+                    <code className={cn(
+                      "rounded-md px-2 py-0.5 font-mono text-[11px] font-bold transition-colors",
+                      isActive
+                        ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                    )}>
+                      /{item.mode === "command" ? item.name : item.trigger}
+                    </code>
+                    {item.args && item.args.length > 0 && (
+                      <span className="rounded-full bg-gradient-to-r from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-900/20 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-700/50">
+                        {item.args.length} {item.args.length === 1 ? "arg" : "args"}
                       </span>
                     )}
                   </div>
-                )}
+                  {item.description && (
+                    <p className={cn(
+                      "line-clamp-2 text-xs leading-relaxed transition-colors",
+                      isActive ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400"
+                    )}>
+                      {highlight(item.description, query)}
+                    </p>
+                  )}
+                  {item.args && item.args.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.args.slice(0, 4).map((arg) => (
+                        <span
+                          key={`${item.id}-arg-${arg.name}`}
+                          className={cn(
+                            "rounded-full border-2 px-2 py-0.5 text-[10px] font-bold transition-all",
+                            arg.required
+                              ? "border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 shadow-sm"
+                              : "border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                          )}
+                        >
+                          {arg.required && <span className="mr-0.5">*</span>}
+                          {arg.name}
+                        </span>
+                      ))}
+                      {item.args.length > 4 && (
+                        <span className="rounded-full border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-2 py-0.5 text-[10px] font-bold text-gray-600 dark:text-gray-400">
+                          +{item.args.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <motion.div
+                  animate={isActive ? { x: 2, opacity: 1 } : { x: 0, opacity: 0.3 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex-shrink-0"
+                >
+                  <ChevronRight className={cn(
+                    "h-5 w-5 transition-colors",
+                    isActive ? "text-blue-500 dark:text-blue-400" : "text-gray-300 dark:text-gray-600"
+                  )} />
+                </motion.div>
               </div>
-              <ChevronRight className="h-4 w-4 text-gray-300" />
-            </div>
-          </li>
-        ))}
+            </motion.li>
+          );
+        })}
       </ul>
-    </div>
+    </motion.div>
   );
 }

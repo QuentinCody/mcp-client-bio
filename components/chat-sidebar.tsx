@@ -443,26 +443,26 @@ export function ChatSidebar() {
                   >
                     <ServerIcon
                       className={cn(
-                        "h-4 w-4 flex-shrink-0",
+                        "h-4 w-4 flex-shrink-0 transition-colors",
                         activeServersCount > 0
-                          ? "text-[#34d399]"
-                          : "text-[#9ca3af]"
+                          ? "text-success"
+                          : "text-muted-foreground"
                       )}
                     />
                     {!isCollapsed && (
-                      <span className="flex-grow text-sm text-[#d1d5db]">
+                      <span className="flex-grow text-sm text-sidebar-foreground font-medium">
                         MCP Servers
                       </span>
                     )}
                     {activeServersCount > 0 && !isCollapsed ? (
                       <Badge
                         variant="secondary"
-                        className="ml-auto h-5 px-1.5 py-0 text-[10px] bg-[#343541] text-[#e5e7eb]"
+                        className="ml-auto h-5 px-2 py-0 text-[10px] bg-gradient-to-r from-success/20 to-success/10 text-success border border-success/30 font-bold dark:from-success/30 dark:to-success/20 dark:border-success/40 dark:shadow-[0_0_8px_rgba(34,197,94,0.25)]"
                       >
                         {activeServersCount}
                       </Badge>
                     ) : activeServersCount > 0 && isCollapsed ? (
-                      <SidebarMenuBadge className="bg-[#343541] text-[#e5e7eb]">
+                      <SidebarMenuBadge className="bg-gradient-to-r from-success/20 to-success/10 text-success border border-success/30 dark:from-success/30 dark:to-success/20 dark:border-success/40 dark:shadow-[0_0_8px_rgba(34,197,94,0.25)]">
                         {activeServersCount}
                       </SidebarMenuBadge>
                     ) : null}
@@ -477,26 +477,26 @@ export function ChatSidebar() {
                   )}>
                     <ServerIcon
                       className={cn(
-                        "h-4 w-4 flex-shrink-0",
+                        "h-4 w-4 flex-shrink-0 transition-colors",
                         activeServersCount > 0
-                          ? "text-[#34d399]"
-                          : "text-[#9ca3af]"
+                          ? "text-success"
+                          : "text-muted-foreground"
                       )}
                     />
                     {!isCollapsed && (
-                      <span className="flex-grow text-sm text-[#d1d5db]">
+                      <span className="flex-grow text-sm text-sidebar-foreground font-medium">
                         MCP Servers
                       </span>
                     )}
                     {activeServersCount > 0 && !isCollapsed ? (
                       <Badge
                         variant="secondary"
-                        className="ml-auto h-5 px-1.5 py-0 text-[10px] bg-[#343541] text-[#e5e7eb]"
+                        className="ml-auto h-5 px-2 py-0 text-[10px] bg-gradient-to-r from-success/20 to-success/10 text-success border border-success/30 font-bold dark:from-success/30 dark:to-success/20 dark:border-success/40 dark:shadow-[0_0_8px_rgba(34,197,94,0.25)]"
                       >
                         {activeServersCount}
                       </Badge>
                     ) : activeServersCount > 0 && isCollapsed ? (
-                      <SidebarMenuBadge className="bg-[#343541] text-[#e5e7eb]">
+                      <SidebarMenuBadge className="bg-gradient-to-r from-success/20 to-success/10 text-success border border-success/30 dark:from-success/30 dark:to-success/20 dark:border-success/40 dark:shadow-[0_0_8px_rgba(34,197,94,0.25)]">
                         {activeServersCount}
                       </SidebarMenuBadge>
                     ) : null}
@@ -516,14 +516,14 @@ export function ChatSidebar() {
             <Button
               variant="default"
               className={cn(
-                "w-full bg-[#343541] text-[#f7f7f8] hover:bg-[#3f414a] active:bg-[#4a4c55] transition-all",
-                isCollapsed ? "h-10 w-10 p-0" : "min-h-[44px]"
+                "w-full bg-gradient-to-r from-primary to-primary/90 text-primary-foreground hover:from-primary/90 hover:to-primary/80 shadow-md hover:shadow-lg transition-all duration-200 border-0 dark:shadow-[0_0_25px_rgba(96,165,250,0.4)] dark:hover:shadow-[0_0_35px_rgba(96,165,250,0.6)]",
+                isCollapsed ? "h-10 w-10 p-0" : "min-h-[48px]"
               )}
               onClick={handleNewChat}
               title={isCollapsed ? "New Chat" : undefined}
             >
-              <PlusCircle className={`${isCollapsed ? "" : "mr-2"} h-4 w-4 flex-shrink-0`} />
-              {!isCollapsed && <span className="text-sm font-medium">New Chat</span>}
+              <PlusCircle className={`${isCollapsed ? "" : "mr-2"} h-4 w-4 flex-shrink-0 dark:drop-shadow-[0_0_4px_rgba(255,255,255,0.8)]`} />
+              {!isCollapsed && <span className="text-sm font-bold">New Chat</span>}
             </Button>
           </motion.div>
 

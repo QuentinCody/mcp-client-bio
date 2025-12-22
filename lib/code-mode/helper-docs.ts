@@ -345,62 +345,247 @@ export function generateUsageExamples(): string {
   return `
 ## Common Usage Examples
 
-### Search for articles
-\`\`\`javascript
-const result = await helpers.entrez.invoke('entrez_query', {
-  operation: 'search',
-  database: 'pubmed',
-  term: 'brain cancer',
-  retmax: 10
-});
-// Access structured data: result.idlist, result.count
-\`\`\`
+### CRITICAL: Use Data Staging for Large Datasets (>100 records)
 
-### Get article summaries
+**❌ WRONG - Loading thousands of records into memory:**
 \`\`\`javascript
-const summary = await helpers.entrez.invoke('entrez_query', {
-  operation: 'summary',
-  database: 'pubmed',
-  ids: '41337800,41337574'
-});
-// Access structured data: summary.data (array of article summaries)
-\`\`\`
-
-### Get article abstracts (CORRECT METHOD)
-\`\`\`javascript
-// Step 1: Search for articles
 const search = await helpers.entrez.invoke('entrez_query', {
   operation: 'search',
   database: 'pubmed',
-  term: 'brain cancer',
-  retmax: 5
+  term: 'cancer',
+  retmax: 5000  // Don't fetch all into context!
+});
+// This wastes tokens and may hit limits
+\`\`\`
+
+**✅ RIGHT - Stage data and use SQL:**
+\`\`\`javascript
+// Step 1: Search (get IDs only)
+const search = await helpers.entrez.invoke('entrez_query', {
+  operation: 'search',
+  database: 'pubmed',
+  term: 'cancer AND 2024[pdat]',
+  retmax: 5000
 });
 
-// Step 2: Fetch and stage full article data with abstracts
+// Step 2: Stage the data in SQLite
+const staged = await helpers.entrez.invoke('entrez_data', {
+  operation: 'fetch_and_stage',
+  database: 'pubmed',
+  ids: search.idlist.join(',')  // Can handle 1000+ IDs
+});
+
+// Step 3: Use SQL to aggregate/filter (runs server-side!)
+const byJournal = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: \`
+    SELECT
+      journal,
+      COUNT(*) as count,
+      AVG(CAST(citation_count AS REAL)) as avg_citations
+    FROM article
+    WHERE journal IS NOT NULL
+    GROUP BY journal
+    ORDER BY count DESC
+    LIMIT 20
+  \`
+});
+
+// Only the top 20 journals returned - much smaller!
+return byJournal.results;
+\`\`\`
+
+### Pattern: Search → Stage → Query with SQL
+
+This is the MOST IMPORTANT pattern for large-scale data work:
+
+\`\`\`javascript
+// 1. Search for IDs
+const search = await helpers.entrez.invoke('entrez_query', {
+  operation: 'search',
+  database: 'pubmed',
+  term: 'CRISPR AND therapy',
+  retmax: 1000
+});
+
+console.log(\`Found \${search.count} papers, fetching \${search.idlist.length}\`);
+
+// 2. Stage full data
 const staged = await helpers.entrez.invoke('entrez_data', {
   operation: 'fetch_and_stage',
   database: 'pubmed',
   ids: search.idlist.join(',')
 });
 
-// Step 3: Query the staged data for abstracts
-const abstracts = await helpers.entrez.invoke('entrez_data', {
+console.log(\`Staged \${staged.row_count} articles in table: \${staged.table}\`);
+
+// 3. Query with SQL - examples:
+
+// Get recent highly-cited papers
+const topPapers = await helpers.entrez.invoke('entrez_data', {
   operation: 'query',
   data_access_id: staged.data_access_id,
-  sql: 'SELECT pmid, title, abstract FROM article'
+  sql: \`
+    SELECT pmid, title, journal, pub_date, citation_count
+    FROM article
+    WHERE citation_count > 10
+    AND pub_date >= '2023-01-01'
+    ORDER BY citation_count DESC
+    LIMIT 50
+  \`
 });
-// Access: abstracts.results[0].abstract
+
+// Get papers WITH abstracts containing specific terms
+const relevantPapers = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: \`
+    SELECT pmid, title, abstract
+    FROM article
+    WHERE abstract LIKE '%clinical trial%'
+    AND abstract IS NOT NULL
+    LIMIT 100
+  \`
+});
+
+// Temporal analysis
+const byYear = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: \`
+    SELECT
+      strftime('%Y', pub_date) as year,
+      COUNT(*) as paper_count
+    FROM article
+    WHERE pub_date IS NOT NULL
+    GROUP BY year
+    ORDER BY year DESC
+  \`
+});
+
+return { topPapers, relevantPapers, byYear };
 \`\`\`
 
-### Inspect tool parameters
+### Multi-Database Integration
+
+Combining data from multiple sources:
+
 \`\`\`javascript
-// See all required and optional parameters for a tool
-const schema = await helpers.entrez.getToolSchema('entrez_query');
-console.log('Required:', schema.required.map(p => p.name));
-console.log('Optional:', schema.optional.map(p => p.name));
+// Get gene variants from CIViC
+const civicVariants = await helpers.civic.invoke('search_variants', {
+  gene: 'TP53',
+  disease: 'cancer'
+});
+
+// Get clinical trials
+const trials = await helpers.clinicaltrials.invoke('mcp_clinicaltrial_ctgov_search_studies', {
+  query_intr: 'TP53',
+  query_cond: 'cancer',
+  recrs: 'open',
+  pageSize: 500,
+  jq_filter: '.'
+});
+
+// If trials are numerous, they may be staged
+if (trials.data_access_id) {
+  // Query only phase 3 trials
+  const phase3 = await helpers.clinicaltrials.invoke('mcp_clinicaltrial_ctgov_query_data', {
+    data_access_id: trials.data_access_id,
+    sql: \`
+      SELECT nct_id, title, phase, status
+      FROM studies
+      WHERE phase = '3'
+      ORDER BY start_date DESC
+      LIMIT 50
+    \`
+  });
+
+  return {
+    variants: civicVariants,
+    total_trials: trials.totalCount,
+    phase3_trials: phase3.results
+  };
+}
 \`\`\`
 
-### Search clinical trials
+### Advanced SQL Techniques
+
+**Window functions for ranking:**
+\`\`\`javascript
+const ranked = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: \`
+    SELECT
+      pmid,
+      title,
+      citation_count,
+      ROW_NUMBER() OVER (ORDER BY citation_count DESC) as rank,
+      PERCENT_RANK() OVER (ORDER BY citation_count) as percentile
+    FROM article
+    WHERE citation_count > 0
+    ORDER BY rank
+    LIMIT 100
+  \`
+});
+\`\`\`
+
+**Common Table Expressions (CTEs) for complex queries:**
+\`\`\`javascript
+const analysis = await helpers.entrez.invoke('entrez_data', {
+  operation: 'query',
+  data_access_id: staged.data_access_id,
+  sql: \`
+    WITH recent AS (
+      SELECT * FROM article WHERE pub_date >= '2023-01-01'
+    ),
+    highly_cited AS (
+      SELECT * FROM recent WHERE citation_count > 50
+    )
+    SELECT
+      journal,
+      COUNT(*) as count,
+      AVG(citation_count) as avg_citations
+    FROM highly_cited
+    GROUP BY journal
+    HAVING count >= 3
+    ORDER BY avg_citations DESC
+  \`
+});
+\`\`\`
+
+**JSON extraction (when metadata is stored as JSON):**
+\`\`\`javascript
+const parsed = await helpers.server.invoke('query_staged', {
+  data_access_id: staged.data_access_id,
+  sql: \`
+    SELECT
+      id,
+      json_extract(metadata, '$.author') as author,
+      json_extract(metadata, '$.year') as year
+    FROM publications
+    WHERE CAST(json_extract(metadata, '$.year') AS INTEGER) >= 2020
+  \`
+});
+\`\`\`
+
+### When to Use Staging vs Direct Queries
+
+**Use staging when:**
+- Working with >100 records
+- Need filtering, aggregation, or sorting
+- Performing multi-step analysis
+- Combining data from multiple queries
+- Need to reference same dataset multiple times
+
+**Direct queries when:**
+- Need <20 records
+- Simple ID lookup
+- Quick exploratory search
+- Only need metadata/counts
+
+### Search clinical trials (simple case)
 \`\`\`javascript
 const trials = await helpers.clinicaltrials.invoke('mcp_clinicaltrial_ctgov_search_studies', {
   query_cond: 'breast cancer',
@@ -409,13 +594,17 @@ const trials = await helpers.clinicaltrials.invoke('mcp_clinicaltrial_ctgov_sear
   pageSize: 20,
   jq_filter: '.'
 });
+// For small result sets, data is returned directly
 \`\`\`
 
 **Important Notes:**
+- **ALWAYS use data staging for >100 records** - it's designed for this!
+- Use SQL for filtering/aggregation instead of JavaScript loops
+- Staged data persists for ~1-2 hours in session
+- SQL runs server-side, saving tokens and memory
 - Always use exact parameter names from schema (e.g., 'term' not 'query', 'ids' not 'id')
-- Use helpers.serverName.getToolSchema(toolName) when unsure about parameters
 - Structured responses provide direct data access (no regex parsing needed)
-- Check result.success to verify operation succeeded
+- See docs/large-scale-data-workflows.md for comprehensive patterns
 `.trim();
 }
 

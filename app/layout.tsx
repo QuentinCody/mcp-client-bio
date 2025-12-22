@@ -72,8 +72,8 @@ export default function RootLayout({
               <div className="relative z-20 flex flex-1 min-h-0 flex-col bg-[#ffffff] shadow-[0_-1px_0_#e3e3e3] dark:bg-[#111111]">
                 <div className="absolute left-4 top-4 z-30 md:hidden">
                   <SidebarTrigger>
-                    <button className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e5e5e5] bg-white/98 text-[#1f2937] shadow-sm backdrop-blur-md transition-all duration-200 hover:bg-[#f9fafb] hover:border-[#d1d5db] active:scale-95 active:bg-[#f3f4f6] dark:border-[#2b2b2b] dark:bg-[#1a1a1a]/98 dark:text-[#e5e7eb] dark:hover:bg-[#232323] dark:hover:border-[#333]">
-                      <Menu className="h-[18px] w-[18px]" />
+                    <button className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 text-primary shadow-md backdrop-blur-md transition-all duration-200 hover:shadow-lg hover:scale-110 hover:border-primary/40 active:scale-95 dark:border-primary/50 dark:from-primary/20 dark:to-primary/10 dark:shadow-[0_0_20px_rgba(96,165,250,0.3)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.5)]">
+                      <Menu className="h-[18px] w-[18px] dark:drop-shadow-[0_0_4px_rgba(96,165,250,0.8)]" />
                     </button>
                   </SidebarTrigger>
                 </div>

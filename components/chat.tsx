@@ -557,15 +557,15 @@ export default function Chat() {
 
   const mobileStatusTone = (() => {
     if (status === "streaming") {
-      return "bg-[#dcfce7] text-[#047857] dark:bg-[#064e3b] dark:text-[#34d399]";
+      return "bg-gradient-to-r from-success/10 to-success/5 text-success border border-success/20 shadow-sm dark:from-success/20 dark:to-success/10 dark:border-success/30";
     }
     if (status === "submitted") {
-      return "bg-[#fef9c3] text-[#854d0e] dark:bg-[#713f12] dark:text-[#fcd34d]";
+      return "bg-gradient-to-r from-warning/10 to-warning/5 text-warning border border-warning/20 shadow-sm dark:from-warning/20 dark:to-warning/10 dark:border-warning/30";
     }
     if (status === "error") {
-      return "bg-[#fee2e2] text-[#b91c1c] dark:bg-[#7f1d1d] dark:text-[#fecaca]";
+      return "bg-gradient-to-r from-destructive/10 to-destructive/5 text-destructive border border-destructive/20 shadow-sm dark:from-destructive/20 dark:to-destructive/10 dark:border-destructive/30";
     }
-    return "bg-[#e0f2fe] text-[#0369a1] dark:bg-[#1e3a8a]/40 dark:text-[#93c5fd]";
+    return "bg-gradient-to-r from-info/10 to-info/5 text-info border border-info/20 shadow-sm dark:from-info/20 dark:to-info/10 dark:border-info/30";
   })();
 
   const serverSummary =
@@ -596,13 +596,13 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => setIsModelSheetOpen(true)}
-                  className="flex w-full items-center justify-between rounded-full border border-[#e5e5e5] bg-white px-4 py-2.5 text-left text-[15px] font-semibold text-[#1f2937] shadow-sm transition-all duration-200 hover:border-[#d1d5db] hover:bg-[#f9fafb] active:scale-[0.98] active:bg-[#f3f4f6] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f3f4f6] dark:hover:border-[#333] dark:hover:bg-[#1a1a1a]"
+                  className="flex w-full items-center justify-between rounded-full border border-border bg-gradient-to-r from-card to-card/80 px-4 py-2.5 text-left text-[15px] font-semibold text-foreground shadow-md backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] min-h-[48px] dark:border-border/60 dark:shadow-[0_0_15px_rgba(96,165,250,0.15)] dark:hover:shadow-[0_0_25px_rgba(96,165,250,0.25)]"
                 >
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <Sparkles className="h-[18px] w-[18px] flex-shrink-0 text-[#0ea5e9] dark:text-[#38bdf8]" />
-                    <span className="truncate font-medium">{mobileModelName}</span>
+                    <Sparkles className="h-[18px] w-[18px] flex-shrink-0 text-primary animate-pulse dark:drop-shadow-[0_0_6px_rgba(96,165,250,0.8)]" />
+                    <span className="truncate font-bold">{mobileModelName}</span>
                   </span>
-                  <ChevronsDown className="h-4 w-4 flex-shrink-0 text-[#9ca3af] dark:text-[#6b7280]" />
+                  <ChevronsDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                 </button>
               </div>
               <span
@@ -632,12 +632,25 @@ export default function Chat() {
           >
             {showWelcomeState ? (
               <div className="flex h-full items-center justify-center px-4 sm:px-6 py-12 sm:py-16">
-                <div className="w-full max-w-2xl space-y-6 sm:space-y-8 text-center">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className="w-full max-w-2xl space-y-6 sm:space-y-8 text-center"
+                >
                   <div className="space-y-3 sm:space-y-4">
-                    <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold bg-gradient-to-br from-[#111827] via-[#1f2937] to-[#374151] bg-clip-text text-transparent dark:from-[#f9fafb] dark:via-[#e5e7eb] dark:to-[#d1d5db] leading-tight">
+                    <motion.div
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.1, duration: 0.5 }}
+                      className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 mb-4 rounded-2xl bg-gradient-to-br from-primary via-primary/90 to-primary/70 shadow-lg ring-4 ring-primary/20 dark:ring-primary/40 dark:shadow-[0_0_40px_rgba(96,165,250,0.5)]"
+                    >
+                      <Sparkles className="h-8 w-8 sm:h-10 sm:w-10 text-primary-foreground dark:drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+                    </motion.div>
+                    <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold bg-gradient-to-br from-primary via-accent to-primary/70 bg-clip-text text-transparent leading-tight">
                       Bio MCP Chat
                     </h1>
-                    <p className="text-sm sm:text-base text-[#6b7280] dark:text-[#9ca3af] max-w-md mx-auto">
+                    <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto font-medium">
                       {modelInfo
                         ? `Powered by ${modelInfo.name}${
                             serverStatusCounts.total > 0
@@ -648,18 +661,23 @@ export default function Chat() {
                     </p>
                   </div>
                   {serverStatusCounts.total === 0 && (
-                    <div className="flex items-center justify-center pt-4">
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3, duration: 0.5 }}
+                      className="flex items-center justify-center pt-4"
+                    >
                       <Button
-                        variant="outline"
+                        variant="default"
                         onClick={openServerManager}
-                        className="gap-2 border-[#d4d4d4] bg-white text-[#202123] hover:bg-[#f2f2f2] hover:border-[#bfbfbf] dark:border-[#2b2b2b] dark:bg-[#141414] dark:text-[#f7f7f8] dark:hover:bg-[#1f1f1f] min-h-[48px] px-6 sm:px-8 rounded-full shadow-sm active:scale-95 transition-all"
+                        className="gap-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground hover:from-primary/90 hover:to-primary/80 min-h-[48px] px-6 sm:px-8 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 border-0 font-semibold dark:shadow-[0_0_30px_rgba(96,165,250,0.4)] dark:hover:shadow-[0_0_40px_rgba(96,165,250,0.6)]"
                       >
                         <ServerIcon className="h-5 w-5" />
-                        <span className="text-sm sm:text-base font-medium">Connect Servers</span>
+                        <span className="text-sm sm:text-base">Connect Servers</span>
                       </Button>
-                    </div>
+                    </motion.div>
                   )}
-                </div>
+                </motion.div>
               </div>
             ) : (
               <Messages
@@ -683,10 +701,10 @@ export default function Chat() {
             exit={{ opacity: 0, scale: 0.8, y: 10 }}
             transition={{ duration: 0.2 }}
             onClick={() => scrollToBottom("smooth")}
-            className="group absolute bottom-[140px] sm:bottom-24 right-3 sm:right-6 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-background px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-medium text-foreground shadow-lg backdrop-blur-md transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:shadow-xl active:scale-95 min-h-[40px] sm:min-h-0"
+            className="group absolute bottom-[140px] sm:bottom-24 right-3 sm:right-6 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border-2 border-primary/30 bg-gradient-to-r from-primary/10 to-primary/5 px-3 sm:px-4 py-2.5 text-[11px] sm:text-xs font-bold text-primary shadow-lg backdrop-blur-md transition-all hover:-translate-y-1 hover:shadow-xl hover:scale-105 active:scale-95 min-h-[40px] sm:min-h-0 dark:border-primary/40 dark:from-primary/20 dark:to-primary/10 dark:shadow-[0_0_20px_rgba(96,165,250,0.3)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.5)]"
             aria-label="Scroll to bottom to follow conversation"
           >
-            <ArrowDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground transition-colors group-hover:text-primary flex-shrink-0" />
+            <ArrowDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-bounce flex-shrink-0 dark:drop-shadow-[0_0_4px_rgba(96,165,250,0.8)]" />
             <span className="hidden xs:inline">{status === "streaming" ? "Follow stream" : "Resume live view"}</span>
           </motion.button>
         )}
@@ -779,10 +797,10 @@ export default function Chat() {
             exit={{ opacity: 0, scale: 0.8, x: -10 }}
             transition={{ duration: 0.2 }}
             onClick={handleNewChat}
-            className="group flex h-12 w-12 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#374151] shadow-lg backdrop-blur-md transition-all hover:bg-[#f9fafb] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#1a1a1a] dark:text-[#e5e5e5] dark:hover:bg-[#252525]"
+            className="group flex h-12 w-12 items-center justify-center rounded-full border-2 border-primary/30 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg backdrop-blur-md transition-all hover:shadow-xl hover:scale-110 active:scale-95 dark:border-primary/50 dark:shadow-[0_0_25px_rgba(96,165,250,0.5)] dark:hover:shadow-[0_0_35px_rgba(96,165,250,0.7)]"
             aria-label="New chat"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-5 w-5 dark:drop-shadow-[0_0_4px_rgba(255,255,255,0.8)]" />
           </motion.button>
           <motion.button
             key="servers-mobile"
@@ -792,10 +810,15 @@ export default function Chat() {
             exit={{ opacity: 0, scale: 0.8, x: -10 }}
             transition={{ duration: 0.2, delay: 0.05 }}
             onClick={openServerManager}
-            className="group flex h-12 w-12 items-center justify-center rounded-full border border-[#e5e5e5] bg-white text-[#374151] shadow-lg backdrop-blur-md transition-all hover:bg-[#f9fafb] active:scale-95 dark:border-[#2b2b2b] dark:bg-[#1a1a1a] dark:text-[#e5e5e5] dark:hover:bg-[#252525]"
+            className="group flex h-12 w-12 items-center justify-center rounded-full border-2 border-border bg-gradient-to-br from-card to-card/80 text-foreground shadow-lg backdrop-blur-md transition-all hover:shadow-xl hover:scale-110 active:scale-95 dark:border-border/60 dark:shadow-[0_0_20px_rgba(96,165,250,0.2)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.35)]"
             aria-label="MCP Servers"
           >
-            <ServerIcon className="h-5 w-5" />
+            <ServerIcon className={cn(
+              "h-5 w-5 transition-colors",
+              serverStatusCounts.online > 0
+                ? "text-success dark:drop-shadow-[0_0_6px_rgba(34,197,94,0.9)]"
+                : "text-muted-foreground"
+            )} />
           </motion.button>
         </AnimatePresence>
       </div>

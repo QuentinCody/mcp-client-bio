@@ -57,15 +57,15 @@ export function ReasoningMessagePart({
         <div className="space-y-2">
           <div
             className={cn(
-              "flex items-center gap-2 sm:gap-2.5 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-2.5 sm:px-3 py-1.5 text-[#1d4ed8]",
-              "dark:border-[#1e3a8a] dark:bg-[#1e3a8a]/30 dark:text-[#bfdbfe]",
+              "flex items-center gap-2 sm:gap-2.5 rounded-full border border-info/20 bg-gradient-to-r from-info/10 to-info/5 px-3 sm:px-4 py-2 shadow-sm backdrop-blur-sm",
+              "dark:border-info/40 dark:from-info/25 dark:to-info/15 dark:shadow-[0_0_15px_rgba(56,189,248,0.3)]",
               "w-fit"
             )}
           >
-            <div className="animate-spin h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0">
+            <div className="animate-spin h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0 text-info dark:drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]">
               <SpinnerIcon />
             </div>
-            <div className="text-[11px] sm:text-xs font-medium tracking-tight">Thinking...</div>
+            <div className="text-[11px] sm:text-xs font-bold tracking-tight text-info">Thinking...</div>
           </div>
           {/* Show reasoning content immediately while thinking */}
           {detailItems.length > 0 && (
@@ -209,10 +209,10 @@ const PurePreviewMessage = ({
     : null;
 
   const bubbleClassName = cn(
-    "relative max-w-[95%] sm:max-w-[90%] rounded-xl border px-3 py-3 sm:px-5 sm:py-4 shadow-sm transition-colors",
+    "relative max-w-[95%] sm:max-w-[90%] rounded-2xl border px-3 py-3 sm:px-5 sm:py-4 shadow-md transition-all duration-200 will-change-transform hover:shadow-lg",
     isUser
-      ? "border-[#d4d4d4] bg-[#f4f4f5] text-[#1f2933] dark:border-[#2b2b2b] dark:bg-[#1c1c1c] dark:text-[#f3f4f6]"
-      : "border-[#e3e3e3] bg-white text-[#1b1b1f] dark:border-[#252525] dark:bg-[#141414] dark:text-[#f7f7f8]"
+      ? "border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 text-foreground backdrop-blur-sm dark:border-primary/40 dark:from-primary/15 dark:to-primary/8 dark:shadow-[0_0_20px_rgba(96,165,250,0.15)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.25)]"
+      : "border-border/50 bg-gradient-to-br from-card to-card/80 text-card-foreground backdrop-blur-sm dark:border-border/40 dark:from-card dark:to-card/90 dark:shadow-[0_0_20px_rgba(96,165,250,0.08)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.15)]"
   );
 
   const headerClassName = cn(
@@ -240,13 +240,13 @@ const PurePreviewMessage = ({
         <div className="relative flex flex-col items-center pt-0.5 sm:pt-1">
           <Avatar
             className={cn(
-              "h-7 w-7 sm:h-9 sm:w-9 border border-transparent text-sm font-semibold uppercase tracking-wide shadow-lg ring-1 ring-black/5 transition-transform duration-200 group-hover/message:scale-[1.02] dark:ring-white/10",
+              "h-7 w-7 sm:h-9 sm:w-9 border-2 text-sm font-semibold uppercase tracking-wide shadow-lg ring-2 transition-all duration-300 will-change-transform group-hover/message:scale-110 group-hover/message:shadow-xl",
               isUser
-                ? "bg-[#4b5563] text-white dark:bg-[#374151]"
-                : "bg-[#1f7aec] text-white dark:bg-[#2563eb]"
+                ? "border-primary/30 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground ring-primary/20 dark:border-primary/50 dark:ring-primary/40 dark:shadow-[0_0_20px_rgba(96,165,250,0.4)] dark:group-hover/message:shadow-[0_0_30px_rgba(96,165,250,0.6)]"
+                : "border-accent/30 bg-gradient-to-br from-accent via-accent/90 to-accent/70 text-accent-foreground ring-accent/20 dark:border-accent/50 dark:ring-accent/40 dark:shadow-[0_0_20px_rgba(34,211,238,0.4)] dark:group-hover/message:shadow-[0_0_30px_rgba(34,211,238,0.6)]"
             )}
           >
-            <AvatarFallback className="text-[9px] sm:text-[10px] font-semibold uppercase">
+            <AvatarFallback className="text-[9px] sm:text-[10px] font-bold uppercase bg-transparent">
               {isUser ? "You" : "AI"}
             </AvatarFallback>
           </Avatar>
@@ -263,14 +263,14 @@ const PurePreviewMessage = ({
               {speakerLabel}
             </span>
             {!isUser && (
-              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-transparent bg-[#e0f2fe] px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-[#0369a1] dark:bg-[#1e40af]/30 dark:text-[#93c5fd]">
-                <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-accent/20 bg-gradient-to-r from-accent/10 to-accent/5 px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-accent shadow-sm backdrop-blur-sm dark:border-accent/40 dark:from-accent/25 dark:to-accent/15 dark:shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 animate-pulse dark:drop-shadow-[0_0_4px_rgba(34,211,238,0.8)]" />
                 <span className="hidden xs:inline">Assistant</span>
               </span>
             )}
             {streamingLabel && (
-              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-transparent bg-[#d1fae5] px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] text-[#047857] dark:bg-[#064e3b] dark:text-[#34d399]">
-                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-[#047857] dark:bg-[#34d399]" />
+              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-success/20 bg-gradient-to-r from-success/10 to-success/5 px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-success shadow-sm backdrop-blur-sm dark:border-success/40 dark:from-success/25 dark:to-success/15 dark:shadow-[0_0_12px_rgba(34,197,94,0.3)]">
+                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)] dark:shadow-[0_0_12px_rgba(34,197,94,0.9)]" />
                 <span className="hidden xs:inline">{streamingLabel}</span>
               </span>
             )}
@@ -316,7 +316,7 @@ const PurePreviewMessage = ({
                     <div key={key} className="relative">
                       <Markdown>{part.text}</Markdown>
                       {isStreamingText && (
-                        <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-[#34d399] dark:bg-[#10b981]" />
+                        <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-success dark:bg-success dark:shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
                       )}
                     </div>
                   );

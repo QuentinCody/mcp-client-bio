@@ -4,16 +4,84 @@
  */
 
 import type { MCPServerConfig } from '@/lib/mcp-client';
+import {
+  extractStructuredData,
+  validateStructuredContent,
+  type EnforcementOptions,
+} from './structured-content-enforcer';
+import { generateSQLHelpersImplementation } from './sql-helpers';
 
 /**
  * Generate helpers implementation with integrated response transformation
  */
 export function generateTransformingHelpersImplementation(
   serverToolMap: Map<string, { config: MCPServerConfig; tools: Record<string, any> }>,
-  aliasMap: Record<string, string> = {}
+  aliasMap: Record<string, string> = {},
+  options: { enforceStructuredContent?: boolean; strictMode?: boolean } = {}
 ): string {
+  const { enforceStructuredContent = true, strictMode = false } = options;
+
   const lines: string[] = [
-    '// Response transformation utilities',
+    '// structuredContent Enforcement & Response Transformation',
+    '// Auto-generated from lib/code-mode/structured-content-enforcer.ts',
+    '',
+    'function validateStructuredContent(response, serverKey, toolName) {',
+    '  const issues = [];',
+    '  const metadata = { serverKey, toolName };',
+    '  ',
+    '  if (!response || typeof response !== "object") {',
+    '    return {',
+    '      isValid: false,',
+    '      hasStructuredContent: false,',
+    '      contentType: "unknown",',
+    '      issues: [{ severity: "error", code: "INVALID_RESPONSE", message: "Response is not a valid object" }]',
+    '    };',
+    '  }',
+    '  ',
+    '  metadata.responseKeys = Object.keys(response);',
+    '  const hasStructuredContent = "structuredContent" in response;',
+    '  ',
+    '  if (!hasStructuredContent) {',
+    '    issues.push({',
+    '      severity: ' + (strictMode ? '"error"' : '"warning"') + ',',
+    '      code: "MISSING_STRUCTURED_CONTENT",',
+    '      message: "Response does not contain structuredContent field"',
+    '    });',
+    '  }',
+    '  ',
+    '  if (hasStructuredContent && typeof response.structuredContent !== "object") {',
+    '    issues.push({',
+    '      severity: "error",',
+    '      code: "INVALID_STRUCTURED_CONTENT_TYPE",',
+    '      message: "structuredContent must be an object"',
+    '    });',
+    '  }',
+    '  ',
+    '  let contentType = "unknown";',
+    '  if (hasStructuredContent && typeof response.structuredContent === "object") {',
+    '    contentType = "structured";',
+    '  } else if (response.content?.[0]?.type === "text") {',
+    '    const text = response.content[0].text || "";',
+    '    if (text.includes("```json") || text.trim().startsWith("{")) {',
+    '      contentType = "json";',
+    '    } else if (text.includes("##") || text.includes("**")) {',
+    '      contentType = "markdown";',
+    '    } else {',
+    '      contentType = "text";',
+    '    }',
+    '  }',
+    '  ',
+    '  const isValid = issues.filter(i => i.severity === "error").length === 0;',
+    '  ',
+    '  return {',
+    '    isValid: hasStructuredContent && isValid,',
+    '    hasStructuredContent,',
+    '    contentType,',
+    '    issues,',
+    '    metadata',
+    '  };',
+    '}',
+    '',
     'function detectError(response) {',
     '  if (response?.isError === true) return true;',
     '  const text = response?.content?.[0]?.text || "";',
@@ -167,17 +235,29 @@ export function generateTransformingHelpersImplementation(
     '  return null;',
     '}',
     '',
-    'function transformResponse(response, toolName) {',
+    'function transformResponse(response, toolName, serverKey) {',
     '  // If already in good format, pass through',
     '  if (response?.ok !== undefined || response?.data !== undefined) {',
     '    return { ok: response.ok ?? !response.error, data: response.data ?? response, error: response.error };',
     '  }',
     '',
+    '  // Validate structuredContent compliance',
+    '  const validation = validateStructuredContent(response, serverKey, toolName);',
+    '  ',
+    '  // Log warnings for non-compliant responses',
+    '  for (const issue of validation.issues) {',
+    '    if (issue.severity === "error") {',
+    '      console.error(`[structuredContent] ${serverKey}.${toolName}: ${issue.code} - ${issue.message}`);',
+    '    } else if (issue.severity === "warning") {',
+    '      console.warn(`[structuredContent] ${serverKey}.${toolName}: ${issue.code} - ${issue.message}`);',
+    '    }',
+    '  }',
+    '',
     '  // PRIORITY: Check for structuredContent first (MCP spec)',
     '  // This is the primary way servers return structured data for Code Mode',
-    '  if (response?.structuredContent && typeof response.structuredContent === "object") {',
+    '  if (validation.hasStructuredContent && validation.isValid) {',
     '    const structured = response.structuredContent;',
-    '    console.log("[transformResponse] Found structuredContent:", Object.keys(structured).slice(0, 10));',
+    '    console.log("[transformResponse] ✓ Found valid structuredContent:", Object.keys(structured).slice(0, 10));',
     '',
     '    // Check if it\'s an error in structured format',
     '    if (structured.success === false || structured.error) {',
@@ -187,26 +267,24 @@ export function generateTransformingHelpersImplementation(
     '          code: structured.code || structured.error?.code || "STRUCTURED_ERROR",',
     '          message: structured.message || structured.error?.message || "Tool execution failed",',
     '          details: structured',
-    '        }',
+    '        },',
+    '        _validation: validation',
     '      };',
     '    }',
     '',
     '    // Return structured data directly (this is what Code Mode needs!)',
     '    console.log("[transformResponse] Returning structured data with keys:", Object.keys(structured).slice(0, 10));',
-    '    return { ok: true, data: structured };',
+    '    return { ok: true, data: structured, _validation: validation };',
     '  }',
     '  ',
-    '  // DEBUG: Log what we received if no structuredContent',
-    '  if (response) {',
-    '    console.log("[transformResponse] No structuredContent found. Response keys:", Object.keys(response).slice(0, 10));',
-    '    if (response.content?.[0]) {',
-    '      console.log("[transformResponse] First content item:", Object.keys(response.content[0]));',
-    '    }',
+    '  // FALLBACK: Handle non-compliant responses',
+    '  if (!validation.hasStructuredContent) {',
+    '    console.warn(`[transformResponse] ⚠ ${serverKey}.${toolName}: Missing structuredContent, using fallback parsing`);',
     '  }',
     '',
     '  // Check for errors',
     '  if (detectError(response)) {',
-    '    return { ok: false, error: extractError(response), _raw: response };',
+    '    return { ok: false, error: extractError(response), _raw: response, _validation: validation };',
     '  }',
     '',
     '  const text = response?.content?.[0]?.text || "";',
@@ -317,7 +395,7 @@ export function generateTransformingHelpersImplementation(
     lines.push(`      throw new Error('MCP tool invocation not available');`);
     lines.push(`    }`);
     lines.push(`    const rawResponse = await __invokeMCPTool('${serverKey}', toolName, args);`);
-    lines.push(`    const transformed = transformResponse(rawResponse, toolName);`);
+    lines.push(`    const transformed = transformResponse(rawResponse, toolName, '${serverKey}');`);
     lines.push(`    if (!transformed.ok && options.throwOnError !== false) {`);
     lines.push(`      const errMsg = transformed.error?.message || 'Tool execution failed';`);
     lines.push(`      const err = new Error(errMsg);`);
@@ -326,6 +404,7 @@ export function generateTransformingHelpersImplementation(
     lines.push(`      err.toolName = toolName;`);
     lines.push(`      err.server = '${serverKey}';`);
     lines.push(`      err.args = args;`);
+    lines.push(`      err.validation = transformed._validation;`);
     lines.push(`      throw err;`);
     lines.push(`    }`);
     lines.push(`    return options.returnFormat === 'raw' ? rawResponse : transformed.data;`);
@@ -334,10 +413,11 @@ export function generateTransformingHelpersImplementation(
     // getData - automatic staging handling
     lines.push(`  async getData(toolName, args) {`);
     lines.push(`    const rawResponse = await __invokeMCPTool('${serverKey}', toolName, args);`);
-    lines.push(`    const transformed = transformResponse(rawResponse, toolName);`);
+    lines.push(`    const transformed = transformResponse(rawResponse, toolName, '${serverKey}');`);
     lines.push(`    if (!transformed.ok) {`);
     lines.push(`      const err = new Error(transformed.error?.message || 'Tool execution failed');`);
     lines.push(`      err.code = transformed.error?.code;`);
+    lines.push(`      err.validation = transformed._validation;`);
     lines.push(`      throw err;`);
     lines.push(`    }`);
     lines.push(`    // If data is staged, automatically query it`);
@@ -354,10 +434,11 @@ export function generateTransformingHelpersImplementation(
     lines.push(`      data_access_id: dataAccessId,`);
     lines.push(`      sql`);
     lines.push(`    });`);
-    lines.push(`    const transformed = transformResponse(rawResponse, 'data_manager');`);
+    lines.push(`    const transformed = transformResponse(rawResponse, 'data_manager', '${serverKey}');`);
     lines.push(`    if (!transformed.ok) {`);
     lines.push(`      const err = new Error(transformed.error?.message || 'Query failed');`);
     lines.push(`      err.code = transformed.error?.code;`);
+    lines.push(`      err.validation = transformed._validation;`);
     lines.push(`      if (err.code === 'TABLE_NOT_FOUND' && transformed.error?.details?.originalText) {`);
     lines.push(`        err.message += ' (Tip: Use queryStagedData to list available tables)';`);
     lines.push(`      }`);
@@ -383,6 +464,9 @@ export function generateTransformingHelpersImplementation(
   lines.push('');
   lines.push('// Export helpers');
   lines.push('globalThis.helpers = helpers;');
+  lines.push('');
+  lines.push('// SQL Query Helpers for working with staged data');
+  lines.push(generateSQLHelpersImplementation());
 
   return lines.join('\n');
 }
