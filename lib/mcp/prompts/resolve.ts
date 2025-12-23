@@ -55,7 +55,8 @@ export async function resolvePromptsForInput(
   const entries: ResolvedPromptEntry[] = [];
 
   for (const t of tokens) {
-    try { console.log('[PROMPT RESOLVE] token', t.trigger); } catch {}
+    // Prompt resolution log commented out - not relevant to JSON response debugging
+    // try { console.log('[PROMPT RESOLVE] token', t.trigger); } catch {}
     const def = promptRegistry.getByTrigger(t.trigger);
     if (!def) continue;
     const vars = argState?.def.id === def.id
@@ -64,7 +65,7 @@ export async function resolvePromptsForInput(
 
     let messages: ResolvedPromptMessage[] = [];
     if (def.mode === "template" && def.template) {
-      try { console.log('[PROMPT RESOLVE] using template for', def.id); } catch {}
+      // try { console.log('[PROMPT RESOLVE] using template for', def.id); } catch {}
       messages = renderPrompt(def, vars).map((m) => ({
         role: m.role,
         content: [{ type: 'text', text: m.content } as MCPPromptContent],
@@ -79,7 +80,7 @@ export async function resolvePromptsForInput(
         }
 
         if (!promptMessages && server) {
-          try { console.log('[PROMPT RESOLVE] fallback fetch for server prompt', def.name, 'from', server.url); } catch {}
+          // try { console.log('[PROMPT RESOLVE] fallback fetch for server prompt', def.name, 'from', server.url); } catch {}
           const res = await fetch('/api/mcp-prompts/get', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -98,7 +99,7 @@ export async function resolvePromptsForInput(
         }
 
         if (promptMessages) {
-          try { console.log('[PROMPT RESOLVE] server returned messages=', promptMessages.length); } catch {}
+          // try { console.log('[PROMPT RESOLVE] server returned messages=', promptMessages.length); } catch {}
           messages = normalizePromptMessages(promptMessages);
         }
       } catch {

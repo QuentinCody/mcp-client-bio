@@ -266,7 +266,8 @@ async function expandInputWithPrompts(
       try {
         const server = mcpServers.find(s => s.id === def.sourceServerId);
         if (server) {
-          console.log(`Fetching server prompt ${def.trigger} from ${server.url}`);
+          // Prompt preview log commented out - not relevant to JSON response debugging
+          // console.log(`Fetching server prompt ${def.trigger} from ${server.url}`);
           const res = await fetch('/api/mcp-prompts/get', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -283,7 +284,7 @@ async function expandInputWithPrompts(
             const data = (await res.json().catch(() => ({}))) as {
               messages?: Array<{ role?: string; text?: string }>;
             };
-            console.log(`Server prompt ${def.trigger} response:`, data);
+            // console.log(`Server prompt ${def.trigger} response:`, data);
             const msgs: Array<{ role: string; text: string }> = Array.isArray(data.messages)
               ? data.messages.map((m) => ({
                   role: m?.role ?? 'user',
@@ -293,18 +294,18 @@ async function expandInputWithPrompts(
             const asText = msgs.map(m => `[${m.role === 'system' ? 'system' : m.role}] ${m.text || ''}`).join('\n');
             if (asText) {
               prefixBlocks.push(asText);
-              console.log(`Added server prompt content for ${def.trigger}`);
+              // console.log(`Added server prompt content for ${def.trigger}`);
             }
           } else {
-          console.warn(`Server prompt ${def.trigger} failed:`, res.status, res.statusText);
+          // console.warn(`Server prompt ${def.trigger} failed:`, res.status, res.statusText);
             const errorData = await res.json().catch(() => ({}));
-            console.warn('Error details:', errorData);
+            // console.warn('Error details:', errorData);
           }
         } else {
-          console.warn(`Server not found for prompt ${def.trigger}, sourceServerId: ${def.sourceServerId}`);
+          // console.warn(`Server not found for prompt ${def.trigger}, sourceServerId: ${def.sourceServerId}`);
         }
       } catch (error) {
-        console.warn(`Failed to fetch server prompt ${def.trigger}:`, error);
+        // console.warn(`Failed to fetch server prompt ${def.trigger}:`, error);
       }
     }
 

@@ -35,19 +35,20 @@ export async function saveMessages({
 }: {
   messages: Array<DBMessage>;
 }) {
-  console.log('[SAVE_MESSAGES_DB] Starting:', {
-    messagesCount: dbMessages?.length || 0,
-    firstMessage: dbMessages[0] ? {
-      id: dbMessages[0].id,
-      chatId: dbMessages[0].chatId,
-      role: dbMessages[0].role
-    } : null
-  });
+  // Database logs commented out - not relevant to JSON response debugging
+  // console.log('[SAVE_MESSAGES_DB] Starting:', {
+  //   messagesCount: dbMessages?.length || 0,
+  //   firstMessage: dbMessages[0] ? {
+  //     id: dbMessages[0].id,
+  //     chatId: dbMessages[0].chatId,
+  //     role: dbMessages[0].role
+  //   } : null
+  // });
 
   try {
     if (dbMessages.length > 0) {
       const chatId = dbMessages[0].chatId;
-      console.log('[SAVE_MESSAGES_DB] Processing messages for chatId:', chatId);
+      // console.log('[SAVE_MESSAGES_DB] Processing messages for chatId:', chatId);
 
       // Ensure message IDs are unique before persisting to avoid primary key conflicts
       // Assign unique IDs for each message before inserting. This guards against collisions coming
@@ -57,21 +58,21 @@ export async function saveMessages({
         id: nanoid(),
       }));
 
-      console.log('[SAVE_MESSAGES_DB] Deduped messages:', dedupedMessages.map(m => ({ id: m.id, chatId: m.chatId, role: m.role })));
+      // console.log('[SAVE_MESSAGES_DB] Deduped messages:', dedupedMessages.map(m => ({ id: m.id, chatId: m.chatId, role: m.role })));
 
       // First delete any existing messages for this chat
-      console.log('[SAVE_MESSAGES_DB] Deleting existing messages for chatId:', chatId);
+      // console.log('[SAVE_MESSAGES_DB] Deleting existing messages for chatId:', chatId);
       await db
         .delete(messages)
         .where(eq(messages.chatId, chatId));
 
       // Then insert the new messages
-      console.log('[SAVE_MESSAGES_DB] Inserting', dedupedMessages.length, 'messages');
+      // console.log('[SAVE_MESSAGES_DB] Inserting', dedupedMessages.length, 'messages');
       const result = await db.insert(messages).values(dedupedMessages);
-      console.log('[SAVE_MESSAGES_DB] Messages inserted successfully');
+      // console.log('[SAVE_MESSAGES_DB] Messages inserted successfully');
       return result;
     }
-    console.log('[SAVE_MESSAGES_DB] No messages to save');
+    // console.log('[SAVE_MESSAGES_DB] No messages to save');
     return null;
   } catch (error) {
     console.error('[SAVE_MESSAGES_DB] Failed to save messages in database:', error);
@@ -123,24 +124,25 @@ export function convertToDBMessages(aiMessages: PersistableMessage[], chatId: st
 
 // Convert DB messages to UI format
 export function convertToUIMessages(dbMessages: Array<Message>): Array<StoredUIMessage> {
-  console.log('[CONVERT_MESSAGES] Input messages:', {
-    count: dbMessages.length,
-    messages: dbMessages.map(m => ({
-      id: m.id,
-      role: m.role,
-      partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
-      parts: m.parts
-    }))
-  });
+  // Database logs commented out - not relevant to JSON response debugging
+  // console.log('[CONVERT_MESSAGES] Input messages:', {
+  //   count: dbMessages.length,
+  //   messages: dbMessages.map(m => ({
+  //     id: m.id,
+  //     role: m.role,
+  //     partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
+  //     parts: m.parts
+  //   }))
+  // });
 
   const converted = dbMessages.map((message) => {
     const textContent = getTextContent(message);
-    console.log('[CONVERT_MESSAGES] Converting message:', {
-      id: message.id,
-      role: message.role,
-      parts: message.parts,
-      extractedContent: textContent
-    });
+    // console.log('[CONVERT_MESSAGES] Converting message:', {
+    //   id: message.id,
+    //   role: message.role,
+    //   parts: message.parts,
+    //   extractedContent: textContent
+    // });
 
     return {
       id: message.id,
@@ -151,27 +153,28 @@ export function convertToUIMessages(dbMessages: Array<Message>): Array<StoredUIM
     };
   }) as Array<StoredUIMessage>;
 
-  console.log('[CONVERT_MESSAGES] Converted messages:', {
-    count: converted.length,
-    messages: converted.map(m => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      partsCount: Array.isArray(m.parts) ? m.parts.length : 0
-    }))
-  });
+  // console.log('[CONVERT_MESSAGES] Converted messages:', {
+  //   count: converted.length,
+  //   messages: converted.map(m => ({
+  //     id: m.id,
+  //     role: m.role,
+  //     content: m.content,
+  //     partsCount: Array.isArray(m.parts) ? m.parts.length : 0
+  //   }))
+  // });
 
   return converted;
 }
 
 export async function saveChat({ id, userId, messages: aiMessages, title }: SaveChatParams) {
-  console.log('[SAVE_CHAT] Starting save:', {
-    id,
-    userId,
-    messagesCount: aiMessages?.length || 0,
-    title,
-    hasMessages: !!aiMessages && aiMessages.length > 0
-  });
+  // Database logs commented out - not relevant to JSON response debugging
+  // console.log('[SAVE_CHAT] Starting save:', {
+  //   id,
+  //   userId,
+  //   messagesCount: aiMessages?.length || 0,
+  //   title,
+  //   hasMessages: !!aiMessages && aiMessages.length > 0
+  // });
 
   // Generate a new ID if one wasn't provided
   const chatId = id || nanoid();
@@ -287,29 +290,29 @@ export async function saveChat({ id, userId, messages: aiMessages, title }: Save
 
   // IMPORTANT: Save the messages if provided
   if (aiMessages && aiMessages.length > 0) {
-    console.log('[SAVE_CHAT] Saving messages:', {
-      chatId,
-      messagesCount: aiMessages.length,
-      messages: aiMessages.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content.slice(0, 100) : 'complex content'
-      }))
-    });
+    // console.log('[SAVE_CHAT] Saving messages:', {
+    //   chatId,
+    //   messagesCount: aiMessages.length,
+    //   messages: aiMessages.map(m => ({
+    //     id: m.id,
+    //     role: m.role,
+    //     content: typeof m.content === 'string' ? m.content.slice(0, 100) : 'complex content'
+    //   }))
+    // });
 
     try {
       const dbMessages = convertToDBMessages(aiMessages, chatId);
       await saveMessages({ messages: dbMessages });
-      console.log('[SAVE_CHAT] Messages saved successfully');
+      // console.log('[SAVE_CHAT] Messages saved successfully');
     } catch (error) {
       console.error('[SAVE_CHAT] Failed to save messages:', error);
       throw error;
     }
   } else {
-    console.log('[SAVE_CHAT] No messages to save');
+    // console.log('[SAVE_CHAT] No messages to save');
   }
 
-  console.log('[SAVE_CHAT] Chat save completed:', { chatId });
+  // console.log('[SAVE_CHAT] Chat save completed:', { chatId });
   return { id: chatId };
 }
 
@@ -335,7 +338,8 @@ export async function getChats(userId: string) {
 }
 
 export async function getChatById(id: string, userId: string): Promise<ChatWithMessages | null> {
-  console.log('[DB_GET_CHAT] Querying chat by ID:', { id, userId });
+  // Database logs commented out - not relevant to JSON response debugging
+  // console.log('[DB_GET_CHAT] Querying chat by ID:', { id, userId });
 
   const chat = await db.query.chats.findFirst({
     where: and(
@@ -344,9 +348,9 @@ export async function getChatById(id: string, userId: string): Promise<ChatWithM
     ),
   });
 
-  console.log('[DB_GET_CHAT] Chat found:', !!chat);
+  // console.log('[DB_GET_CHAT] Chat found:', !!chat);
   if (!chat) {
-    console.log('[DB_GET_CHAT] No chat found with ID:', id, 'for user:', userId);
+    // console.log('[DB_GET_CHAT] No chat found with ID:', id, 'for user:', userId);
     return null;
   }
 
@@ -355,31 +359,31 @@ export async function getChatById(id: string, userId: string): Promise<ChatWithM
     orderBy: [messages.createdAt]
   });
 
-  console.log('[DB_GET_CHAT] Messages found:', {
-    count: chatMessages.length,
-    chatId: id,
-    messages: chatMessages.map(m => ({
-      id: m.id,
-      role: m.role,
-      partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
-      parts: m.parts
-    }))
-  });
+  // console.log('[DB_GET_CHAT] Messages found:', {
+  //   count: chatMessages.length,
+  //   chatId: id,
+  //   messages: chatMessages.map(m => ({
+  //     id: m.id,
+  //     role: m.role,
+  //     partsCount: Array.isArray(m.parts) ? m.parts.length : 0,
+  //     parts: m.parts
+  //   }))
+  // });
 
   const result = {
     ...chat,
     messages: chatMessages
   };
 
-  console.log('[DB_GET_CHAT] Returning result:', {
-    id: result.id,
-    messagesCount: result.messages.length,
-    firstMessage: result.messages[0] ? {
-      id: result.messages[0].id,
-      role: result.messages[0].role,
-      parts: result.messages[0].parts
-    } : null
-  });
+  // console.log('[DB_GET_CHAT] Returning result:', {
+  //   id: result.id,
+  //   messagesCount: result.messages.length,
+  //   firstMessage: result.messages[0] ? {
+  //     id: result.messages[0].id,
+  //     role: result.messages[0].role,
+  //     parts: result.messages[0].parts
+  //   } : null
+  // });
 
   return result;
 }

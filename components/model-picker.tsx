@@ -45,6 +45,11 @@ export const ModelPicker = ({
   className,
 }: ModelPickerProps) => {
   const [hoveredModel, setHoveredModel] = useState<modelID | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Ensure we always have a valid model ID
   const validModelId = MODELS.includes(selectedModel)
@@ -142,6 +147,17 @@ export const ModelPicker = ({
   };
 
   const isInline = variant === "inline";
+
+  if (!isMounted) {
+    return (
+      <div
+        className={cn(
+          isInline ? "relative" : "absolute bottom-2 left-2 z-10",
+          className
+        )}
+      />
+    );
+  }
 
   return (
     <div

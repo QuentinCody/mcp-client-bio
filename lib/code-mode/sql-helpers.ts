@@ -298,6 +298,63 @@ export function buildWhereClause(conditions: Array<string | { or: string[] } | {
 }
 
 /**
+ * Known column mappings by MCP server
+ * Use this to get correct column names for common semantic fields
+ *
+ * Different MCP servers use different column names for the same semantic concept.
+ * For example, Entrez uses 'year' for publication date, while others use 'pub_date'.
+ */
+export const SERVER_COLUMN_MAPPINGS: Record<string, Record<string, string>> = {
+  entrez: {
+    publication_date: 'year',        // Entrez uses 'year' not 'pub_date'
+    pub_date: 'year',
+    date: 'year',
+    abstract: 'abstract',
+    title: 'title',
+    authors: 'authors',
+    journal: 'journal',
+    pmid: 'pmid',
+    citation_count: 'citation_count', // May not exist for all records
+  },
+  rcsb: {
+    publication_date: 'deposition_date',
+    date: 'deposition_date',
+    structure_id: 'pdb_id',
+    pdb: 'pdb_id',
+  },
+  clinicaltrials: {
+    start_date: 'start_date',
+    completion_date: 'completion_date',
+    trial_id: 'nct_id',
+    id: 'nct_id',
+  },
+  civic: {
+    variant_id: 'id',
+    gene: 'gene_name',
+    disease: 'disease_name',
+  },
+  opentargets: {
+    target_id: 'target_id',
+    disease_id: 'disease_id',
+    gene: 'target_symbol',
+  }
+};
+
+/**
+ * Get safe column name for a server
+ * Translates semantic column names to actual column names used by specific MCP servers
+ *
+ * @example
+ * getSafeColumnName('entrez', 'publication_date') // returns 'year'
+ * getSafeColumnName('rcsb', 'structure_id') // returns 'pdb_id'
+ */
+export function getSafeColumnName(server: string, semanticName: string): string {
+  const serverKey = server.toLowerCase();
+  const mapping = SERVER_COLUMN_MAPPINGS[serverKey];
+  return mapping?.[semanticName.toLowerCase()] || semanticName;
+}
+
+/**
  * Generate documentation for SQL helpers as a string
  * This can be included in the system prompt for Code Mode
  */

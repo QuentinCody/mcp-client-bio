@@ -12,7 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { SpinnerIcon } from "./icons";
-import { ToolInvocation } from "./tool-invocation";
+import { ToolInvocation } from "./tool-invocation-redesign";
 import { CopyButton } from "./copy-button";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 

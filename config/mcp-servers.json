@@ -19,8 +19,8 @@
     },
     { "name": "ClinicalTrials",
       "type": "streamable-http",
-      "url": "http://localhost:8788/mcp",
-      "description": "Access to the ClinicalTrials.gov database of clinical studies (LOCAL DEV)"
+      "url": "https://clinicaltrialsgov-mcp-server.quentincody.workers.dev/mcp",
+      "description": "Access to the ClinicalTrials.gov database of clinical studies"
 
     },
     {

@@ -195,7 +195,8 @@ export async function initializeMCPClients(
 
       const mcptools = await mcpClient.tools();
 
-      console.log(`MCP tools from ${mcpServer.url}:`, Object.keys(mcptools));
+      // MCP client log commented out - not relevant to JSON response debugging
+      // console.log(`MCP tools from ${mcpServer.url}:`, Object.keys(mcptools));
 
       // Add MCP tools to tools object
       tools = { ...tools, ...mcptools };

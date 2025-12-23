@@ -216,7 +216,7 @@ export function ToolInvocation({
     return (
       <CodeExecutionDisplay
         code={args?.code}
-        result={result?.result || result}
+        result={result?.result || result?.data || result}
         error={errorText || result?.error}
         logs={result?.logs || result?.console || []}
         executionTime={result?.executionTime}

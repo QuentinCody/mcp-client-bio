@@ -87,14 +87,15 @@ export function jsonSchemaToTypeScript(
  */
 export function generateToolInterface(
   toolName: string,
-  toolDefinition: any
+  toolDefinition: any,
+  prefix: string = ''
 ): TypeScriptInterface {
   const schema = toolDefinition.parameters?.jsonSchema ||
                  toolDefinition.parameters ||
                  toolDefinition.inputSchema ||
                  { type: 'object', properties: {} };
 
-  const interfaceName = toPascalCase(toolName) + 'Args';
+  const interfaceName = `${prefix}${toPascalCase(toolName)}Args`;
   const typeDefinition = jsonSchemaToTypeScript(schema, interfaceName);
 
   const documentation = toolDefinition.description
@@ -112,6 +113,10 @@ export function generateToolInterface(
   return { name: interfaceName, definition, documentation: toolDefinition.description };
 }
 
+function isValidIdentifier(name: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
+}
+
 /**
  * Convert string to PascalCase
  */
@@ -126,7 +131,8 @@ function toPascalCase(str: string): string {
  * Generate complete TypeScript definitions file for all MCP tools
  */
 export function generateToolsTypeDefinitions(
-  tools: Record<string, any>
+  tools: Record<string, any>,
+  prefix: string = ''
 ): string {
   const interfaces: string[] = [
     '/**',
@@ -141,13 +147,13 @@ export function generateToolsTypeDefinitions(
 
   for (const [toolName, toolDef] of toolEntries) {
     try {
-      const interfaceDef = generateToolInterface(toolName, toolDef);
+      const interfaceDef = generateToolInterface(toolName, toolDef, prefix);
       interfaces.push(interfaceDef.definition);
       interfaces.push('');
     } catch (error) {
       console.warn(`Failed to generate interface for ${toolName}:`, error);
       // Fallback to any type
-      const interfaceName = toPascalCase(toolName) + 'Args';
+      const interfaceName = `${prefix}${toPascalCase(toolName)}Args`;
       interfaces.push(`/** ${toolDef.description || toolName} */`);
       interfaces.push(`export type ${interfaceName} = any;`);
       interfaces.push('');
@@ -169,21 +175,56 @@ export function generateHelperAPITypes(
     ' * These helpers provide access to MCP tools with full type safety',
     ' */',
     '',
+    'export interface HelperUtils {',
+    '  safeGet(input: any, path: string | string[], fallback?: any): any;',
+    '  hasValue(value: any): boolean;',
+    '  compactArgs<T extends Record<string, any>>(args: T): Partial<T>;',
+    '  summarizeToolError(summary: { server: string; tool: string; args: any; error: any; validation?: any }): any;',
+    '}',
+    '',
   ];
 
   for (const [serverName, tools] of serverTools.entries()) {
     const helperName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const typePrefix = toPascalCase(helperName);
+
+    for (const [toolName, toolDef] of Object.entries(tools)) {
+      try {
+        const interfaceDef = generateToolInterface(toolName, toolDef, typePrefix);
+        lines.push(interfaceDef.definition);
+        lines.push('');
+      } catch (error) {
+        console.warn(`Failed to generate interface for ${toolName}:`, error);
+        const interfaceName = `${typePrefix}${toPascalCase(toolName)}Args`;
+        lines.push(`/** ${toolDef.description || toolName} */`);
+        lines.push(`export type ${interfaceName} = any;`);
+        lines.push('');
+      }
+    }
 
     lines.push(`export interface ${toPascalCase(helperName)}Helper {`);
     lines.push(`  /** List all available tools in ${serverName} */`);
     lines.push(`  listTools(): Promise<string[]>;`);
+    lines.push(`  /** Search tools by name/description in ${serverName} */`);
+    lines.push(`  searchTools(query: string): Promise<Array<{ name: string; description: string }>>;`);
+    lines.push(`  /** Low-level tool invocation by name */`);
+    lines.push(`  invoke(toolName: string, args: any): Promise<any>;`);
+    lines.push(`  /** Low-level tool invocation with envelope response */`);
+    lines.push(`  invokeWithMeta(toolName: string, args: any): Promise<{ ok: boolean; data?: any; error?: any; meta?: any }>;`);
+    lines.push(`  /** Inspect tool schema */`);
+    lines.push(`  getToolSchema(toolName: string): Promise<any>;`);
+    lines.push(`  /** Data-oriented invocation with staging handling */`);
+    lines.push(`  getData(toolName: string, args: any): Promise<any>;`);
+    lines.push(`  /** Data invocation with envelope response */`);
+    lines.push(`  getDataWithMeta(toolName: string, args: any): Promise<{ ok: boolean; data?: any; error?: any; meta?: any }>;`);
     lines.push('');
 
     for (const [toolName, toolDef] of Object.entries(tools)) {
-      const argsType = toPascalCase(toolName) + 'Args';
+      const argsType = `${typePrefix}${toPascalCase(toolName)}Args`;
       const desc = toolDef.description ? `  /** ${toolDef.description} */` : '';
       if (desc) lines.push(desc);
-      lines.push(`  ${toolName}(args: ${argsType}): Promise<any>;`);
+      const methodName = isValidIdentifier(toolName) ? toolName : `"${toolName}"`;
+      lines.push(`  ${methodName}(args: ${argsType}): Promise<any>;`);
     }
 
     lines.push('}');
@@ -196,6 +237,7 @@ export function generateHelperAPITypes(
     const helperName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '_');
     lines.push(`  ${helperName}: ${toPascalCase(helperName)}Helper;`);
   }
+  lines.push('  utils: HelperUtils;');
   lines.push('}');
 
   return lines.join('\n');

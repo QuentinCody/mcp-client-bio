@@ -19,6 +19,7 @@ import {
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
 import { generateCompactHelperDocs, generateUsageExamples } from '@/lib/code-mode/helper-docs';
+import { generateHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
 function validateCodeModeSnippet(code: string) {
@@ -73,12 +74,13 @@ export async function POST(req: Request) {
       })()
     : mcpServers;
   if (useCodeMode) {
-    try {
-      console.log('[API /chat] Code Mode servers added:', codeModeServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
-      console.log('[API /chat] merged MCP servers:', mergedMcpServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
-    } catch (err) {
-      console.error('[API /chat] failed to log merged MCP servers', err);
-    }
+    // Initialization logs commented out - not relevant to JSON response debugging
+    // try {
+    //   console.log('[API /chat] Code Mode servers added:', codeModeServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
+    //   console.log('[API /chat] merged MCP servers:', mergedMcpServers.map(s => `${s.name || s.url}(${s.url})`).join(', '));
+    // } catch (err) {
+    //   console.error('[API /chat] failed to log merged MCP servers', err);
+    // }
   }
   const promptContext: {
     entries?: Array<{ id: string; namespace: string; name: string; title?: string; origin?: string; sourceServerId?: string; version?: string; args?: Record<string, string>; messages?: Array<{ role: string; text: string }> }>;
@@ -86,15 +88,16 @@ export async function POST(req: Request) {
   } | undefined = (body as any).promptContext;
 
   const { isBot, isGoodBot } = await checkBotId();
-  try {
-    console.log('[API /chat] incoming model=', selectedModel, 'headerModel=', headerModel, 'messagesIn=', Array.isArray(messages) ? messages.length : 'N/A');
-    if (promptContext) {
-      console.log('[API /chat] promptContext entries=', (promptContext.entries || []).length, 'flattened=', (promptContext.flattened || []).length);
-      if ((promptContext.entries || []).length) {
-        console.log('[API /chat] prompt[0]=', promptContext.entries![0]);
-      }
-    }
-  } catch {}
+  // Initialization logs commented out - not relevant to JSON response debugging
+  // try {
+  //   console.log('[API /chat] incoming model=', selectedModel, 'headerModel=', headerModel, 'messagesIn=', Array.isArray(messages) ? messages.length : 'N/A');
+  //   if (promptContext) {
+  //     console.log('[API /chat] promptContext entries=', (promptContext.entries || []).length, 'flattened=', (promptContext.flattened || []).length);
+  //     if ((promptContext.entries || []).length) {
+  //       console.log('[API /chat] prompt[0]=', promptContext.entries![0]);
+  //     }
+  //   }
+  // } catch {}
 
   if (isBot && !isGoodBot) {
     return new Response(
@@ -156,15 +159,17 @@ export async function POST(req: Request) {
   }
 
   // Initialize MCP clients using the already running persistent HTTP/SSE servers
-  try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
+  // Initialization log commented out - not relevant to JSON response debugging
+  // try { console.log('[API /chat] mcpServers in body len=', Array.isArray(mcpServers)? mcpServers.length : 'N/A', mcpServers && mcpServers[0] ? ('first='+mcpServers[0].url+' type='+mcpServers[0].type) : ''); } catch {}
   const { tools: rawTools, toolsByServer, cleanup } = await initializeMCPClients(mergedMcpServers, req.signal);
 
   // Transform MCP tools for compatibility with AI providers
   const tools = transformMCPToolsForResponsesAPI(rawTools);
 
-  try {
-    console.log('[API /chat] initialized tools keys=', tools ? Object.keys(tools) : 'none');
-  } catch {}
+  // Initialization log commented out - not relevant to JSON response debugging
+  // try {
+  //   console.log('[API /chat] initialized tools keys=', tools ? Object.keys(tools) : 'none');
+  // } catch {}
 
   // Removed verbose logging for better performance
 
@@ -214,11 +219,14 @@ export async function POST(req: Request) {
     const serverToolMap = groupToolsByServer(toolsByServer, codeModeServers);
     helpersMetadata = generateHelpersMetadata(serverToolMap);
 
-    // Generate compact documentation for system prompt
-    helpersDocs = generateCompactHelperDocs(serverToolMap, {
-      maxToolsPerServer: 10,
-      includeParameters: false,
-    });
+    // Generate TypeScript API definitions for system prompt (like Cloudflare blog post)
+    // This shows all available methods: helpers.server.toolName(args) instead of helpers.server.invoke('toolName', args)
+    const serverToolsMap = new Map(
+      Array.from(serverToolMap.entries()).map(([key, value]) => [key, value.tools])
+    );
+    const typeDefinitions = generateHelperAPITypes(serverToolsMap);
+
+    helpersDocs = `## Available Helper APIs\n\nYou can call tools using TypeScript-style method syntax:\n\n\`\`\`typescript\n${typeDefinitions}\n\`\`\`\n\nEach method is async and returns a Promise. You can call them directly:\n\n\`\`\`javascript\n// Direct method calls (RECOMMENDED)\nconst data = await helpers.opentargets.opentargets_graphql_query({ query: "..." });\nconst trials = await helpers.clinicaltrials.mcp_clinicaltrial_ctgov_search_studies({ query_term: "cancer" });\n\n// Generic invoke() also works (raw response)\nconst raw = await helpers.opentargets.invoke('opentargets_graphql_query', { query: "..." });\n\n// Envelope helpers for safer error handling\nconst result = await helpers.opentargets.invokeWithMeta('opentargets_graphql_query', { query: "..." });\nif (!result.ok) return result; // sandbox handling only; still summarize in final response\n\`\`\`\n\nHelper utilities for safer access:\n\n\`\`\`javascript\nconst name = helpers.utils.safeGet(data, "target.name", "Unknown");\nconst hasItems = helpers.utils.hasValue(data?.items);\n\`\`\``;
 
     // Add usage examples to help LLMs write correct code
     helpersDocs += '\n\n' + generateUsageExamples();
@@ -243,47 +251,51 @@ export async function POST(req: Request) {
     if (!aliasMap.mcp && serverToolMap.size > 0) {
       aliasMap.mcp = Array.from(serverToolMap.keys())[0];
     }
-    const counts = Array.from(serverToolMap.entries())
-      .map(([key, data]) => `${key}:${Object.keys(data.tools).length}`)
-      .join(", ");
-    console.log("[API /chat] Code Mode server tool counts:", counts.slice(0, 400));
+    // Code Mode initialization logs commented out - not relevant to JSON response debugging
+    // const counts = Array.from(serverToolMap.entries())
+    //   .map(([key, data]) => `${key}:${Object.keys(data.tools).length}`)
+    //   .join(", ");
+    // console.log("[API /chat] Code Mode server tool counts:", counts.slice(0, 400));
 
     // Use transforming helpers implementation for automatic response parsing
     helpersImplementation = generateTransformingHelpersImplementation(serverToolMap, aliasMap);
-    if (helpersImplementation) {
-      console.log("[API /chat] helpersImplementation length=", helpersImplementation.length);
-      const matches = Array.from(new Set(helpersImplementation.match(/helpers\.([a-z0-9_]+)/gi) || []));
-      console.log("[API /chat] Code Mode helpers emitted:", matches.join(", ").slice(0, 400));
-    } else {
-      console.log("[API /chat] helpersImplementation was empty, skipping helper injection");
-    }
+    // Helper implementation logs commented out - not relevant to JSON response debugging
+    // if (helpersImplementation) {
+    //   console.log("[API /chat] helpersImplementation length=", helpersImplementation.length);
+    //   const matches = Array.from(new Set(helpersImplementation.match(/helpers\.([a-z0-9_]+)/gi) || []));
+    //   console.log("[API /chat] Code Mode helpers emitted:", matches.join(", ").slice(0, 400));
+    // } else {
+    //   console.log("[API /chat] helpersImplementation was empty, skipping helper injection");
+    // }
   }
 
   // Use shorter system prompt for simple queries
   const shortSystemPrompt = useCodeMode
     ? `You are a helpful assistant with the ability to write and execute JavaScript code.
 
-CRITICAL RULES:
-1. NO function declarations - use top-level code only
-2. NO TypeScript syntax (no ': string', 'as Type', etc.)
-3. Use await directly - don't wrap in functions
+Code Requirements:
+- NO function declarations - use top-level code only
+- NO TypeScript syntax (no type annotations)
+- Use await directly
 
-${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
+${helpersDocs || 'No helper APIs available.'}
 
-IMPORTANT: Use helpers.server.getData() instead of invoke() - it handles data staging automatically!
+CRITICAL WORKFLOW:
+1. Execute code ONCE
+2. Code returns a plain text string
+3. OUTPUT THAT STRING AS YOUR RESPONSE - do NOT call the tool again
+
+Your code should return a PLAIN TEXT STRING - this becomes your final response.
 
 Example:
-const data = await helpers.myserver.getData('tool_name', { param: 'value' });
-console.log("Found:", data.length, "results");
-return data;
+\`\`\`javascript
+const proteins = await helpers.uniprot.getData("search", { query: "TP53" });
+return \`Found \${proteins.length} proteins. Top result: \${proteins[0]?.name || "N/A"}\`;
+\`\`\`
 
-GOOD:
-const proteins = await helpers.uniprot.getData('uniprot_search', { query: 'TP53' });
-return proteins[0];
+After execution, output the returned string directly. Do NOT generate more code.
 
-BAD:
-async function fetchData() { ... }  // ❌ Function declarations not allowed
-const name: string = "value";  // ❌ TypeScript not allowed`
+If the user says "no tools" or "no code", respond in plain conversational text without using the codemode_sandbox tool.`
     : `You are a helpful assistant with access to tools.
 
 The tools are powerful - choose the most relevant one for the user's question.
@@ -297,76 +309,42 @@ Response format: Markdown supported. Use tools to answer questions.`;
 
 Today's date is ${new Date().toISOString().split('T')[0]}.
 
-CRITICAL CODE MODE RULES:
-1. NO function declarations (function foo() {}) - they will fail at runtime
-2. NO TypeScript syntax (': string', 'as Type', 'x is Type')
-3. Write TOP-LEVEL CODE only - use await directly
-4. Use helpers.server.getData() for automatic data handling
+Code Requirements:
+- NO function declarations - use top-level code with await
+- NO TypeScript syntax
+- Use helpers.server.getData() for automatic data handling
 
-Your code has access to a helpers API that provides access to various databases and services:
+${helpersDocs || 'No helper APIs available.'}
 
-${helpersDocs || 'No helper APIs available. Code execution will be limited.'}
+Available methods:
+- helpers.server.getData(tool, args) - Returns data directly
+- helpers.server.invoke(tool, args) - Returns raw response
+- helpers.server.listTools() - List available tools
+- helpers.utils.safeGet(obj, "path", fallback) - Safe property access
+- console.log() - Debug output
 
-HELPER METHODS (use these!):
-- helpers.server.getData(tool, args) - Automatically handles data staging, returns actual data
-- helpers.server.invoke(tool, args) - Returns raw response (use getData instead)
-- helpers.server.queryStagedData(id, sql) - Query staged data directly
-- helpers.server.listTools() - See all available tools
-- helpers.server.searchTools(query) - Find relevant tools
+CRITICAL WORKFLOW:
+1. Execute code ONCE to gather data
+2. Code returns a PLAIN TEXT STRING with your analysis
+3. OUTPUT THAT STRING AS YOUR RESPONSE - do NOT call the tool again
 
-Your code also has access to console.log() for debugging output.
+DO NOT return objects like {summary: ..., data: ...}. Return a template string.
 
-GOOD CODE EXAMPLES:
+Example:
+\`\`\`javascript
+const proteins = await helpers.uniprot.getData("search", { query: "TP53" });
+const diseases = await helpers.opentargets.getData("get_target", { target_id: "ENSG00000141510" });
 
-// Simple query (getData handles everything)
-const proteins = await helpers.uniprot.getData('uniprot_search', {
-  query: 'TP53'
-});
-console.log(\`Found \${proteins.length} proteins\`);
-return proteins[0];
+return \`## TP53 Analysis
 
-// Multi-step workflow
-const uniprotData = await helpers.uniprot.getData('uniprot_search', {
-  query: 'TP53'
-});
-const ensemblId = uniprotData[0].ensemblId;
+Found \${proteins.length} protein entries.
+Primary isoform: \${proteins[0]?.name || "Unknown"}
+Associated diseases: \${diseases?.associatedDiseases?.length || 0} conditions.\`;
+\`\`\`
 
-const diseases = await helpers.opentargets.getData('get_associated_diseases', {
-  ensembl_id: ensemblId
-});
+After code execution completes, output the returned string. Do NOT generate more code.
 
-return { protein: uniprotData[0], diseases };
-
-// Discovery
-const servers = Object.keys(helpers);
-console.log("Available:", servers);
-
-const geneTools = await helpers.uniprot.searchTools('gene');
-console.log("Gene tools:", geneTools.map(t => t.name));
-
-return geneTools;
-
-BAD CODE EXAMPLES (these will FAIL):
-
-// ❌ Function declarations are NOT allowed
-async function fetchData(query) {
-  return await helpers.server.getData('search', { query });
-}
-return fetchData('TP53');  // FAILS: executeScientificWorkflow is not defined
-
-// ❌ TypeScript syntax not allowed
-const name: string = "TP53";  // FAILS: Syntax error
-const result = data as Protein[];  // FAILS: Syntax error
-
-// ❌ Don't use invoke() when getData() is better
-const response = await helpers.uniprot.invoke('uniprot_search', { query: 'TP53' });
-// Now you have to manually parse markdown, extract data_access_id, etc.
-
-When responding:
-- Use getData() not invoke() - it's MUCH easier
-- Use console.log() to show your work
-- Always return a structured result
-- Handle errors with try/catch if needed`
+If the user says "no tools" or "no code", respond in plain conversational text without using the codemode_sandbox tool.`
     : `You are a helpful assistant with access to a variety of tools.
 
     Today's date is ${new Date().toISOString().split('T')[0]}.
@@ -418,12 +396,12 @@ When responding:
     // Code Mode enabled: create codemode_sandbox tool
     const codemodeTool = dynamicTool({
       description:
-        "Execute JavaScript code inside a sandboxed environment. The code has access to a helpers API that provides access to all connected MCP servers. Use helpers.serverName.invoke(toolName, args) to call tools, helpers.serverName.listTools() to list available tools, and helpers.serverName.searchTools(query) to search for relevant tools. Use console.log() for debugging. Return structured JSON results.",
+        "Execute JavaScript code to query databases. Your code MUST return a plain text string (using template literals) - this string becomes your response to the user. Example: return `Found ${data.length} results`. Available APIs: helpers.serverName.getData(tool, args), helpers.serverName.listTools(). Use console.log() for debugging.",
       inputSchema: z.object({
         code: z
           .string()
           .describe(
-            "JavaScript code (NOT TypeScript) to execute. Write the body of an async function that takes helpers and console as arguments, e.g. 'const result = await helpers.myserver.invoke(...); return result;'. IMPORTANT: Do not use TypeScript type annotations (like ': string' or 'x is string')."
+            "JavaScript code (NOT TypeScript). Must return a template string summarizing findings. Example: const data = await helpers.uniprot.getData('search', {query: 'TP53'}); return `Found ${data.length} proteins`;"
           ),
       }),
       execute: async (input) => {
@@ -479,15 +457,12 @@ When responding:
           const result = parsed?.result;
           const logs = parsed?.logs || [];
 
-          if (logs.length > 0) {
-            return {
-              result,
-              console: logs,  // Return as array for UI compatibility
-              _meta: { logsCount: logs.length }
-            };
-          }
-
-          return parsed ?? { result: null, info: "No content returned" };
+          // Return result directly - let the model decide how to present it
+          // If string, the model should use it as-is. If object, model interprets it.
+          return {
+            result: result ?? null,
+            logs,
+          };
         } catch (error: any) {
           return { error: error instanceof Error ? error.message : String(error) };
         }
@@ -667,6 +642,23 @@ When responding:
     };
   };
 
+  const extractMessageText = (message: UIMessage): string => {
+    if (Array.isArray((message as any).parts)) {
+      return (message as any).parts
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => String(part.text ?? ''))
+        .join('\n')
+        .trim();
+    }
+    const content = (message as any).content;
+    if (typeof content === 'string') return content.trim();
+    if (Array.isArray(content)) {
+      return content.map((value) => String(value ?? '')).join('\n').trim();
+    }
+    return '';
+  };
+
+
   const sanitizeForStorage = (message: UIMessage): UIMessage => {
     const normalized = normalizeToParts(message);
     if (normalized.role !== 'user') {
@@ -694,6 +686,15 @@ When responding:
     ...truncatedMessages,
   ];
   const modelMessages = convertToModelMessages(conversationMessages);
+
+  // Debug: Log the last message to see what the model receives after tool execution
+  if (modelMessages.length > 0) {
+    const lastMsg = modelMessages[modelMessages.length - 1];
+    console.log('[API /chat] Last message role:', lastMsg.role);
+    if (lastMsg.role === 'tool' || (lastMsg as any).content?.[0]?.type === 'tool-result') {
+      console.log('[API /chat] Tool result being sent to model:', JSON.stringify(lastMsg).slice(0, 500));
+    }
+  }
 
   console.log(
     '[API /chat] tools count=',
@@ -724,6 +725,7 @@ When responding:
           thinkingConfig: {
             thinkingBudget: 24576,
           },
+          structuredOutputs: false, // Disable automatic JSON schema enforcement
         },
         anthropic: {
           thinking: {
@@ -739,6 +741,24 @@ When responding:
       onError: (error: any) => {
         console.error('[API /chat] Stream error:', JSON.stringify(error, null, 2));
       },
+      onStepFinish: (event) => {
+        console.log('[API /chat] Step finished:', {
+          toolCalls: event.toolCalls?.length || 0,
+          toolResults: event.toolResults?.length || 0,
+          text: event.text?.slice(0, 200),
+          finishReason: event.finishReason,
+        });
+
+        // Log tool results to see what model receives
+        if (event.toolResults && event.toolResults.length > 0) {
+          event.toolResults.forEach((result, idx) => {
+            console.log(`[API /chat] Tool result ${idx}:`, {
+              toolName: result.toolName,
+              resultPreview: JSON.stringify(result).slice(0, 300),
+            });
+          });
+        }
+      },
       onFinish: (event) => {
         try {
           const toolPartCount = event.steps.reduce((count, step) => {
@@ -752,6 +772,10 @@ When responding:
             toolPartCount,
             'tool call entries',
           );
+
+          // Log final text to see what model actually generated
+          const finalText = event.steps[event.steps.length - 1]?.text || '';
+          console.log('[API /chat] Final generated text:', finalText.slice(0, 500));
         } catch (error) {
           console.warn('[API /chat] logging finish event failed:', error);
         }
