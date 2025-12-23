@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import {
-  ChevronRightIcon,
+  ChevronDownIcon,
   CheckCircle2,
   Loader2,
   AlertCircle,
   Clock,
-  Zap,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CodeExecutionDisplay } from "./code-execution-display-redesign";
@@ -56,7 +56,7 @@ export function ToolInvocation({
       case "approval-responded":
       case "output-available":
         return {
-          label: "Complete",
+          label: "Done",
           tone: "success" as const,
           icon: CheckCircle2,
           animate: false,
@@ -108,7 +108,8 @@ export function ToolInvocation({
     if (!formatted) return null;
     const inline = formatted.replace(/\s+/g, " ").trim();
     if (!inline) return null;
-    return inline.length > 100 ? `${inline.slice(0, 100)}…` : inline;
+    // Longer preview for desktop
+    return inline.length > 120 ? `${inline.slice(0, 120)}...` : inline;
   };
 
   const previewContent = errorText ?? result ?? args;
@@ -130,121 +131,81 @@ export function ToolInvocation({
   }
 
   return (
-    <div
-      className={cn(
-        "group relative mb-3 overflow-hidden rounded-lg border transition-all duration-300",
-        statusMeta.tone === "success" &&
-          "border-emerald-200/60 bg-gradient-to-br from-emerald-50/40 to-emerald-50/20 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-emerald-950/10",
-        statusMeta.tone === "error" &&
-          "border-rose-200/60 bg-gradient-to-br from-rose-50/40 to-rose-50/20 dark:border-rose-900/40 dark:from-rose-950/30 dark:to-rose-950/10",
-        statusMeta.tone === "running" &&
-          "border-amber-200/60 bg-gradient-to-br from-amber-50/40 to-amber-50/20 dark:border-amber-900/40 dark:from-amber-950/30 dark:to-amber-950/10",
-        statusMeta.tone === "waiting" &&
-          "border-slate-200/60 bg-gradient-to-br from-slate-50/40 to-slate-50/20 dark:border-slate-800/40 dark:from-slate-950/30 dark:to-slate-950/10",
-        "hover:shadow-lg"
-      )}
-    >
-      {/* Animated accent bar */}
-      <div
-        className={cn(
-          "absolute left-0 top-0 h-full w-1 transition-all duration-500",
-          statusMeta.tone === "success" && "bg-emerald-500",
-          statusMeta.tone === "error" && "bg-rose-500",
-          statusMeta.tone === "running" && "bg-amber-500",
-          statusMeta.tone === "waiting" && "bg-slate-400",
-          isStreamingState && "animate-pulse"
-        )}
-      />
-
+    <div className="rounded-lg border border-border overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 text-left transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
+        className={cn(
+          "w-full px-4 py-3 text-left transition-colors",
+          isExpanded ? "bg-muted/50" : "bg-muted/30 hover:bg-muted/50"
+        )}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           {/* Icon */}
           <div
             className={cn(
-              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-300",
-              statusMeta.tone === "success" &&
-                "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400",
-              statusMeta.tone === "error" &&
-                "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-400",
-              statusMeta.tone === "running" &&
-                "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400",
-              statusMeta.tone === "waiting" &&
-                "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400",
-              "group-hover:scale-105"
+              "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md",
+              statusMeta.tone === "success" && "bg-success/10 text-success",
+              statusMeta.tone === "error" && "bg-destructive/10 text-destructive",
+              statusMeta.tone === "running" && "bg-warning/10 text-warning",
+              statusMeta.tone === "waiting" && "bg-muted text-muted-foreground"
             )}
           >
             <StatusIcon
               className={cn(
-                "h-5 w-5",
+                "h-4 w-4",
                 statusMeta.animate && "animate-spin"
               )}
             />
           </div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0 space-y-2">
-            {/* Header Row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-mono font-semibold text-foreground tracking-tight">
+          {/* Tool name and status */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm font-mono font-medium text-foreground">
                 {toolName}
               </span>
-              <div
+              <span
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  statusMeta.tone === "success" &&
-                    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300",
-                  statusMeta.tone === "error" &&
-                    "bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300",
-                  statusMeta.tone === "running" &&
-                    "bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300",
-                  statusMeta.tone === "waiting" &&
-                    "bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
+                  "text-[10px] font-medium px-1.5 py-0.5 rounded",
+                  statusMeta.tone === "success" && "text-success bg-success/10",
+                  statusMeta.tone === "error" && "text-destructive bg-destructive/10",
+                  statusMeta.tone === "running" && "text-warning bg-warning/10",
+                  statusMeta.tone === "waiting" && "text-muted-foreground bg-muted"
                 )}
               >
-                {isStreamingState && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                )}
                 {statusMeta.label}
-              </div>
-              {callId && (
-                <span className="text-[10px] font-mono text-muted-foreground/60">
-                  #{callId.slice(0, 8)}
-                </span>
-              )}
+              </span>
             </div>
 
-            {/* Preview */}
+            {/* Preview when collapsed */}
             {!isExpanded && previewText && (
-              <div className="text-xs font-mono text-muted-foreground/80 truncate">
+              <div className="mt-1 text-xs font-mono text-muted-foreground truncate">
                 {previewText}
               </div>
             )}
           </div>
 
-          {/* Expand Icon */}
-          <ChevronRightIcon
+          {/* Expand chevron */}
+          <ChevronDownIcon
             className={cn(
-              "h-5 w-5 flex-shrink-0 text-muted-foreground/40 transition-transform duration-300",
-              isExpanded && "rotate-90"
+              "h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform",
+              isExpanded && "rotate-180"
             )}
           />
         </div>
       </button>
 
-      {/* Expanded Content */}
+      {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-border/30 bg-background/40 dark:bg-background/20">
+        <div className="border-t border-border bg-background">
           {/* Arguments */}
           {args && (
-            <div className="border-b border-border/20 px-4 py-3">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <Zap className="h-3.5 w-3.5" />
+            <div className="p-4 border-b border-border">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Input
               </div>
-              <pre className="overflow-x-auto rounded-md border border-border/40 bg-muted/30 p-3 text-xs font-mono leading-relaxed">
+              <pre className="overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-sm font-mono leading-relaxed text-foreground">
                 {formatContent(args)}
               </pre>
             </div>
@@ -252,33 +213,21 @@ export function ToolInvocation({
 
           {/* Result or Error */}
           {(result || errorText) && (
-            <div className="px-4 py-3">
+            <div className="p-4">
               <div
                 className={cn(
-                  "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider",
-                  errorText
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-emerald-600 dark:text-emerald-400"
+                  "mb-2 text-xs font-medium uppercase tracking-wide",
+                  errorText ? "text-destructive" : "text-success"
                 )}
               >
-                {errorText ? (
-                  <>
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    Error
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Output
-                  </>
-                )}
+                {errorText ? "Error" : "Output"}
               </div>
               <pre
                 className={cn(
-                  "max-h-[400px] overflow-auto rounded-md border p-3 text-xs font-mono leading-relaxed",
+                  "max-h-[400px] overflow-auto rounded-md border p-3 text-sm font-mono leading-relaxed",
                   errorText
-                    ? "border-rose-200/60 bg-rose-50/50 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
-                    : "border-emerald-200/60 bg-emerald-50/50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                    ? "border-destructive/20 bg-destructive/5 text-destructive"
+                    : "border-success/20 bg-success/5 text-foreground"
                 )}
               >
                 {formatContent(errorText || result)}
@@ -286,13 +235,13 @@ export function ToolInvocation({
             </div>
           )}
 
-          {/* Loading State */}
+          {/* Loading state */}
           {isStreamingState && !result && !errorText && (
-            <div className="px-4 py-6 text-center">
-              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="p-6 text-center">
+              <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Executing...
-              </div>
+              </span>
             </div>
           )}
         </div>

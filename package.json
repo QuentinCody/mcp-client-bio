@@ -98,6 +98,9 @@
     "onlyBuiltDependencies": [
       "@tailwindcss/oxide",
       "esbuild"
-    ]
+    ],
+    "patchedDependencies": {
+      "@ai-sdk/google": "patches/@ai-sdk__google.patch"
+    }
   }
 }

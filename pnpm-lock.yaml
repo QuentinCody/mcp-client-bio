@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@ai-sdk/google':
+    hash: 8880652b0a799f3d4661f20cf34076358ad56097059927abc2535c6ce9befb42
+    path: patches/@ai-sdk__google.patch
+
 importers:
 
   .:
@@ -13,7 +18,7 @@ importers:
         version: 2.0.27(zod@3.25.76)
       '@ai-sdk/google':
         specifier: ^2.0.20
-        version: 2.0.20(zod@3.25.76)
+        version: 2.0.20(patch_hash=8880652b0a799f3d4661f20cf34076358ad56097059927abc2535c6ce9befb42)(zod@3.25.76)
       '@ai-sdk/groq':
         specifier: ^2.0.24
         version: 2.0.24(zod@3.25.76)
@@ -4487,7 +4492,7 @@ snapshots:
       '@vercel/oidc': 3.0.2
       zod: 3.25.76
 
-  '@ai-sdk/google@2.0.20(zod@3.25.76)':
+  '@ai-sdk/google@2.0.20(patch_hash=8880652b0a799f3d4661f20cf34076358ad56097059927abc2535c6ce9befb42)(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 2.0.0
       '@ai-sdk/provider-utils': 3.0.12(zod@3.25.76)

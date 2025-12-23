@@ -1,8 +1,12 @@
 /**
- * structuredContent Enforcement for MCP Code Mode
+ * structuredContent Support for MCP Code Mode
  *
- * This module enforces that MCP servers return structuredContent according to the spec,
- * provides detailed diagnostics when they don't, and offers fallback parsing strategies.
+ * This module provides utilities for handling structuredContent - a CUSTOM extension
+ * to the MCP protocol used by Code Mode for direct JSON data access.
+ *
+ * NOTE: structuredContent is NOT part of the MCP specification. Standard MCP servers
+ * return data in content[].text format. This module provides fallback parsing for
+ * standard responses and validation for servers that opt-in to structuredContent.
  */
 
 export interface StructuredContentValidationResult {
@@ -88,10 +92,10 @@ export function validateStructuredContent(
 
   if (!hasStructuredContent) {
     issues.push({
-      severity: options.strict ? 'error' : 'warning',
+      severity: options.strict ? 'error' : 'info',
       code: 'MISSING_STRUCTURED_CONTENT',
-      message: 'Response does not contain structuredContent field',
-      fix: 'MCP servers should return { structuredContent: {...data} } for Code Mode compatibility',
+      message: 'Response uses standard MCP format (content[].text) instead of structuredContent',
+      fix: 'Optional: Add structuredContent field for direct JSON access in Code Mode',
     });
   }
 
@@ -186,7 +190,7 @@ export function extractStructuredData(
     }
   }
 
-  // PRIORITY 1: structuredContent (MCP spec)
+  // PRIORITY 1: structuredContent (Code Mode extension)
   if (validation.hasStructuredContent && validation.isValid) {
     const structured = response.structuredContent;
 

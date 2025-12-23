@@ -1,0 +1,42 @@
+diff --git a/dist/index.js b/dist/index.js
+index f4b85ac5406140794f3d8bd3f8391f39a0eed91b..1e8ba728d9f1dfe8e980352e6747cea2f44cdfdf 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -569,6 +569,7 @@ function prepareTools({
+   tools = (tools == null ? void 0 : tools.length) ? tools : void 0;
+   const toolWarnings = [];
+   const isGemini2 = modelId.includes("gemini-2");
++  const isGemini3 = modelId.includes("gemini-3");
+   const supportsDynamicRetrieval = modelId.includes("gemini-1.5-flash") && !modelId.includes("-8b");
+   if (tools == null) {
+     return { tools: void 0, toolConfig: void 0, toolWarnings };
+@@ -665,7 +666,7 @@ function prepareTools({
+     case "auto":
+       return {
+         tools: { functionDeclarations },
+-        toolConfig: { functionCallingConfig: { mode: "AUTO" } },
++        toolConfig: isGemini3 ? void 0 : { functionCallingConfig: { mode: "AUTO" } },
+         toolWarnings
+       };
+     case "none":
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 69ab1599c76801dc1167551b6fa283dded123466..8c8415d9d3e3637e25d282fba7e7640397f7d684 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -580,6 +580,7 @@ function prepareTools({
+   tools = (tools == null ? void 0 : tools.length) ? tools : void 0;
+   const toolWarnings = [];
+   const isGemini2 = modelId.includes("gemini-2");
++  const isGemini3 = modelId.includes("gemini-3");
+   const supportsDynamicRetrieval = modelId.includes("gemini-1.5-flash") && !modelId.includes("-8b");
+   if (tools == null) {
+     return { tools: void 0, toolConfig: void 0, toolWarnings };
+@@ -676,7 +677,7 @@ function prepareTools({
+     case "auto":
+       return {
+         tools: { functionDeclarations },
+-        toolConfig: { functionCallingConfig: { mode: "AUTO" } },
++        toolConfig: isGemini3 ? void 0 : { functionCallingConfig: { mode: "AUTO" } },
+         toolWarnings
+       };
+     case "none":

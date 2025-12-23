@@ -5,16 +5,9 @@ import { memo, useCallback, useEffect, useState } from "react";
 import equal from "fast-deep-equal";
 import { Markdown } from "./markdown";
 import { cn } from "@/lib/utils";
-import {
-  ChevronDownIcon,
-  ChevronUpIcon,
-  LightbulbIcon,
-  Sparkles,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, LightbulbIcon, Copy, Check } from "lucide-react";
 import { SpinnerIcon } from "./icons";
 import { ToolInvocation } from "./tool-invocation-redesign";
-import { CopyButton } from "./copy-button";
-import { Avatar, AvatarFallback } from "./ui/avatar";
 
 interface ReasoningPart {
   type: "reasoning";
@@ -40,7 +33,6 @@ export function ReasoningMessagePart({
   }, []);
 
   useEffect(() => {
-    // Auto-expand when reasoning starts, so users see tokens immediately
     memoizedSetIsExpanded(isReasoning);
   }, [isReasoning, memoizedSetIsExpanded]);
 
@@ -52,48 +44,30 @@ export function ReasoningMessagePart({
         : [];
 
   return (
-    <div className="mb-2 flex flex-col group">
+    <div className="mb-4">
       {isReasoning ? (
-        <div className="space-y-2">
-          <div
-            className={cn(
-              "flex items-center gap-2 sm:gap-2.5 rounded-full border border-info/20 bg-gradient-to-r from-info/10 to-info/5 px-3 sm:px-4 py-2 shadow-sm backdrop-blur-sm",
-              "dark:border-info/40 dark:from-info/25 dark:to-info/15 dark:shadow-[0_0_15px_rgba(56,189,248,0.3)]",
-              "w-fit"
-            )}
-          >
-            <div className="animate-spin h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0 text-info dark:drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="h-4 w-4 animate-spin">
               <SpinnerIcon />
             </div>
-            <div className="text-[11px] sm:text-xs font-bold tracking-tight text-info">Thinking...</div>
+            <span className="text-sm font-medium">Thinking...</span>
           </div>
-          {/* Show reasoning content immediately while thinking */}
+
           {detailItems.length > 0 && (
-            <div
-              className={cn(
-                "ml-0.5 flex flex-col gap-1.5 sm:gap-2 border-l-2 border-[#fde68a] pl-2 sm:pl-3",
-                "text-[13px] sm:text-sm text-[#6b7280] dark:text-[#d1d5db]"
-              )}
-            >
-              <div className="pl-0.5 sm:pl-1 text-[11px] sm:text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
-                The assistant&apos;s thought process:
-              </div>
+            <div className="border-l-2 border-amber-300 dark:border-amber-700 pl-4 space-y-2">
               {detailItems.map((detail, detailIndex) =>
                 detail.type === "text" ? (
                   <div
                     key={detailIndex}
-                    className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-2 py-1.5 text-[13px] sm:text-sm text-[#374151] dark:border-[#303030] dark:bg-[#1c1c1c] dark:text-[#d1d5db]"
+                    className="text-sm text-muted-foreground leading-relaxed"
                   >
-                    <div className="relative">
-                      <Markdown>{detail.text}</Markdown>
-                      {detailIndex === detailItems.length - 1 && (
-                        <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
-                      )}
-                    </div>
+                    <Markdown>{detail.text}</Markdown>
+                    {detailIndex === detailItems.length - 1 && (
+                      <span className="ml-0.5 inline-block h-4 w-0.5 animate-cursor bg-primary align-text-bottom" />
+                    )}
                   </div>
-                ) : (
-                  "<redacted>"
-                )
+                ) : null
               )}
             </div>
           )}
@@ -101,69 +75,29 @@ export function ReasoningMessagePart({
       ) : (
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className={cn(
-            "mb-0.5 flex w-full items-center justify-between rounded-xl border border-[#d4d4d4] bg-[#f5f5f5] px-2.5 sm:px-3 py-2 text-left min-h-[44px] sm:min-h-0",
-            "transition-all duration-150 hover:bg-[#ededee] active:scale-[0.98] dark:border-[#2b2b2b] dark:bg-[#1c1c1c] dark:hover:bg-[#232323]",
-            isExpanded ? "shadow-inner" : ""
-          )}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
         >
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <div
-              className={cn(
-                "flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full flex-shrink-0",
-                "bg-[#fde68a] text-[#92400e] dark:bg-[#92400e]/30 dark:text-[#fcd34d]"
-              )}
-            >
-              <LightbulbIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-            </div>
-            <div className="flex items-center gap-1 sm:gap-1.5 text-[13px] sm:text-sm font-medium text-[#1f2937] dark:text-[#f5f5f5]">
-              <span>Reasoning</span>
-              <span className="hidden xs:inline text-xs text-muted-foreground font-normal">
-                (click to {isExpanded ? "hide" : "view"})
-              </span>
-            </div>
-          </div>
-          <div
-            className={cn(
-              "flex h-6 w-6 items-center justify-center rounded-full border border-transparent bg-white text-[#6b7280] transition-colors hover:text-[#1f2937] dark:bg-[#1f1f1f] dark:text-[#9ca3af] dark:hover:text-[#f5f5f5] flex-shrink-0"
-            )}
-          >
-            {isExpanded ? (
-              <ChevronDownIcon className="h-3 w-3" />
-            ) : (
-              <ChevronUpIcon className="h-3 w-3" />
-            )}
-          </div>
+          <LightbulbIcon className="h-4 w-4 text-amber-500" />
+          <span className="font-medium">Reasoning</span>
+          {isExpanded ? (
+            <ChevronDownIcon className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRightIcon className="h-3.5 w-3.5" />
+          )}
         </button>
       )}
 
-      {/* Show expandable block only after reasoning (streaming) phase ends to avoid duplication */}
       {!isReasoning && isExpanded && detailItems.length > 0 && (
-        <div
-          className={cn(
-            "mt-2 ml-0.5 flex flex-col gap-1.5 sm:gap-2 border-l-2 border-[#fde68a] pl-2 sm:pl-3",
-            "text-[13px] sm:text-sm text-[#6b7280] dark:text-[#d1d5db]"
-          )}
-        >
-          <div className="pl-0.5 sm:pl-1 text-[11px] sm:text-xs font-medium text-[#9ca3af] dark:text-[#9ca3af]">
-            The assistant&apos;s thought process:
-          </div>
+        <div className="mt-2 border-l-2 border-amber-300 dark:border-amber-700 pl-4 space-y-2 animate-fade-in">
           {detailItems.map((detail, detailIndex) =>
             detail.type === "text" ? (
               <div
                 key={detailIndex}
-                className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-2 py-1.5 text-[13px] sm:text-sm text-[#374151] dark:border-[#303030] dark:bg-[#1c1c1c] dark:text-[#d1d5db]"
+                className="text-sm text-muted-foreground leading-relaxed"
               >
-                <div className="relative">
-                  <Markdown>{detail.text}</Markdown>
-                  {isReasoning && detailIndex === detailItems.length - 1 && (
-                    <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded bg-amber-500 align-text-bottom" />
-                  )}
-                </div>
+                <Markdown>{detail.text}</Markdown>
               </div>
-            ) : (
-              "<redacted>"
-            )
+            ) : null
           )}
         </div>
       )}
@@ -181,7 +115,8 @@ const PurePreviewMessage = ({
   status: "error" | "submitted" | "streaming" | "ready";
   isLatestMessage: boolean;
 }) => {
-  // Create a string with all text parts for copy functionality
+  const [copied, setCopied] = useState(false);
+
   const getMessageText = () => {
     if (!message.parts) return "";
     return message.parts
@@ -190,216 +125,171 @@ const PurePreviewMessage = ({
       .join("\n\n");
   };
 
-  // Check if this is an expanded message
-  const expansionData = null;
+  const handleCopy = async () => {
+    const text = getMessageText();
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-  // Only show copy button if the message is from the assistant and not currently streaming
   const shouldShowCopyButton =
     message.role === "assistant" &&
     (!isLatestMessage || status !== "streaming");
 
   const isUser = message.role === "user";
-  const speakerLabel = isUser ? "You" : "Bio MCP";
-  const streamingLabel = isLatestMessage
-    ? status === "streaming"
-      ? "Streaming…"
-      : status === "submitted"
-        ? "Pending…"
-        : null
-    : null;
 
-  const bubbleClassName = cn(
-    "relative max-w-[95%] sm:max-w-[90%] rounded-2xl border px-3 py-3 sm:px-5 sm:py-4 shadow-md transition-all duration-200 will-change-transform hover:shadow-lg",
-    isUser
-      ? "border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 text-foreground backdrop-blur-sm dark:border-primary/40 dark:from-primary/15 dark:to-primary/8 dark:shadow-[0_0_20px_rgba(96,165,250,0.15)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.25)]"
-      : "border-border/50 bg-gradient-to-br from-card to-card/80 text-card-foreground backdrop-blur-sm dark:border-border/40 dark:from-card dark:to-card/90 dark:shadow-[0_0_20px_rgba(96,165,250,0.08)] dark:hover:shadow-[0_0_30px_rgba(96,165,250,0.15)]"
-  );
-
-  const headerClassName = cn(
-    "flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wide text-[#707070] dark:text-[#9f9f9f]",
-    isUser ? "justify-end" : "justify-start"
-  );
-
-  const bubbleAlignment = isUser ? "ml-auto text-right" : "mr-auto";
-  const copyButtonPosition = isUser ? "left-2 sm:left-3" : "right-2 sm:right-3";
-
-  return (
-    <div
-      className={cn(
-        "group/message relative mx-auto w-full px-2 py-1.5 sm:px-1 sm:py-2",
-        message.role === "assistant" ? "mb-4 sm:mb-8" : "mb-3 sm:mb-7"
-      )}
-      data-role={message.role}
-    >
-      <div
-        className={cn(
-          "flex w-full items-start gap-2 sm:gap-4 md:gap-5",
-          isUser ? "flex-row-reverse text-right" : "text-left"
-        )}
-      >
-        <div className="relative flex flex-col items-center pt-0.5 sm:pt-1">
-          <Avatar
-            className={cn(
-              "h-7 w-7 sm:h-9 sm:w-9 border-2 text-sm font-semibold uppercase tracking-wide shadow-lg ring-2 transition-all duration-300 will-change-transform group-hover/message:scale-110 group-hover/message:shadow-xl",
-              isUser
-                ? "border-primary/30 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground ring-primary/20 dark:border-primary/50 dark:ring-primary/40 dark:shadow-[0_0_20px_rgba(96,165,250,0.4)] dark:group-hover/message:shadow-[0_0_30px_rgba(96,165,250,0.6)]"
-                : "border-accent/30 bg-gradient-to-br from-accent via-accent/90 to-accent/70 text-accent-foreground ring-accent/20 dark:border-accent/50 dark:ring-accent/40 dark:shadow-[0_0_20px_rgba(34,211,238,0.4)] dark:group-hover/message:shadow-[0_0_30px_rgba(34,211,238,0.6)]"
-            )}
-          >
-            <AvatarFallback className="text-[9px] sm:text-[10px] font-bold uppercase bg-transparent">
-              {isUser ? "You" : "AI"}
-            </AvatarFallback>
-          </Avatar>
-        </div>
-
-        <div className="flex w-full flex-1 flex-col gap-1.5 sm:gap-2 min-w-0">
-          <div className={headerClassName}>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 px-0.5 py-0.5 text-[#1f2933] dark:text-[#fafafa]",
-                isUser ? "font-semibold" : "font-semibold"
-              )}
-            >
-              {speakerLabel}
-            </span>
-            {!isUser && (
-              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-accent/20 bg-gradient-to-r from-accent/10 to-accent/5 px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-accent shadow-sm backdrop-blur-sm dark:border-accent/40 dark:from-accent/25 dark:to-accent/15 dark:shadow-[0_0_12px_rgba(34,211,238,0.3)]">
-                <Sparkles className="h-2.5 w-2.5 sm:h-3 sm:w-3 animate-pulse dark:drop-shadow-[0_0_4px_rgba(34,211,238,0.8)]" />
-                <span className="hidden xs:inline">Assistant</span>
-              </span>
-            )}
-            {streamingLabel && (
-              <span className="inline-flex items-center gap-0.5 sm:gap-1 rounded-full border border-success/20 bg-gradient-to-r from-success/10 to-success/5 px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-success shadow-sm backdrop-blur-sm dark:border-success/40 dark:from-success/25 dark:to-success/15 dark:shadow-[0_0_12px_rgba(34,197,94,0.3)]">
-                <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)] dark:shadow-[0_0_12px_rgba(34,197,94,0.9)]" />
-                <span className="hidden xs:inline">{streamingLabel}</span>
-              </span>
-            )}
+  // User messages: compact bubble on right
+  if (isUser) {
+    return (
+      <div className="flex justify-end" data-role="user">
+        <div className="max-w-[80%] sm:max-w-[70%] lg:max-w-[60%]">
+          <div className="mb-1 text-xs font-medium text-muted-foreground text-right">
+            You
           </div>
-
-          <div className={cn(bubbleClassName, bubbleAlignment)}>
-            {shouldShowCopyButton && (
-              <>
-                <CopyButton
-                  text={getMessageText()}
-                  className={cn(
-                    "absolute top-2 sm:top-3 h-7 sm:h-8 w-auto px-1.5 sm:px-2 py-1 text-[10px] sm:text-xs text-[#525252] dark:text-[#d4d4d4] transition-opacity duration-200",
-                    copyButtonPosition,
-                    "hidden sm:inline-flex"
-                  )}
-                />
-              </>
-            )}
-            <div
-              className={cn(
-                "flex flex-col gap-3 sm:gap-4 text-[0.875rem] sm:text-[0.95rem] leading-6 sm:leading-7 text-[#1f2937] dark:text-[#e7e7e7]",
-                isUser ? "items-end text-right" : "text-left"
-              )}
-            >
-              {shouldShowCopyButton && !isUser && (
-                <div className="sm:hidden mt-2 -mb-1">
-                  <CopyButton
-                    text={getMessageText()}
-                    className="w-full justify-center rounded-lg border border-border/40 bg-background/60 px-3 py-2.5 text-[11px] font-medium text-foreground/80 hover:bg-background active:scale-95 transition-all dark:border-[#2b2b2b] dark:bg-[#1a1a1a]/60"
-                  />
-                </div>
-              )}
+          <div className="rounded-2xl bg-primary text-primary-foreground px-4 py-3">
+            <div className="text-[15px] leading-relaxed">
               {message.parts?.map((part, i) => {
-                const key = `message-${message.id}-part-${i}`;
-
                 if (part.type === "text") {
-                  const isStreamingText =
-                    isLatestMessage &&
-                    status === "streaming" &&
-                    i === (message.parts?.length ?? 0) - 1;
-
                   return (
-                    <div key={key} className="relative">
+                    <div key={`${message.id}-${i}`}>
                       <Markdown>{part.text}</Markdown>
-                      {isStreamingText && (
-                        <span className="absolute -bottom-1 left-0 inline-flex h-4 w-1.5 animate-pulse rounded-full bg-success dark:bg-success dark:shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
-                      )}
                     </div>
                   );
                 }
-
-                if (part.type === "reasoning") {
-                  return (
-                    <ReasoningMessagePart
-                      key={key}
-                      part={part}
-                      isReasoning={
-                        (message.parts &&
-                          status === "streaming" &&
-                          i === message.parts.length - 1) ??
-                        false
-                      }
-                    />
-                  );
-                }
-
-                if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-                  const toolPart = part as any;
-                  const toolName =
-                    part.type === "dynamic-tool"
-                      ? toolPart.toolName || "dynamic-tool"
-                      : part.type.replace(/^tool-/, "") || "tool";
-                  const result =
-                    toolPart.output !== undefined
-                      ? toolPart.output
-                      : toolPart.errorText
-                        ? { error: toolPart.errorText }
-                        : undefined;
-
-                  return (
-                    <ToolInvocation
-                      key={key}
-                      toolName={toolName}
-                      state={toolPart.state}
-                      args={toolPart.input}
-                      result={result}
-                      errorText={toolPart.errorText}
-                      callId={toolPart.toolCallId}
-                      isLatestMessage={isLatestMessage}
-                      status={status}
-                    />
-                  );
-                }
-
-                if (part.type.startsWith("data-") || part.type === "step-start") {
-                  return null;
-                }
-
                 return null;
               })}
             </div>
           </div>
         </div>
       </div>
+    );
+  }
+
+  // Assistant messages: full-width, no bubble
+  return (
+    <div className="group/message" data-role="assistant">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Assistant
+          </span>
+          {isLatestMessage && status === "streaming" && (
+            <span className="flex items-center gap-1.5 text-xs text-primary">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-subtle-pulse" />
+              typing
+            </span>
+          )}
+        </div>
+
+        {shouldShowCopyButton && (
+          <button
+            onClick={handleCopy}
+            className="opacity-0 group-hover/message:opacity-100 transition-opacity flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Message content - full width */}
+      <div className="text-[15px] leading-relaxed text-foreground space-y-4">
+        {message.parts?.map((part, i) => {
+          const key = `message-${message.id}-part-${i}`;
+
+          if (part.type === "text") {
+            const isStreamingText =
+              isLatestMessage &&
+              status === "streaming" &&
+              i === (message.parts?.length ?? 0) - 1;
+
+            return (
+              <div key={key} className="prose prose-neutral dark:prose-invert max-w-none">
+                <Markdown>{part.text}</Markdown>
+                {isStreamingText && (
+                  <span className="inline-block h-4 w-0.5 ml-0.5 animate-cursor bg-primary align-text-bottom" />
+                )}
+              </div>
+            );
+          }
+
+          if (part.type === "reasoning") {
+            return (
+              <ReasoningMessagePart
+                key={key}
+                part={part}
+                isReasoning={
+                  (message.parts &&
+                    status === "streaming" &&
+                    i === message.parts.length - 1) ??
+                  false
+                }
+              />
+            );
+          }
+
+          if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
+            const toolPart = part as any;
+            const toolName =
+              part.type === "dynamic-tool"
+                ? toolPart.toolName || "dynamic-tool"
+                : part.type.replace(/^tool-/, "") || "tool";
+            const result =
+              toolPart.output !== undefined
+                ? toolPart.output
+                : toolPart.errorText
+                  ? { error: toolPart.errorText }
+                  : undefined;
+
+            return (
+              <ToolInvocation
+                key={key}
+                toolName={toolName}
+                state={toolPart.state}
+                args={toolPart.input}
+                result={result}
+                errorText={toolPart.errorText}
+                callId={toolPart.toolCallId}
+                isLatestMessage={isLatestMessage}
+                status={status}
+              />
+            );
+          }
+
+          if (part.type.startsWith("data-") || part.type === "step-start") {
+            return null;
+          }
+
+          return null;
+        })}
+      </div>
     </div>
   );
 };
 
 export const Message = memo(PurePreviewMessage, (prevProps, nextProps) => {
-  // Fast path: check primitives first
   if (prevProps.status !== nextProps.status) return false;
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (prevProps.isLatestMessage !== nextProps.isLatestMessage) return false;
   if (prevProps.message.id !== nextProps.message.id) return false;
 
-  // Optimize parts comparison with shallow checks first
   const prevParts = prevProps.message.parts;
   const nextParts = nextProps.message.parts;
 
-  // Same reference check (fastest path)
   if (prevParts === nextParts) return true;
-
-  // Null/undefined checks
   if (!prevParts || !nextParts) return false;
-
-  // Length check (very fast)
   if (prevParts.length !== nextParts.length) return false;
-
-  // Deep compare ONLY the parts array (not entire message)
   if (!equal(prevParts, nextParts)) return false;
 
   return true;

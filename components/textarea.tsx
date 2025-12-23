@@ -1,6 +1,6 @@
 import { modelDetails, type modelID } from "@/ai/providers";
 import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
-import { ArrowUp, Loader2, Hash, Sparkles, Zap, ServerIcon, CircleStop, CornerDownLeft } from "lucide-react";
+import { ArrowUp, Loader2, Hash, ServerIcon, CircleStop } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -24,8 +24,6 @@ type MenuItem = SlashPromptDef & {
   score?: number;
   group?: "command" | "prompt";
 };
-
-type SlashSegmentHint = { value: string; complete: boolean };
 
 interface InputProps {
   input: string;
@@ -73,8 +71,6 @@ export const Textarea = ({
   const isStreaming = status === "streaming" || status === "submitted";
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [showingSlashHint, setShowingSlashHint] = useState(false);
-  const [isTypingSlash, setIsTypingSlash] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     mcpServers,
@@ -197,23 +193,6 @@ export const Textarea = ({
     return items[safeIndex];
   }, [items, activeIndex]);
 
-  const slashSegments = useMemo<SlashSegmentHint[]>(() => {
-    if (!menuOpen || !query) return [];
-    const rawSegments = query.split(".");
-    return rawSegments.map((segment, idx) => ({
-      value: segment,
-      complete: idx < rawSegments.length - 1,
-    }));
-  }, [menuOpen, query]);
-
-  const composerStatus = isStreaming
-    ? status === "submitted"
-      ? "Thinking..."
-      : "Streaming"
-    : "Ready";
-
-  const characterCount = input.length;
-
   function toPromptSummary(def: MenuItem): PromptSummary {
     return {
       name: def.name,
@@ -238,14 +217,12 @@ export const Textarea = ({
       const replaced = before.replace(/(^|\s)\/([^\s]*)$/, `$1${toToken(def)}`) + after;
       handleInputChange({ target: { value: replaced } } as any);
       setMenuOpen(false);
-      setIsTypingSlash(false);
 
-      // Position cursor after the inserted token
       requestAnimationFrame(() => {
         const node = textareaRef.current;
         if (node && slashMatch) {
           const matchStart = selStart - slashMatch[0].length;
-          const prefixLength = slashMatch[1].length; // whitespace before slash
+          const prefixLength = slashMatch[1].length;
           const tokenLength = toToken(def).length;
           const newCursorPos = matchStart + prefixLength + tokenLength;
           node.setSelectionRange(newCursorPos, newCursorPos);
@@ -253,38 +230,11 @@ export const Textarea = ({
         }
       });
       promptRegistry.markUsed(def.id);
-      try {
-        const raw = localStorage.getItem("prompt:recent");
-        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-        existing.set(def.id, Date.now());
-        const next = Array.from(existing.entries())
-          .map(([id, ts]) => ({ id, ts }))
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, 8);
-        localStorage.setItem("prompt:recent", JSON.stringify(next));
-      } catch {}
       return;
     }
 
     setMenuOpen(false);
-    setIsTypingSlash(false);
     promptRegistry.markUsed(def.id);
-    try {
-      const raw = localStorage.getItem("prompt:recent");
-      const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-      const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-      existing.set(def.id, Date.now());
-      const next = Array.from(existing.entries())
-        .map(([id, ts]) => ({ id, ts }))
-        .sort((a, b) => b.ts - a.ts)
-        .slice(0, 8);
-      localStorage.setItem("prompt:recent", JSON.stringify(next));
-    } catch {}
-
-    try {
-      localStorage.setItem(`prompt:${def.id}:args`, JSON.stringify(args));
-    } catch {}
 
     const messages: PromptMessage[] = templateMessages.map((message) => ({
       role: message.role,
@@ -312,16 +262,12 @@ export const Textarea = ({
     args: Record<string, string>
   ) {
     setMenuOpen(false);
-    setIsTypingSlash(false);
     promptRegistry.markUsed(def.id);
     try {
       const result = await fetchPromptMessages(server.id, def.name, args);
       if (!result) {
         throw new Error("Prompt resolution failed");
       }
-      try {
-        localStorage.setItem(`prompt:${def.id}:args`, JSON.stringify(args));
-      } catch {}
       onPromptResolved({
         def,
         serverId: server.id,
@@ -373,29 +319,18 @@ export const Textarea = ({
   async function onKeyDownEnhanced(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.defaultPrevented) {
       if (menuOpen) setMenuOpen(false);
-      setIsTypingSlash(false);
       return;
     }
     const before = input.slice(0, (e.currentTarget.selectionStart ?? 0));
     const slashCtx = /(^|\s)\/([^\s/]*)$/.exec(before);
-    
-    // Handle slash character typing
-    if (e.key === '/' && !slashCtx) {
-      setIsTypingSlash(true);
-      setShowingSlashHint(true);
-      setTimeout(() => setShowingSlashHint(false), 3000);
-    }
-    
+
     if (slashCtx) {
       setMenuOpen(true);
       setQuery(slashCtx[2] ?? "");
-      setIsTypingSlash(false);
       if (e.key === "Escape") {
         setMenuOpen(false);
-        setIsTypingSlash(false);
       }
       if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
-        // Select first item when menu is open
         if (items.length > 0) {
           e.preventDefault();
           const chosen = items[Math.max(0, Math.min(activeIndex, items.length - 1))] || items[0];
@@ -415,49 +350,31 @@ export const Textarea = ({
       }
     } else if (menuOpen) {
       setMenuOpen(false);
-      setIsTypingSlash(false);
     }
 
     if (e.key === "Enter" && !e.shiftKey && !isLoading) {
       e.preventDefault();
 
-      // If there's a prompt preview, send it (this calls form.requestSubmit() same as normal)
       if (promptPreview && !promptPreview.sending) {
         handlePreviewSend();
         return;
       }
 
-      // For regular input without prompt preview, send if it has content
       if (input.trim()) {
         e.currentTarget.form?.requestSubmit();
       }
     }
   }
 
-  // No inline expansion here; resolution handled in Chat and previewed below
-
   function insertPrompt(def: MenuItem) {
     if (def.mode === 'command' && def.commandMeta) {
       setMenuOpen(false);
-      setIsTypingSlash(false);
       const fakeEvent = { target: { value: "" } } as any;
       handleInputChange(fakeEvent);
 
-      // Focus textarea after command execution
       requestAnimationFrame(() => {
         textareaRef.current?.focus();
       });
-      try {
-        const raw = localStorage.getItem("prompt:recent");
-        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-        existing.set(def.id, Date.now());
-        const next = Array.from(existing.entries())
-          .map(([id, ts]) => ({ id, ts }))
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, 8);
-        localStorage.setItem("prompt:recent", JSON.stringify(next));
-      } catch {}
       onRunCommand(def.commandMeta, Array.isArray(def.commandMeta.arguments) && def.commandMeta.arguments.length === 0 ? [] : undefined);
       return;
     }
@@ -466,7 +383,6 @@ export const Textarea = ({
       const hasArgs = (def.args?.length ?? 0) > 0;
       if (hasArgs) {
         setMenuOpen(false);
-        setIsTypingSlash(false);
         setArgDialog({
           open: true,
           mode: 'client',
@@ -491,18 +407,6 @@ export const Textarea = ({
       const summary = toPromptSummary(def);
       const hasArgs = (summary.arguments ?? []).length > 0;
       setMenuOpen(false);
-      setIsTypingSlash(false);
-      try {
-        const raw = localStorage.getItem("prompt:recent");
-        const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-        const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-        existing.set(def.id, Date.now());
-        const next = Array.from(existing.entries())
-          .map(([id, ts]) => ({ id, ts }))
-          .sort((a, b) => b.ts - a.ts)
-          .slice(0, 8);
-        localStorage.setItem("prompt:recent", JSON.stringify(next));
-      } catch {}
 
       if (hasArgs) {
         setArgDialog({ open: true, mode: 'server', server, prompt: summary, def });
@@ -513,7 +417,6 @@ export const Textarea = ({
       return;
     }
 
-    // Replace the current "/partial" with canonical token
     const selStart = textareaRef.current?.selectionStart ?? input.length;
     const before = input.slice(0, selStart);
     const after = input.slice(selStart);
@@ -523,12 +426,11 @@ export const Textarea = ({
     handleInputChange(fakeEvent);
     setMenuOpen(false);
 
-    // Position cursor after the inserted token
     requestAnimationFrame(() => {
       const node = textareaRef.current;
       if (node && slashMatch) {
         const matchStart = selStart - slashMatch[0].length;
-        const prefixLength = slashMatch[1].length; // whitespace before slash
+        const prefixLength = slashMatch[1].length;
         const tokenLength = toToken(def).length;
         const newCursorPos = matchStart + prefixLength + tokenLength;
         node.setSelectionRange(newCursorPos, newCursorPos);
@@ -536,73 +438,52 @@ export const Textarea = ({
       }
     });
     promptRegistry.markUsed(def.id);
-    try {
-      const raw = localStorage.getItem("prompt:recent");
-      const recent: Array<{ id: string; ts: number }> = raw ? JSON.parse(raw) : [];
-      const existing = new Map(recent.map((r) => [r.id, r.ts] as const));
-      existing.set(def.id, Date.now());
-      const next = Array.from(existing.entries())
-        .map(([id, ts]) => ({ id, ts }))
-        .sort((a, b) => b.ts - a.ts)
-        .slice(0, 8);
-      localStorage.setItem("prompt:recent", JSON.stringify(next));
-    } catch {}
   }
 
   const showInlineModelPicker = showModelPicker && modelPickerVariant === "inline";
   const showFloatingModelPicker = showModelPicker && modelPickerVariant === "floating";
 
   return (
-    <div className="w-full space-y-2 sm:space-y-3">
-      {/* Desktop status indicators */}
-      <div className="hidden sm:flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground/80">
+    <div className="w-full space-y-3">
+      {/* Model picker and status - desktop */}
+      <div className="hidden sm:flex items-center justify-between text-xs text-muted-foreground">
         {showInlineModelPicker && (
           <ModelPicker
             setSelectedModel={setSelectedModel}
             selectedModel={selectedModel}
             variant="inline"
-            className="w-full text-left sm:w-auto"
+            className="w-auto"
           />
         )}
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1 text-muted-foreground/80">
-            <ServerIcon className="h-3 w-3" />
-            {activeServerCount} active
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <ServerIcon className="h-3.5 w-3.5" />
+            {activeServerCount} servers
           </span>
-          <span className="inline-flex items-center gap-1 text-muted-foreground/80">
-            <Hash className="h-3 w-3" />
-            Slash ready
+          <span className="flex items-center gap-1.5">
+            <Hash className="h-3.5 w-3.5" />
+            Type / for commands
           </span>
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
-              isStreaming
-                ? "border-primary/40 bg-primary/10 text-primary"
-                : "border-border/60 bg-background/80 text-muted-foreground"
-            )}
-          >
-            {isStreaming ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Zap className="h-3 w-3" />
-            )}
-            {composerStatus}
-          </span>
+          {isStreaming && (
+            <span className="flex items-center gap-1.5 text-primary">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {status === "submitted" ? "Thinking" : "Streaming"}
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="relative overflow-visible rounded-2xl border-2 border-border/30 bg-background shadow-sm focus-within:border-primary/50 focus-within:shadow-lg focus-within:ring-4 focus-within:ring-primary/10 transition-all duration-200">
+      {/* Main input */}
+      <div className="relative rounded-2xl border border-border bg-background shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+        {/* Slash command menu */}
         {menuOpen && (
-          <div className="pointer-events-auto absolute bottom-full left-0 right-0 mb-3 z-50">
+          <div className="absolute bottom-full left-0 right-0 mb-2 z-50">
             <SlashPromptMenu
               className="w-full"
               query={query}
               items={items}
               onSelect={insertPrompt}
-              onClose={() => {
-                setMenuOpen(false);
-                setIsTypingSlash(false);
-              }}
+              onClose={() => setMenuOpen(false)}
               activeIndex={activeIndex}
               setActiveIndex={setActiveIndex}
               loading={!promptsLoaded}
@@ -610,42 +491,14 @@ export const Textarea = ({
           </div>
         )}
 
-        {showingSlashHint && !menuOpen && (
-          <div className="pointer-events-none absolute top-3 left-4 z-20 animate-in slide-in-from-left-3 fade-in-0 duration-300">
-            <div className="flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 px-4 py-2 text-xs font-bold text-white shadow-2xl shadow-blue-500/40 backdrop-blur-sm ring-2 ring-white/20 dark:ring-white/30">
-              <Hash className="h-3.5 w-3.5 animate-bounce" />
-              <span className="drop-shadow-md">Type to search commands</span>
-              <Sparkles className="h-3.5 w-3.5 animate-pulse drop-shadow-md" />
-            </div>
-          </div>
-        )}
-
-        {menuOpen && slashSegments.length > 0 && (
-          <div className="pointer-events-none absolute left-4 top-3 z-10 flex flex-wrap items-center gap-1.5 animate-in fade-in-0 slide-in-from-top-2 duration-200">
-            {slashSegments.map((segment, idx) => (
-              <span
-                key={`segment-${idx}-${segment.value}`}
-                className={cn(
-                  "rounded-lg border-2 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wide shadow-sm transition-all",
-                  segment.complete
-                    ? "border-blue-300 dark:border-blue-700 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                    : "border-blue-400 dark:border-blue-600 bg-gradient-to-r from-blue-200 to-blue-100 dark:from-blue-900/60 dark:to-blue-900/40 text-blue-800 dark:text-blue-200 ring-2 ring-blue-400/30 dark:ring-blue-500/30"
-                )}
-              >
-                {segment.value || (idx === slashSegments.length - 1 ? "..." : "--")}
-              </span>
-            ))}
-          </div>
-        )}
-
+        {/* Textarea */}
         <ShadcnTextarea
           className={cn(
-            "max-h-[40vh] ![min-height:3.25rem] sm:![min-height:3.5rem] w-full resize-none border-none bg-transparent px-4 sm:px-3 pb-14 sm:pb-9 pt-3.5 sm:pt-3 text-[16px] sm:text-sm leading-relaxed placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:outline-none",
-            menuOpen && "ring-1 ring-primary/30"
+            "max-h-[40vh] min-h-[56px] w-full resize-none border-none bg-transparent px-4 pb-14 pt-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:outline-none"
           )}
           value={input}
           autoFocus
-          placeholder={menuOpen ? "Continue typing to filter prompts..." : "Message Bio MCP Chat..."}
+          placeholder={menuOpen ? "Search commands..." : "Message..."}
           onChange={handleInputChange}
           onKeyDown={onKeyDownEnhanced}
           ref={textareaRef}
@@ -653,29 +506,14 @@ export const Textarea = ({
           data-command-target="chat-input"
         />
 
+        {/* Highlighted item hint */}
         {menuOpen && highlightedItem && (
-          <div className="pointer-events-none absolute bottom-12 left-3 z-10 flex flex-wrap items-center gap-2.5 text-xs animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
-            <div className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500/15 to-indigo-500/15 dark:from-blue-500/20 dark:to-indigo-500/20 px-3 py-1.5 shadow-lg ring-2 ring-blue-400/30 dark:ring-blue-500/40 backdrop-blur-sm">
-              <kbd className="rounded-md border-2 border-blue-400 dark:border-blue-500 bg-white dark:bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400 shadow-sm">
-                Tab
-              </kbd>
-              <span className="font-semibold text-blue-700 dark:text-blue-300">complete</span>
-              <code className="rounded-md bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 font-mono text-xs font-bold text-blue-800 dark:text-blue-200">
-                /
-                {highlightedItem.mode === "command" ? highlightedItem.name : highlightedItem.trigger}
-              </code>
-            </div>
-            {Array.isArray(highlightedItem.args) && highlightedItem.args.length > 0 ? (
-              <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-100/90 to-orange-100/90 dark:from-amber-900/40 dark:to-orange-900/40 px-3 py-1.5 ring-2 ring-amber-300/40 dark:ring-amber-700/40 shadow-lg">
-                <span className="font-bold text-amber-800 dark:text-amber-300">
-                  {highlightedItem.args.filter((arg) => arg.required).length} required
-                </span>
-                <span className="text-amber-600 dark:text-amber-400">·</span>
-                <span className="font-semibold text-amber-700 dark:text-amber-400">
-                  {highlightedItem.args.length} total
-                </span>
-              </div>
-            ) : null}
+          <div className="absolute bottom-14 left-4 flex items-center gap-2 text-xs text-muted-foreground animate-fade-in">
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">Tab</kbd>
+            <span>to select</span>
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+              /{highlightedItem.mode === "command" ? highlightedItem.name : highlightedItem.trigger}
+            </code>
           </div>
         )}
 
@@ -687,14 +525,12 @@ export const Textarea = ({
           />
         )}
 
-        <div className="pointer-events-none absolute inset-x-3 bottom-11 h-px bg-gradient-to-r from-transparent via-border/40 to-transparent" />
-
-        <div className="absolute bottom-2.5 sm:bottom-3 right-2.5 sm:right-3 flex items-center gap-2">
+        {/* Send button */}
+        <div className="absolute bottom-3 right-3 flex items-center gap-2">
           {menuOpen && (
-            <div className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-1 text-[10px] sm:text-xs font-medium text-blue-700 shadow-sm dark:bg-blue-900/30 dark:text-blue-300">
-              <Hash className="h-3 w-3" />
-              <span>{items.length}</span>
-            </div>
+            <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-1">
+              {items.length} results
+            </span>
           )}
 
           <button
@@ -702,66 +538,54 @@ export const Textarea = ({
             onClick={isStreaming ? stop : undefined}
             disabled={(!isStreaming && !input.trim()) || (isStreaming && status === "submitted")}
             className={cn(
-              "flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full text-sm font-medium transition-all shadow-lg active:scale-95",
+              "flex h-10 w-10 items-center justify-center rounded-xl transition-all",
               isStreaming
-                ? "bg-red-500 text-white hover:bg-red-600 active:bg-red-700 shadow-red-500/30"
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 : !input.trim()
-                  ? "bg-muted/50 text-muted-foreground/50 shadow-sm cursor-not-allowed"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80 shadow-primary/30"
+                  ? "bg-muted text-muted-foreground cursor-not-allowed"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
             )}
-            aria-label={isStreaming ? "Stop response" : "Send message"}
+            aria-label={isStreaming ? "Stop" : "Send"}
           >
-            {isStreaming ? <CircleStop className="h-5 w-5 sm:h-4 sm:w-4" /> : <ArrowUp className="h-5 w-5 sm:h-4 sm:w-4" />}
+            {isStreaming ? <CircleStop className="h-5 w-5" /> : <ArrowUp className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
-      <div className="hidden sm:flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/80">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+      {/* Keyboard hints - desktop */}
+      <div className="hidden sm:flex items-center justify-between text-[11px] text-muted-foreground/70">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono">Enter</kbd>
             Send
           </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Shift</span>
-            <CornerDownLeft className="h-3 w-3 text-muted-foreground/70" />
-            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono">Shift+Enter</kbd>
             New line
           </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">/</span>
-            Prompts
-          </span>
         </div>
-        <span>{characterCount} characters</span>
+        <span>{input.length} chars</span>
       </div>
 
+      {/* Prompt preview */}
       {promptPreview && (
-        <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 shadow-inner">
+        <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                <Sparkles className="h-4 w-4" />
-                {promptPreview.def.origin === 'client-prompt' ? 'Client prompt staged' : 'Prompt staged'}
+              <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                <Hash className="h-4 w-4" />
+                Prompt ready to send
               </div>
-              {promptPreview.def.origin === 'client-prompt' ? (
-                <p className="mt-1 text-[11px] text-primary/80">
-                  This client prompt expands to a full instruction set before sending. Adjust the text if needed, then submit to the AI agent.
-                </p>
-              ) : promptPreview.sending ? (
-                <p className="mt-1 text-[11px] text-primary/80">Sending to the assistant…</p>
+              {promptPreview.sending ? (
+                <p className="mt-1 text-xs text-primary/70">Sending...</p>
               ) : (
-                <p className="mt-1 text-[11px] text-primary/80">Review linked resources before sending.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Review before sending</p>
               )}
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-medium text-primary">
-                <Hash className="h-3 w-3" />
-                /{promptPreview.def.trigger}
-              </div>
             </div>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-[11px] text-primary hover:text-primary/80"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
               type="button"
               onClick={onPromptPreviewCancel}
             >
@@ -781,21 +605,16 @@ export const Textarea = ({
             </div>
           ) : null}
           {!promptPreview.sending && (
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/80">
-                <span className="inline-flex items-center gap-1">
-                  <span className="rounded-md border border-border/60 bg-background/80 px-1.5 py-0.5 font-semibold">Enter</span>
-                  Send
-                </span>
-              </div>
+            <div className="mt-3 flex items-center justify-end">
               <Button size="sm" className="gap-2" type="button" onClick={handlePreviewSend} disabled={isLoading}>
                 <ArrowUp className="h-3.5 w-3.5" />
-                Send prompt
+                Send
               </Button>
             </div>
           )}
         </div>
       )}
+
       <PromptArgDialog
         open={argDialog.open}
         onOpenChange={(open) => setArgDialog((state) => ({ ...state, open }))}
@@ -816,12 +635,10 @@ export const Textarea = ({
           }
           setArgDialog({ open: false });
 
-          // Focus the textarea after dialog closes and prompt is inserted
           requestAnimationFrame(() => {
             const textarea = textareaRef.current;
             if (textarea) {
               textarea.focus();
-              // Position cursor at the end of the text
               const length = textarea.value.length;
               textarea.setSelectionRange(length, length);
             }
