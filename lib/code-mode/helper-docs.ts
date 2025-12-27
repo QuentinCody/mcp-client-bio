@@ -358,17 +358,71 @@ return \`Found \${proteins.length} proteins for TP53. Top result: \${proteins[0]
 return { summary: "Found proteins", data: proteins };  // BAD!
 \`\`\`
 
+## Cross-Server ID Resolution (IMPORTANT)
+
+**⚠️ NEVER hard-code database IDs (UniProt accessions, PDB IDs, Ensembl IDs, etc.)!** Even if you "know" the ID from training data, ALWAYS resolve it dynamically using the appropriate tool. Database IDs change, and hard-coded IDs may be outdated or wrong.
+
+When querying across servers, you must resolve identifiers dynamically. Here's what each server provides and requires:
+
+**ID Providers (use these to lookup/resolve IDs):**
+- \`helpers.uniprot.getData("uniprot_search", { query: "gene:BRCA1" })\` → UniProt accession (P38398)
+- \`helpers.uniprot.getData("uniprot_id_mapping", { from_db: "Gene_Name", to_db: "UniProtKB", ids: ["BRCA1"] })\` → Maps gene names to UniProt
+- \`helpers.entrez.getData("entrez_query", { operation: "search", database: "gene", term: "TP53" })\` → Gene ID
+- \`helpers.opentargets.getData("opentargets_graphql_query", { query: "{ search(queryString: \\"BRCA1\\") { hits { id } } }" })\` → Ensembl ID
+
+**ID Consumers (what they require):**
+- OpenTargets \`get_target_info\`: Requires Ensembl ID (ENSG...). Don't have one? First use OpenTargets search or UniProt ID mapping.
+- RCSB PDB: Requires PDB ID or UniProt accession. Don't have one? First lookup via UniProt search.
+- Pharos: Requires UniProt ID or gene symbol.
+
+### Cross-Server Chaining Example
+
+**Step 1:** User asks "What structures exist for BRCA1?" - you don't have the UniProt accession.
+**Step 2:** First resolve the gene name to UniProt accession, then query PDB.
+
+**✗ WRONG - Never hard-code IDs:**
+\`\`\`javascript
+// BAD! Don't hard-code IDs even if you "know" them
+const accession = "P38398";  // WRONG!
+const pdbIds = ["1JNX", "1JMZ"];  // WRONG!
+const structures = await helpers.rcsbpdb.getData("fetch", { pdb_ids: pdbIds });
+\`\`\`
+
+**✓ CORRECT - Always resolve IDs dynamically:**
+
+\`\`\`javascript
+// Step 1: Resolve gene name to UniProt accession
+const mapping = await helpers.uniprot.getData("uniprot_id_mapping", {
+  from_db: "Gene_Name",
+  to_db: "UniProtKB",
+  ids: ["BRCA1"],
+  taxon_id: "9606"  // human
+});
+const accession = mapping?.results?.[0]?.to?.primaryAccession || mapping?.results?.[0]?.to;
+
+// Step 2: Now query PDB with the resolved accession
+const structures = await helpers.rcsbpdb.getData("search_by_uniprot", { uniprot_id: accession });
+
+return \`## BRCA1 Protein Structures
+
+UniProt accession: \${accession}
+Found \${structures?.length || 0} PDB structures.
+
+Top structures:
+\${(structures || []).slice(0, 5).map(s => \`- \${s.pdb_id}: \${s.title || "N/A"}\`).join("\\n")}\`;
+\`\`\`
+
 ### Multi-Source Example
 \`\`\`javascript
-const proteins = await helpers.uniprot.getData("search", { query: "BRCA1" });
-const diseases = await helpers.opentargets.getData("get_target", { target_id: "ENSG00000012048" });
+const proteins = await helpers.uniprot.getData("uniprot_search", { query: "gene:BRCA1 AND organism_id:9606" });
+const diseases = await helpers.opentargets.getData("get_disease_associated_targets", { efo_id: "EFO_0000305" });
 
 return \`## BRCA1 Analysis
 
-**Proteins:** \${proteins.length} entries found
-**Top isoform:** \${proteins[0]?.name || "Unknown"}
+**Proteins:** \${proteins?.results?.length || 0} entries found
+**Top isoform:** \${proteins?.results?.[0]?.primaryAccession || "Unknown"}
 
-**Associated diseases:** \${diseases?.associatedDiseases?.length || 0} conditions
+**Associated diseases:** \${diseases?.disease?.associatedTargets?.count || 0} conditions
 \`;
 \`\`\`
 
