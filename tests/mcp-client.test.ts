@@ -64,12 +64,6 @@ type ServerUseCase = {
 
 const serverUseCases: ServerUseCase[] = [
   {
-    name: 'BioMCP Remote',
-    toolName: 'fetchRemoteGenome',
-    input: { query: 'BRCA1 sequences' },
-    response: { gene: 'BRCA1', fragments: 12 },
-  },
-  {
     name: 'ClinicalTrials',
     toolName: 'searchClinicalTrials',
     input: { query: 'lung cancer immunotherapy' },

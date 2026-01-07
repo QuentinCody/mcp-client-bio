@@ -365,15 +365,34 @@ return { summary: "Found proteins", data: proteins };  // BAD!
 When querying across servers, you must resolve identifiers dynamically. Here's what each server provides and requires:
 
 **ID Providers (use these to lookup/resolve IDs):**
-- \`helpers.uniprot.getData("uniprot_search", { query: "gene:BRCA1" })\` → UniProt accession (P38398)
+- \`helpers.uniprot.getData("uniprot_search", { query: "gene:BRCA1" })\` → UniProt accession
 - \`helpers.uniprot.getData("uniprot_id_mapping", { from_db: "Gene_Name", to_db: "UniProtKB", ids: ["BRCA1"] })\` → Maps gene names to UniProt
-- \`helpers.entrez.getData("entrez_query", { operation: "search", database: "gene", term: "TP53" })\` → Gene ID
+- \`helpers.entrez.getData("entrez_query", { operation: "search", database: "gene", term: "TP53" })\` → NCBI Gene ID
+- \`helpers.entrez.getData("entrez_query", { operation: "search", database: "pubmed", term: "BRCA1" })\` → PubMed IDs
 - \`helpers.opentargets.getData("opentargets_graphql_query", { query: "{ search(queryString: \\"BRCA1\\") { hits { id } } }" })\` → Ensembl ID
+- \`helpers.civic.getData("civic_search_genes", { query: "BRCA1" })\` → CIViC gene ID for variant queries
 
-**ID Consumers (what they require):**
-- OpenTargets \`get_target_info\`: Requires Ensembl ID (ENSG...). Don't have one? First use OpenTargets search or UniProt ID mapping.
-- RCSB PDB: Requires PDB ID or UniProt accession. Don't have one? First lookup via UniProt search.
-- Pharos: Requires UniProt ID or gene symbol.
+**Server-Specific ID Requirements:**
+
+| Server | Accepts | Lookup Method |
+|--------|---------|---------------|
+| **UniProt** | Gene names, UniProt accessions | Primary source - use for initial resolution |
+| **RCSB PDB** | PDB IDs, UniProt accessions | First resolve gene → UniProt, then query PDB |
+| **OpenTargets** | Ensembl IDs (ENSG...) | Use OpenTargets search or UniProt ID mapping |
+| **Pharos** | UniProt IDs, gene symbols | Use UniProt search or gene symbol directly |
+| **CIViC** | Gene names, variant names | Use civic_search_genes for gene ID, then query variants |
+| **DGIdb** | Gene names, drug names | Accepts gene symbols directly via GraphQL |
+| **ClinicalTrials** | Conditions, interventions, NCT IDs | Use condition/intervention text search |
+| **NCI GDC** | Gene symbols, project IDs | Use gene symbols; explore projects first |
+| **Entrez** | Gene symbols, PMIDs, various IDs | Use entrez_query with appropriate database |
+
+**Common ID Resolution Chains:**
+- Gene → Protein: \`gene name\` → UniProt search → \`UniProt accession\`
+- Gene → Structure: \`gene name\` → UniProt → \`accession\` → RCSB PDB
+- Gene → Drugs: \`gene name\` → DGIdb/Pharos (accepts gene symbols)
+- Gene → Variants: \`gene name\` → CIViC search → \`gene_id\` → variant queries
+- Gene → Diseases: \`gene name\` → OpenTargets search → \`Ensembl ID\` → disease associations
+- Gene → Trials: \`gene name\` → ClinicalTrials condition/intervention search
 
 ### Cross-Server Chaining Example
 
@@ -445,6 +464,103 @@ return \`## Cancer Research Papers (2024)
 
 Found \${search.count} papers. Top journals:
 \${topJournals.map(j => \`- \${j.journal}: \${j.count} papers\`).join('\\n')}\`;
+\`\`\`
+
+### Drug-Gene Interactions (DGIdb/Pharos)
+\`\`\`javascript
+// DGIdb accepts gene symbols directly
+const drugs = await helpers.dgidb.getData("dgidb_graphql_query", {
+  query: \`{ genes(names: ["EGFR"]) { nodes { name interactions { nodes { drug { name } interactionScore } } } } }\`
+});
+
+// Or use Pharos for more comprehensive drug target info
+const target = await helpers.pharos.getData("pharos_graphql_query", {
+  query: \`{ target(q: { sym: "EGFR" }) { name tdl drugs { name } } }\`
+});
+
+return \`## EGFR Drug Interactions
+Drugs targeting EGFR: \${drugs?.data?.genes?.nodes?.[0]?.interactions?.nodes?.length || 0}\`;
+\`\`\`
+
+### Clinical Trials Search
+\`\`\`javascript
+// Search clinical trials by condition and intervention
+const trials = await helpers.clinicaltrials.getData("ctgov_search_studies", {
+  query_cond: "breast cancer",
+  query_intr: "BRCA1",
+  recrs: "open",
+  pageSize: 20
+});
+
+return \`## BRCA1 Breast Cancer Trials
+Found \${trials?.studies?.length || 0} open trials.\`;
+\`\`\`
+
+### CIViC Variant Evidence
+\`\`\`javascript
+// First search for the gene
+const genes = await helpers.civic.getData("civic_search_genes", { query: "BRAF" });
+const geneId = genes?.nodes?.[0]?.id;
+
+// Then get variants for that gene
+const variants = await helpers.civic.getData("civic_variants", { geneId: geneId });
+
+return \`## BRAF Variants in CIViC
+Found \${variants?.nodes?.length || 0} variants with clinical evidence.\`;
+\`\`\`
+
+### NCI GDC Cancer Mutations
+\`\`\`javascript
+// Query mutations for a gene in cancer samples
+const mutations = await helpers.ncigdc.getData("gdc_graphql_query", {
+  query: \`{
+    explore {
+      ssms {
+        hits(filters: { content: { field: "consequence.transcript.gene.symbol", value: ["TP53"] } }) {
+          edges { node { ssm_id genomic_dna_change } }
+        }
+      }
+    }
+  }\`
+});
+
+return \`## TP53 Mutations in GDC
+Found mutations across cancer samples.\`;
+\`\`\`
+
+### Complete Gene Analysis Pipeline
+\`\`\`javascript
+// Comprehensive analysis: gene → protein → structure → drugs → trials
+const geneName = "ALK";
+
+// Step 1: Get protein info from UniProt
+const protein = await helpers.uniprot.getData("uniprot_search", {
+  query: \`gene:\${geneName} AND organism_id:9606 AND reviewed:true\`
+});
+const accession = protein?.results?.[0]?.primaryAccession;
+
+// Step 2: Get structures from PDB (using UniProt cross-references)
+const entry = await helpers.uniprot.getData("uniprot_entry", { accession });
+const pdbRefs = entry?.uniProtKBCrossReferences?.filter(r => r.database === "PDB") || [];
+
+// Step 3: Get drug interactions from DGIdb
+const drugs = await helpers.dgidb.getData("dgidb_graphql_query", {
+  query: \`{ genes(names: ["\${geneName}"]) { nodes { interactions { nodes { drug { name } } } } } }\`
+});
+
+// Step 4: Get clinical trials
+const trials = await helpers.clinicaltrials.getData("ctgov_search_studies", {
+  query_term: geneName,
+  type: "intr",
+  recrs: "open"
+});
+
+return \`## \${geneName} Comprehensive Analysis
+
+**Protein:** \${accession || "Not found"}
+**PDB Structures:** \${pdbRefs.length}
+**Drug Interactions:** \${drugs?.data?.genes?.nodes?.[0]?.interactions?.nodes?.length || 0}
+**Open Clinical Trials:** \${trials?.studies?.length || 0}\`;
 \`\`\`
 `.trim();
 }

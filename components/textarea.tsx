@@ -1,20 +1,20 @@
-import { modelDetails, type modelID } from "@/ai/providers";
+import { type modelID } from "@/ai/providers";
 import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
-import { ArrowUp, Loader2, Hash, ServerIcon, CircleStop } from "lucide-react";
+import { ArrowUp, Hash, ServerIcon, CircleStop } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
+import { TokenSummary } from "./token-summary";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
-import { SlashPromptMenu } from "@/components/prompts/slash-prompt-menu";
+import { SlashMenu } from "@/components/slash-menu";
+import { ArgInput } from "@/components/arg-input";
 import { toToken } from "@/lib/mcp/prompts/token";
 import { renderTemplate } from "@/lib/mcp/prompts/template";
 import type { SlashPromptDef } from "@/lib/mcp/prompts/types";
 import { slashRegistry } from "@/lib/slash";
 import type { SlashCommandMeta, SlashCommandSuggestion } from "@/lib/slash/types";
 import type { MCPServer, PromptMessage } from "@/lib/context/mcp-context";
-import type { PromptSummary } from "@/lib/mcp/transport/http";
 import { useMCP } from "@/lib/context/mcp-context";
-import { PromptArgDialog } from "@/components/mcp/PromptArgDialog";
 import { ResourceChip } from "@/components/mcp/ResourceChip";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -50,6 +50,7 @@ interface InputProps {
   } | null;
   onPromptPreviewCancel: () => void;
   onPromptPreviewResourceRemove: (uri: string) => void;
+  chatId?: string;
 }
 
 export const Textarea = ({
@@ -67,6 +68,7 @@ export const Textarea = ({
   promptPreview,
   onPromptPreviewCancel,
   onPromptPreviewResourceRemove,
+  chatId,
 }: InputProps) => {
   const isStreaming = status === "streaming" || status === "submitted";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -82,13 +84,10 @@ export const Textarea = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [promptsLoaded, setPromptsLoaded] = useState(false);
   const [registryRevision, setRegistryRevision] = useState(0);
-  const [argDialog, setArgDialog] = useState<{
-    open: boolean;
-    mode?: "server" | "client";
+  const [argMode, setArgMode] = useState<{
+    item: MenuItem;
     server?: MCPServer;
-    prompt?: PromptSummary;
-    def?: MenuItem;
-  }>({ open: false });
+  } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -116,8 +115,6 @@ export const Textarea = ({
     if (!menuOpen) return;
     setActiveIndex(0);
   }, [query, menuOpen]);
-
-  const modelInfo = useMemo(() => modelDetails[selectedModel], [selectedModel]);
 
   const activeServerCount = useMemo(() => {
     if (!Array.isArray(mcpServers) || mcpServers.length === 0) {
@@ -186,25 +183,6 @@ export const Textarea = ({
     }
     setActiveIndex(items.length - 1);
   }, [items.length, activeIndex]);
-
-  const highlightedItem = useMemo(() => {
-    if (!items.length) return null;
-    const safeIndex = Math.max(0, Math.min(activeIndex, items.length - 1));
-    return items[safeIndex];
-  }, [items, activeIndex]);
-
-  function toPromptSummary(def: MenuItem): PromptSummary {
-    return {
-      name: def.name,
-      title: def.title,
-      description: def.description,
-      arguments: (def.args ?? []).map((arg) => ({
-        name: arg.name,
-        description: arg.description,
-        required: arg.required,
-      })),
-    };
-  }
 
   function resolveClientPrompt(def: MenuItem, args: Record<string, string>) {
     const templateMessages = def.template?.messages ?? [];
@@ -369,50 +347,36 @@ export const Textarea = ({
   function insertPrompt(def: MenuItem) {
     if (def.mode === 'command' && def.commandMeta) {
       setMenuOpen(false);
-      const fakeEvent = { target: { value: "" } } as any;
-      handleInputChange(fakeEvent);
-
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-      onRunCommand(def.commandMeta, Array.isArray(def.commandMeta.arguments) && def.commandMeta.arguments.length === 0 ? [] : undefined);
+      handleInputChange({ target: { value: "" } } as any);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      onRunCommand(def.commandMeta, []);
       return;
     }
 
+    const hasArgs = (def.args?.length ?? 0) > 0;
+
     if (def.origin === 'client-prompt') {
-      const hasArgs = (def.args?.length ?? 0) > 0;
       if (hasArgs) {
         setMenuOpen(false);
-        setArgDialog({
-          open: true,
-          mode: 'client',
-          prompt: toPromptSummary(def),
-          def,
-        });
+        setArgMode({ item: def });
         return;
       }
-
       resolveClientPrompt(def, {});
       return;
     }
 
     if (def.origin === 'server-import') {
-      const server = mcpServers.find((entry) => entry.id === def.sourceServerId) ??
-        mcpServers.find((entry) => entry.name === def.sourceServerId) ??
-        undefined;
+      const server = mcpServers.find((s) => s.id === def.sourceServerId) ??
+        mcpServers.find((s) => s.name === def.sourceServerId);
       if (!server) {
-        toast.error('MCP server unavailable for this prompt');
+        toast.error('MCP server unavailable');
         return;
       }
-      const summary = toPromptSummary(def);
-      const hasArgs = (summary.arguments ?? []).length > 0;
       setMenuOpen(false);
-
       if (hasArgs) {
-        setArgDialog({ open: true, mode: 'server', server, prompt: summary, def });
+        setArgMode({ item: def, server });
         return;
       }
-
       void resolveServerPrompt(server, def, {});
       return;
     }
@@ -444,49 +408,82 @@ export const Textarea = ({
   const showFloatingModelPicker = showModelPicker && modelPickerVariant === "floating";
 
   return (
-    <div className="w-full space-y-3">
-      {/* Model picker and status - desktop */}
+    <div className="w-full space-y-2">
+      {/* Status bar - desktop */}
       <div className="hidden sm:flex items-center justify-between text-xs text-muted-foreground">
-        {showInlineModelPicker && (
-          <ModelPicker
-            setSelectedModel={setSelectedModel}
-            selectedModel={selectedModel}
-            variant="inline"
-            className="w-auto"
-          />
-        )}
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <ServerIcon className="h-3.5 w-3.5" />
-            {activeServerCount} servers
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Hash className="h-3.5 w-3.5" />
-            Type / for commands
-          </span>
-          {isStreaming && (
-            <span className="flex items-center gap-1.5 text-primary">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {status === "submitted" ? "Thinking" : "Streaming"}
+        <div className="flex items-center gap-3">
+          {showInlineModelPicker && (
+            <ModelPicker
+              setSelectedModel={setSelectedModel}
+              selectedModel={selectedModel}
+              variant="inline"
+              className="w-auto"
+            />
+          )}
+          <TokenSummary chatId={chatId} />
+        </div>
+        <div className="flex items-center gap-3">
+          {activeServerCount > 0 && (
+            <span className="flex items-center gap-1">
+              <ServerIcon className="h-3 w-3" />
+              {activeServerCount}
             </span>
           )}
+          <span className="text-muted-foreground/60">
+            <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">⌘K</kbd>
+          </span>
         </div>
       </div>
 
       {/* Main input */}
       <div className="relative rounded-2xl border border-border bg-background shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
         {/* Slash command menu */}
-        {menuOpen && (
+        {menuOpen && items.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 z-50">
-            <SlashPromptMenu
-              className="w-full"
+            <SlashMenu
               query={query}
               items={items}
               onSelect={insertPrompt}
               onClose={() => setMenuOpen(false)}
               activeIndex={activeIndex}
               setActiveIndex={setActiveIndex}
-              loading={!promptsLoaded}
+            />
+          </div>
+        )}
+
+        {/* Inline argument input */}
+        {argMode && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 z-50">
+            <ArgInput
+              args={argMode.item.args ?? []}
+              promptName={argMode.item.name}
+              onSubmit={(values) => {
+                if (argMode.item.origin === 'client-prompt') {
+                  resolveClientPrompt(argMode.item, values);
+                } else if (argMode.server) {
+                  void resolveServerPrompt(argMode.server, argMode.item, values);
+                }
+                setArgMode(null);
+                textareaRef.current?.focus();
+              }}
+              onCancel={() => {
+                setArgMode(null);
+                textareaRef.current?.focus();
+              }}
+              onCompleteArgument={
+                argMode.server
+                  ? async (name, value, ctx) => {
+                      const result = await completePromptArgument({
+                        serverId: argMode.server!.id,
+                        promptName: argMode.item.name,
+                        argumentName: name,
+                        value,
+                        contextArgs: ctx,
+                      });
+                      return result?.values ?? [];
+                    }
+                  : undefined
+              }
             />
           </div>
         )}
@@ -494,28 +491,17 @@ export const Textarea = ({
         {/* Textarea */}
         <ShadcnTextarea
           className={cn(
-            "max-h-[40vh] min-h-[56px] w-full resize-none border-none bg-transparent px-4 pb-14 pt-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:outline-none"
+            "max-h-[40vh] min-h-[48px] w-full resize-none border-none bg-transparent px-4 py-3 text-sm placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:outline-none"
           )}
           value={input}
           autoFocus
-          placeholder={menuOpen ? "Search commands..." : "Message..."}
+          placeholder={menuOpen || argMode ? "Search commands..." : "Message..."}
           onChange={handleInputChange}
           onKeyDown={onKeyDownEnhanced}
           ref={textareaRef}
           aria-autocomplete="list"
           data-command-target="chat-input"
         />
-
-        {/* Highlighted item hint */}
-        {menuOpen && highlightedItem && (
-          <div className="absolute bottom-14 left-4 flex items-center gap-2 text-xs text-muted-foreground animate-fade-in">
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">Tab</kbd>
-            <span>to select</span>
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-              /{highlightedItem.mode === "command" ? highlightedItem.name : highlightedItem.trigger}
-            </code>
-          </div>
-        )}
 
         {showFloatingModelPicker && (
           <ModelPicker
@@ -552,20 +538,6 @@ export const Textarea = ({
         </div>
       </div>
 
-      {/* Keyboard hints - desktop */}
-      <div className="hidden sm:flex items-center justify-between text-[11px] text-muted-foreground/70">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono">Enter</kbd>
-            Send
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono">Shift+Enter</kbd>
-            New line
-          </span>
-        </div>
-        <span>{input.length} chars</span>
-      </div>
 
       {/* Prompt preview */}
       {promptPreview && (
@@ -615,51 +587,6 @@ export const Textarea = ({
         </div>
       )}
 
-      <PromptArgDialog
-        open={argDialog.open}
-        onOpenChange={(open) => setArgDialog((state) => ({ ...state, open }))}
-        serverId={
-          argDialog.mode === 'client'
-            ? 'client'
-            : argDialog.def?.sourceServerSlug ?? argDialog.server?.id ?? 'server'
-        }
-        prompt={argDialog.prompt ?? { name: "", arguments: [] }}
-        promptDef={argDialog.def}
-        onResolve={async (values) => {
-          if (!argDialog.def) return;
-          if (argDialog.mode === 'server') {
-            if (!argDialog.server) return;
-            await resolveServerPrompt(argDialog.server, argDialog.def, values);
-          } else if (argDialog.mode === 'client') {
-            resolveClientPrompt(argDialog.def, values);
-          }
-          setArgDialog({ open: false });
-
-          requestAnimationFrame(() => {
-            const textarea = textareaRef.current;
-            if (textarea) {
-              textarea.focus();
-              const length = textarea.value.length;
-              textarea.setSelectionRange(length, length);
-            }
-          });
-        }}
-        onCompleteArgument={
-          argDialog.mode === 'server'
-            ? async (argumentName, value, context) => {
-                if (!argDialog.server || !argDialog.def) return [];
-                const result = await completePromptArgument({
-                  serverId: argDialog.server.id,
-                  promptName: argDialog.def.name,
-                  argumentName,
-                  value,
-                  contextArgs: context,
-                });
-                return result?.values ?? [];
-              }
-            : undefined
-        }
-      />
     </div>
   );
 };

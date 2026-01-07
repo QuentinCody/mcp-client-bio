@@ -40,7 +40,8 @@ describe('structuredContent Enforcement', () => {
       // Should have 2 issues: MISSING_STRUCTURED_CONTENT and LEGACY_TEXT_CONTENT
       expect(result.issues.length).toBeGreaterThanOrEqual(1);
       expect(result.issues.some(i => i.code === 'MISSING_STRUCTURED_CONTENT')).toBe(true);
-      expect(result.issues.find(i => i.code === 'MISSING_STRUCTURED_CONTENT')?.severity).toBe('warning');
+      // MISSING_STRUCTURED_CONTENT is 'info' level since structuredContent is optional
+      expect(result.issues.find(i => i.code === 'MISSING_STRUCTURED_CONTENT')?.severity).toBe('info');
     });
 
     it('should enforce strict mode for missing structuredContent', () => {
@@ -266,11 +267,12 @@ describe('structuredContent Enforcement', () => {
       expect(result.data).toEqual({ count: 5, items: ['a', 'b'] });
     });
 
-    it('should log warnings when logWarnings is true', () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it('should log errors when logWarnings is true and errors exist', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
+      // Response with invalid structuredContent type produces an 'error' level issue
       const response = {
-        content: [{ type: 'text', text: 'No structuredContent' }],
+        structuredContent: 'not an object', // Invalid - must be object
       };
 
       extractStructuredData(response, {
@@ -279,8 +281,8 @@ describe('structuredContent Enforcement', () => {
         toolName: 'test-tool',
       });
 
-      expect(consoleWarnSpy).toHaveBeenCalled();
-      consoleWarnSpy.mockRestore();
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      consoleErrorSpy.mockRestore();
     });
   });
 

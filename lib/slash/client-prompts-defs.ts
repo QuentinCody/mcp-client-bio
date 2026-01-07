@@ -217,4 +217,127 @@ Deliver a final report that includes: (a) a PI roster with linked NCT IDs and tr
       ],
     },
   },
+  {
+    id: "client/single-cell-rna-qc",
+    trigger: "single_cell_rna_qc",
+    namespace: "client",
+    name: "single_cell_rna_qc",
+    title: "Single-Cell RNA-seq QC Workflow",
+    description:
+      "Automated quality control for scRNA-seq data using MAD-based filtering and scverse best practices (Scanpy/AnnData).",
+    origin: "client-prompt",
+    mode: "client",
+    args: [
+      {
+        name: "data_location",
+        description:
+          "Path or URL to scRNA-seq data (h5ad, 10X mtx, or similar)",
+        required: true,
+        placeholder: "/path/to/adata.h5ad",
+      },
+      {
+        name: "min_genes",
+        description: "Minimum genes per cell (default: 200)",
+        placeholder: "200",
+      },
+      {
+        name: "min_cells",
+        description: "Minimum cells per gene (default: 3)",
+        placeholder: "3",
+      },
+      {
+        name: "max_pct_mito",
+        description: "Maximum mitochondrial percentage (default: 20)",
+        placeholder: "20",
+      },
+      {
+        name: "mad_threshold",
+        description: "MAD-based outlier threshold (default: 5)",
+        placeholder: "5",
+      },
+      {
+        name: "doublet_detection",
+        description: "Enable doublet detection with scrublet (yes/no)",
+        placeholder: "yes",
+      },
+    ],
+    template: {
+      messages: [
+        {
+          role: "system",
+          text: `You are an expert bioinformatician specializing in single-cell RNA sequencing analysis. Guide the user through a comprehensive QC workflow following scverse ecosystem best practices (Scanpy, AnnData).
+
+## QC Workflow Phases
+
+### Phase 1: Data Loading and Initial Assessment
+- Load data into AnnData object
+- Report dimensions (cells x genes), sparsity, format
+- Check for existing QC annotations
+
+### Phase 2: QC Metric Calculation
+Per-cell metrics:
+- n_genes_by_counts: Genes with positive counts
+- total_counts: Total UMI counts
+- pct_counts_mt: Mitochondrial gene percentage
+- pct_counts_ribo: Ribosomal gene percentage (optional)
+
+Per-gene metrics:
+- n_cells_by_counts: Cells expressing each gene
+- mean_counts: Average expression level
+- pct_dropout_by_counts: Dropout rate
+
+### Phase 3: MAD-Based Outlier Detection
+Use Median Absolute Deviation for robust outlier detection:
+- For metric X, cell is outlier if: |X - median(X)| > MAD_threshold * MAD(X)
+- where MAD(X) = median(|X - median(X)|) * 1.4826
+- Apply to log1p(total_counts), log1p(n_genes), pct_counts_mt
+
+### Phase 4: Doublet Detection (Optional)
+- Use scrublet to simulate and score doublets
+- Flag cells above threshold as potential doublets
+
+### Phase 5: Filtering and Reporting
+Apply filters in order:
+1. Hard thresholds (min_genes, min_cells, max_pct_mito)
+2. MAD-based outlier removal
+3. Doublet removal (if enabled)
+
+Generate: cell counts before/after, violin plots, scatter plots
+
+### Phase 6: Post-QC Verification
+- Verify minimum counts met
+- Check for batch effects
+- Generate final statistics
+
+## Code Mode Integration
+If Code Mode available, generate Python using scanpy, matplotlib/seaborn, pandas.
+Always explain biological rationale behind each QC decision.`,
+        },
+        {
+          role: "user",
+          text: `Perform comprehensive QC on single-cell RNA-seq data.
+
+**Data:** {{data_location}}
+
+**Parameters:**
+- Min genes/cell: {{min_genes}} (default 200)
+- Min cells/gene: {{min_cells}} (default 3)
+- Max mito %: {{max_pct_mito}} (default 20)
+- MAD threshold: {{mad_threshold}} (default 5)
+- Doublet detection: {{doublet_detection}} (default yes)
+
+**Execute:**
+1. Load and inspect data (dimensions, format, existing annotations)
+2. Calculate QC metrics (per-cell and per-gene)
+3. Visualize pre-filter QC (violin plots, n_genes vs total_counts scatter)
+4. Apply MAD-based filtering (calculate thresholds, identify outliers)
+5. Run doublet detection if enabled
+6. Apply all filters and report cell counts at each step
+7. Export filtered data with documented parameters
+
+Provide code snippets for each step and explain biological significance.`,
+        },
+      ],
+    },
+  },
 ];

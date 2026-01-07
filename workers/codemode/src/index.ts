@@ -46,8 +46,8 @@ function validateUserCode(code: string): { valid: boolean; error?: string } {
         'Function declarations are stripped at runtime by the Cloudflare Worker, ' +
         'causing "is not defined" errors.\n\n' +
         'GOOD (top-level code):\n' +
-        'const proteins = await helpers.uniprot.getData("search", { query: "TP53" });\n' +
-        'return proteins[0];\n\n' +
+        'const data = await helpers.server.getData("tool_name", { query: "..." });\n' +
+        'return data[0];\n\n' +
         'BAD (function declaration):\n' +
         'async function fetchData() { ... }\n' +
         'return fetchData();  // ❌ fetchData is not defined'

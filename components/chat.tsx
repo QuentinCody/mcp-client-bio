@@ -586,6 +586,7 @@ export default function Chat() {
           onOpenServerManager={openServerManager}
           serverStatusCounts={serverStatusCounts}
           status={status as "error" | "submitted" | "streaming" | "ready"}
+          chatId={chatSessionId}
         />
       </div>
       <div className="flex h-full min-h-0 flex-col">
@@ -800,6 +801,7 @@ export default function Chat() {
               onPromptPreviewResourceRemove={removePromptResource}
               showModelPicker={false}
               modelPickerVariant="inline"
+              chatId={chatSessionId}
             />
           </form>
         </div>

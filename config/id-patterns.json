@@ -1,0 +1,155 @@
+{
+  "$schema": "./id-patterns.schema.json",
+  "version": "1.0.0",
+  "description": "Biological identifier patterns for cross-reference enrichment",
+  "patterns": [
+    {
+      "id": "uniprot_accession",
+      "name": "UniProt Accession",
+      "description": "UniProt protein accession number (e.g., P04637, Q9Y6K9)",
+      "regex": "\\b([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["P04637", "Q9Y6K9", "A0A1B2C3D4"]
+    },
+    {
+      "id": "ensembl_gene",
+      "name": "Ensembl Gene ID",
+      "description": "Ensembl gene identifier (e.g., ENSG00000141510)",
+      "regex": "\\b(ENSG\\d{11})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["ENSG00000141510", "ENSG00000171862"]
+    },
+    {
+      "id": "ensembl_transcript",
+      "name": "Ensembl Transcript ID",
+      "description": "Ensembl transcript identifier (e.g., ENST00000269305)",
+      "regex": "\\b(ENST\\d{11})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["ENST00000269305"]
+    },
+    {
+      "id": "ensembl_protein",
+      "name": "Ensembl Protein ID",
+      "description": "Ensembl protein identifier (e.g., ENSP00000269305)",
+      "regex": "\\b(ENSP\\d{11})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["ENSP00000269305"]
+    },
+    {
+      "id": "pdb",
+      "name": "PDB Structure ID",
+      "description": "Protein Data Bank structure identifier (e.g., 1TUP, 2XWR)",
+      "regex": "\\b(\\d[A-Z0-9]{3})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["1TUP", "2XWR", "6LU7"]
+    },
+    {
+      "id": "nct",
+      "name": "ClinicalTrials.gov NCT ID",
+      "description": "ClinicalTrials.gov study identifier (e.g., NCT04585750)",
+      "regex": "\\b(NCT\\d{8})\\b",
+      "flags": "gi",
+      "confidence": "high",
+      "examples": ["NCT04585750", "NCT01234567"]
+    },
+    {
+      "id": "pmid",
+      "name": "PubMed ID",
+      "description": "PubMed publication identifier with prefix (e.g., PMID:12345678)",
+      "regex": "\\bPMID[:\\s]?(\\d{6,8})\\b",
+      "flags": "gi",
+      "confidence": "high",
+      "examples": ["PMID:12345678", "PMID 87654321"]
+    },
+    {
+      "id": "doi",
+      "name": "Digital Object Identifier",
+      "description": "DOI for publications and datasets (e.g., 10.1000/xyz123)",
+      "regex": "\\b(10\\.\\d{4,}/[^\\s]+)\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["10.1038/nature12373", "10.1000/xyz123"]
+    },
+    {
+      "id": "chembl",
+      "name": "ChEMBL Compound ID",
+      "description": "ChEMBL compound identifier (e.g., CHEMBL941)",
+      "regex": "\\b(CHEMBL\\d+)\\b",
+      "flags": "gi",
+      "confidence": "high",
+      "examples": ["CHEMBL941", "CHEMBL25"]
+    },
+    {
+      "id": "drugbank",
+      "name": "DrugBank ID",
+      "description": "DrugBank drug identifier (e.g., DB00619)",
+      "regex": "\\b(DB\\d{5})\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["DB00619", "DB00945"]
+    },
+    {
+      "id": "ncbi_gene",
+      "name": "NCBI Gene ID",
+      "description": "NCBI Gene identifier with context (e.g., Gene ID: 7157)",
+      "regex": "(?:NCBI\\s+)?Gene\\s+ID[:\\s]+(\\d{3,7})\\b",
+      "flags": "gi",
+      "confidence": "medium",
+      "examples": ["Gene ID: 7157", "NCBI Gene ID: 672"]
+    },
+    {
+      "id": "hgnc",
+      "name": "HGNC ID",
+      "description": "HUGO Gene Nomenclature Committee identifier (e.g., HGNC:11998)",
+      "regex": "\\bHGNC[:\\s]?(\\d+)\\b",
+      "flags": "gi",
+      "confidence": "high",
+      "examples": ["HGNC:11998", "HGNC:1097"]
+    },
+    {
+      "id": "orcid",
+      "name": "ORCID",
+      "description": "Open Researcher and Contributor ID (e.g., 0000-0002-1825-0097)",
+      "regex": "\\b(\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X])\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["0000-0002-1825-0097", "0000-0001-5109-3700"],
+      "notes": "16-digit identifier for researchers, often prefixed with https://orcid.org/"
+    },
+    {
+      "id": "ror",
+      "name": "ROR ID",
+      "description": "Research Organization Registry identifier (e.g., 03yrm5c26)",
+      "regex": "\\b(0[0-9a-hjkmnp-z]{6}[0-9]{2})\\b",
+      "flags": "g",
+      "confidence": "medium",
+      "examples": ["03yrm5c26", "052gg0110"],
+      "notes": "9-character identifier for research organizations, often prefixed with https://ror.org/"
+    },
+    {
+      "id": "crossref_funder",
+      "name": "Crossref Funder ID",
+      "description": "Crossref Funder Registry identifier (e.g., 10.13039/100000001)",
+      "regex": "\\b(10\\.13039/\\d+)\\b",
+      "flags": "g",
+      "confidence": "high",
+      "examples": ["10.13039/100000001", "10.13039/501100000780"],
+      "notes": "DOI-based identifier for funding organizations"
+    },
+    {
+      "id": "gene_symbol",
+      "name": "Gene Symbol",
+      "description": "Standard gene symbol (detected via context, not pattern)",
+      "regex": null,
+      "flags": null,
+      "confidence": "low",
+      "examples": ["TP53", "BRCA1", "EGFR"],
+      "notes": "Gene symbols are detected via context analysis, not regex patterns"
+    }
+  ]
+}

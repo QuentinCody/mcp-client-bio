@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
+import type { TokenUsage } from '@/lib/token-usage';
 
 interface ToolMetricEntry {
   name: string;
@@ -27,11 +28,20 @@ interface MetricsPayload {
   }>;
 }
 
+interface TokenUsageStats {
+  lastUsage: TokenUsage | null;
+  sessionTotal: TokenUsage;
+  messageCount: number;
+  recentHistory: Array<{ timestamp: number; usage: TokenUsage; model?: string }>;
+}
+
 // Access the global (window) functions exported via MCP client through a bridge
 // We'll attach them on first render if available
 export function ToolMetricsPanel() {
   const [data, setData] = useState<MetricsPayload | null>(null);
+  const [tokenStats, setTokenStats] = useState<TokenUsageStats | null>(null);
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'tools' | 'tokens'>('tools');
 
   useEffect(() => {
     // Dynamically import to avoid SSR issues
@@ -56,6 +66,25 @@ export function ToolMetricsPanel() {
     return () => clearInterval(id);
   }, []);
 
+  // Fetch token usage stats
+  useEffect(() => {
+    const fetchTokenStats = async () => {
+      try {
+        const res = await fetch('/api/token-usage');
+        if (res.ok) {
+          const stats = await res.json();
+          setTokenStats(stats);
+        }
+      } catch (e) {
+        // swallow
+      }
+    };
+
+    fetchTokenStats();
+    const id = setInterval(fetchTokenStats, 4000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -74,42 +103,157 @@ export function ToolMetricsPanel() {
     };
   }, []);
 
-  if (!data || data.metrics.length === 0) return null;
+  const hasToolMetrics = data && data.metrics.length > 0;
+  const hasTokenStats = tokenStats && tokenStats.sessionTotal.totalTokens > 0;
+
+  if (!hasToolMetrics && !hasTokenStats) return null;
+
+  const formatNumber = (n: number) => n.toLocaleString();
 
   return (
     <div className="fixed bottom-3 right-3 z-40 text-xs">
       <button
         onClick={() => setOpen(o => !o)}
-        className="px-2 py-1 rounded-md bg-muted/70 hover:bg-muted text-foreground shadow-sm border border-border/40"
-      >{open ? 'Hide metrics' : 'Tool metrics'}</button>
+        className="px-2.5 py-1.5 rounded-lg bg-card hover:bg-muted text-foreground shadow-sm border border-border transition-colors"
+      >
+        {open ? 'Hide metrics' : 'Metrics'}
+        {hasTokenStats && !open && (
+          <span className="ml-1.5 text-muted-foreground">
+            ({formatNumber(tokenStats.sessionTotal.totalTokens)} tokens)
+          </span>
+        )}
+      </button>
       {open && (
-        <div className="mt-2 w-[320px] max-h-[340px] overflow-auto rounded-md border border-border/50 bg-background/95 backdrop-blur p-2 shadow-lg space-y-3">
-          <div className="font-medium text-foreground/90 mb-1">Tool Metrics</div>
-          <div className="space-y-2">
-            {data.metrics.slice(0,25).map(m => (
-              <div key={m.name} className="border border-border/40 rounded p-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-foreground/90 truncate max-w-[180px]" title={m.name}>{m.name}</span>
-                  <span className="text-[10px] text-muted-foreground">{m.count} calls</span>
-                </div>
-                <div className="mt-1 grid grid-cols-4 gap-1 text-[10px]">
-                  <div className="text-green-600">ok {m.success}</div>
-                  <div className="text-red-500">err {m.error}</div>
-                  <div className="text-amber-500">to {m.timeout}</div>
-                  <div className="text-muted-foreground">avg {m.avgMs}ms</div>
-                </div>
-                {m.lastStatus && (
-                  <div className="mt-0.5 text-[10px] flex justify-between text-muted-foreground">
-                    <span>{m.lastStatus}{m.lastStatus==='error' && m.lastError ? ':' : ''}</span>
-                    {m.lastMs && <span>{m.lastMs}ms</span>}
-                  </div>
-                )}
-                {m.lastStatus==='error' && m.lastError && (
-                  <div className="mt-0.5 text-[10px] text-red-500 line-clamp-2" title={m.lastError}>{m.lastError}</div>
-                )}
-              </div>
-            ))}
+        <div className="mt-2 w-[320px] max-h-[400px] overflow-auto rounded-xl border border-border bg-background/95 backdrop-blur p-3 shadow-lg">
+          {/* Tabs */}
+          <div className="flex gap-1 mb-3 border-b border-border pb-2">
+            <button
+              onClick={() => setActiveTab('tokens')}
+              className={`px-2.5 py-1 rounded-md transition-colors ${activeTab === 'tokens' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+            >
+              Tokens
+            </button>
+            <button
+              onClick={() => setActiveTab('tools')}
+              className={`px-2.5 py-1 rounded-md transition-colors ${activeTab === 'tools' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+            >
+              Tools
+            </button>
           </div>
+
+          {/* Token Usage Tab */}
+          {activeTab === 'tokens' && (
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-foreground">Token Usage</div>
+              {tokenStats && tokenStats.sessionTotal.totalTokens > 0 ? (
+                <>
+                  {/* Session Total */}
+                  <div className="rounded-lg border border-border p-2.5 bg-primary/5">
+                    <div className="text-[10px] text-muted-foreground mb-1">Session Total ({tokenStats.messageCount} messages)</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-blue-600 dark:text-blue-400">Input:</span>
+                        <span className="ml-1 font-medium">{formatNumber(tokenStats.sessionTotal.inputTokens)}</span>
+                      </div>
+                      <div>
+                        <span className="text-green-600 dark:text-green-400">Output:</span>
+                        <span className="ml-1 font-medium">{formatNumber(tokenStats.sessionTotal.outputTokens)}</span>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-foreground font-medium">
+                      Total: {formatNumber(tokenStats.sessionTotal.totalTokens)}
+                    </div>
+                    {tokenStats.sessionTotal.cacheReadTokens > 0 && (
+                      <div className="mt-1 text-purple-600 dark:text-purple-400 text-[10px]">
+                        Cache: {formatNumber(tokenStats.sessionTotal.cacheReadTokens)} read
+                      </div>
+                    )}
+                    {tokenStats.sessionTotal.reasoningTokens > 0 && (
+                      <div className="mt-1 text-yellow-600 dark:text-yellow-400 text-[10px]">
+                        Reasoning: {formatNumber(tokenStats.sessionTotal.reasoningTokens)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Last Message */}
+                  {tokenStats.lastUsage && (
+                    <div className="rounded-lg border border-border p-2.5">
+                      <div className="text-[10px] text-muted-foreground mb-1">Last Message</div>
+                      <div className="grid grid-cols-3 gap-1 text-[10px]">
+                        <div className="text-blue-600 dark:text-blue-400">
+                          In: {formatNumber(tokenStats.lastUsage.inputTokens)}
+                        </div>
+                        <div className="text-green-600 dark:text-green-400">
+                          Out: {formatNumber(tokenStats.lastUsage.outputTokens)}
+                        </div>
+                        <div className="text-foreground">
+                          Tot: {formatNumber(tokenStats.lastUsage.totalTokens)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent History */}
+                  {tokenStats.recentHistory.length > 1 && (
+                    <div className="rounded-lg border border-border p-2.5">
+                      <div className="text-[10px] text-muted-foreground mb-1">Recent ({tokenStats.recentHistory.length})</div>
+                      <div className="space-y-1 max-h-[100px] overflow-auto">
+                        {tokenStats.recentHistory.slice().reverse().map((h, i) => (
+                          <div key={h.timestamp} className="flex justify-between text-[10px]">
+                            <span className="text-muted-foreground">
+                              #{tokenStats.recentHistory.length - i}
+                              {h.model && <span className="ml-1 text-primary/60">{h.model.slice(0, 15)}</span>}
+                            </span>
+                            <span>{formatNumber(h.usage.totalTokens)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-muted-foreground text-center py-4">
+                  No token usage recorded yet
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tools Tab */}
+          {activeTab === 'tools' && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-foreground">Tool Metrics</div>
+              {hasToolMetrics ? (
+                data.metrics.slice(0,25).map(m => (
+                  <div key={m.name} className="rounded-lg border border-border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-foreground/90 truncate max-w-[180px]" title={m.name}>{m.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{m.count} calls</span>
+                    </div>
+                    <div className="mt-1 grid grid-cols-4 gap-1 text-[10px]">
+                      <div className="text-green-600">ok {m.success}</div>
+                      <div className="text-red-500">err {m.error}</div>
+                      <div className="text-amber-500">to {m.timeout}</div>
+                      <div className="text-muted-foreground">avg {m.avgMs}ms</div>
+                    </div>
+                    {m.lastStatus && (
+                      <div className="mt-0.5 text-[10px] flex justify-between text-muted-foreground">
+                        <span>{m.lastStatus}{m.lastStatus==='error' && m.lastError ? ':' : ''}</span>
+                        {m.lastMs && <span>{m.lastMs}ms</span>}
+                      </div>
+                    )}
+                    {m.lastStatus==='error' && m.lastError && (
+                      <div className="mt-0.5 text-[10px] text-red-500 line-clamp-2" title={m.lastError}>{m.lastError}</div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground text-center py-4">
+                  No tool metrics recorded yet
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

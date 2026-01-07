@@ -21,7 +21,9 @@ const nextConfig: NextConfig = {
   },
 
   // Turbopack config (Next.js 16 default bundler)
-  turbopack: {},
+  turbopack: {
+    root: process.cwd(), // Explicitly set workspace root to this project
+  },
 
   // Compiler optimizations
   compiler: {

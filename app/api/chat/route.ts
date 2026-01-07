@@ -11,6 +11,14 @@ import { z } from 'zod';
 import { checkBotId } from "botid/server";
 import { parse } from "acorn";
 import {
+  TokenUsage,
+  createEmptyTokenUsage,
+  mergeTokenUsage,
+  recordTokenUsage,
+  recordToolTokenUsage,
+  resolveTotalTokens,
+} from '@/lib/token-usage';
+import {
   groupToolsByServer,
   generateHelpersImplementation,
   generateHelpersMetadata,
@@ -18,7 +26,8 @@ import {
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
-import { generateCompactHelperDocs, generateUsageExamples } from '@/lib/code-mode/helper-docs';
+// generateUsageExamples disabled - using API-only mode (uncomment to re-enable static examples)
+import { generateCompactHelperDocs /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
 import { generateHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
@@ -87,7 +96,7 @@ export async function POST(req: Request) {
     flattened?: Array<{ role: string; text: string }>;
   } | undefined = (body as any).promptContext;
 
-  const { isBot, isGoodBot } = await checkBotId();
+  const { isBot, isVerifiedBot } = await checkBotId();
   // Initialization logs commented out - not relevant to JSON response debugging
   // try {
   //   console.log('[API /chat] incoming model=', selectedModel, 'headerModel=', headerModel, 'messagesIn=', Array.isArray(messages) ? messages.length : 'N/A');
@@ -99,7 +108,7 @@ export async function POST(req: Request) {
   //   }
   // } catch {}
 
-  if (isBot && !isGoodBot) {
+  if (isBot && !isVerifiedBot) {
     return new Response(
       JSON.stringify({ error: "Bot is not allowed to access this endpoint" }),
       { status: 401, headers: { "Content-Type": "application/json" } }
@@ -166,6 +175,19 @@ export async function POST(req: Request) {
   // Transform MCP tools for compatibility with AI providers
   const tools = transformMCPToolsForResponsesAPI(rawTools);
 
+  // Log per-server tool counts for token usage analysis
+  if (toolsByServer && toolsByServer.size > 0) {
+    const serverCounts = Array.from(toolsByServer.entries())
+      .map(([serverName, serverData]) => `${serverName}:${Object.keys(serverData.tools).length}`)
+      .sort((a, b) => {
+        const countA = parseInt(a.split(':')[1]);
+        const countB = parseInt(b.split(':')[1]);
+        return countB - countA; // Sort by count descending
+      });
+    console.log('[API /chat] Tools by server:', serverCounts.join(', '));
+    console.log('[API /chat] Total tools:', rawTools.length, 'across', toolsByServer.size, 'servers');
+  }
+
   // Initialization log commented out - not relevant to JSON response debugging
   // try {
   //   console.log('[API /chat] initialized tools keys=', tools ? Object.keys(tools) : 'none');
@@ -226,14 +248,60 @@ export async function POST(req: Request) {
     );
     const typeDefinitions = generateHelperAPITypes(serverToolsMap);
 
-    helpersDocs = `## Available Helper APIs\n\nYou can call tools using TypeScript-style method syntax:\n\n\`\`\`typescript\n${typeDefinitions}\n\`\`\`\n\nEach method is async and returns a Promise. You can call them directly:\n\n\`\`\`javascript\n// Direct method calls (RECOMMENDED)\nconst data = await helpers.opentargets.opentargets_graphql_query({ query: "..." });\nconst trials = await helpers.clinicaltrials.mcp_clinicaltrial_ctgov_search_studies({ query_term: "cancer" });\n\n// Generic invoke() also works (raw response)\nconst raw = await helpers.opentargets.invoke('opentargets_graphql_query', { query: "..." });\n\n// Envelope helpers for safer error handling\nconst result = await helpers.opentargets.invokeWithMeta('opentargets_graphql_query', { query: "..." });\nif (!result.ok) return result; // sandbox handling only; still summarize in final response\n\`\`\`\n\nHelper utilities for safer access:\n\n\`\`\`javascript\nconst name = helpers.utils.safeGet(data, "target.name", "Unknown");\nconst hasItems = helpers.utils.hasValue(data?.items);\n\`\`\``;
+    // Generate dynamic examples from first available server (no hardcoded server names)
+    const serverEntries = Array.from(serverToolsMap.entries());
+    const firstServer = serverEntries[0];
+    const firstServerName = firstServer?.[0] || 'server';
+    const firstServerTools = firstServer?.[1] || {};
+    const firstToolName = Object.keys(firstServerTools)[0] || 'tool_name';
 
-    // Add usage examples to help LLMs write correct code
-    helpersDocs += '\n\n' + generateUsageExamples();
+    const baseHelperDocs = `## Available Helper APIs
 
-    // Add SQL helper documentation
+You can call tools using TypeScript-style method syntax:
+
+\`\`\`typescript
+${typeDefinitions}
+\`\`\`
+
+Each method is async and returns a Promise. You can call them directly:
+
+\`\`\`javascript
+// Direct method calls (RECOMMENDED)
+const data = await helpers.${firstServerName}.${firstToolName}({ /* args */ });
+
+// Generic invoke() also works (raw response)
+const raw = await helpers.${firstServerName}.invoke('${firstToolName}', { /* args */ });
+
+// Envelope helpers for safer error handling
+const result = await helpers.${firstServerName}.invokeWithMeta('${firstToolName}', { /* args */ });
+if (!result.ok) return result; // sandbox handling only; still summarize in final response
+\`\`\`
+
+Helper utilities for safer access:
+
+\`\`\`javascript
+const name = helpers.utils.safeGet(data, "field.name", "Unknown");
+const hasItems = helpers.utils.hasValue(data?.items);
+\`\`\``;
+
+    // Static usage examples disabled - relying on dynamic API type definitions only
+    // To re-enable, uncomment the following lines:
+    // const usageExamples = generateUsageExamples();
+    // helpersDocs = baseHelperDocs + '\n\n' + usageExamples + '\n\n' + sqlDocs;
+
+    // Add SQL helper documentation (keeping this as it documents runtime helpers.sql.* API)
     const { generateSQLHelperDocs } = await import('@/lib/code-mode/sql-helpers');
-    helpersDocs += '\n\n' + generateSQLHelperDocs();
+    const sqlDocs = generateSQLHelperDocs();
+
+    // API-only mode: just type definitions + SQL helpers, no static examples
+    helpersDocs = baseHelperDocs + '\n\n' + sqlDocs;
+
+    // Log documentation component sizes for token analysis
+    console.log('[API /chat] Helper docs breakdown (API-only mode):');
+    console.log('  - Type definitions:', typeDefinitions.length, 'chars');
+    console.log('  - Base helper docs:', baseHelperDocs.length, 'chars');
+    console.log('  - SQL docs:', sqlDocs.length, 'chars');
+    console.log('  - Total helpersDocs:', helpersDocs.length, 'chars (~', Math.round(helpersDocs.length / 4), 'tokens)');
 
     const aliasMap: Record<string, string> = {};
     if (!aliasMap.mcp) {
@@ -251,11 +319,16 @@ export async function POST(req: Request) {
     if (!aliasMap.mcp && serverToolMap.size > 0) {
       aliasMap.mcp = Array.from(serverToolMap.keys())[0];
     }
-    // Code Mode initialization logs commented out - not relevant to JSON response debugging
-    // const counts = Array.from(serverToolMap.entries())
-    //   .map(([key, data]) => `${key}:${Object.keys(data.tools).length}`)
-    //   .join(", ");
-    // console.log("[API /chat] Code Mode server tool counts:", counts.slice(0, 400));
+    // Log Code Mode server tool counts
+    const codeModeToolCounts = Array.from(serverToolMap.entries())
+      .map(([key, data]) => `${key}:${Object.keys(data.tools).length}`)
+      .sort((a, b) => {
+        const countA = parseInt(a.split(':')[1]);
+        const countB = parseInt(b.split(':')[1]);
+        return countB - countA;
+      })
+      .join(", ");
+    console.log("[API /chat] Code Mode tools by server:", codeModeToolCounts);
 
     // Use transforming helpers implementation for automatic response parsing
     helpersImplementation = generateTransformingHelpersImplementation(serverToolMap, aliasMap);
@@ -696,17 +769,19 @@ If the user says "no tools" or "no code", respond in plain conversational text w
     }
   }
 
+  // Log what's ACTUALLY being sent to the LLM (toolsWithCache, not raw tools)
+  const actualToolCount = toolsWithCache ? Object.keys(toolsWithCache).length : 0;
+  const isCodeModeActive = !!process.env.CODEMODE_WORKER_URL;
   console.log(
-    '[API /chat] tools count=',
-    tools ? Object.keys(tools).length : 0,
+    '[API /chat] Tools sent to LLM:',
+    actualToolCount,
+    isCodeModeActive ? '(Code Mode: only codemode_sandbox)' : '(Traditional: all MCP tools)',
     'model=',
     effectiveModel,
   );
-
-  if (tools && typeof tools === 'object' && !Array.isArray(tools) && Object.keys(tools).length > 0) {
-    const firstToolName = Object.keys(tools)[0];
-    const firstTool = (tools as Record<string, any>)[firstToolName];
-    console.log('[API /chat] Sample tool schema:', firstToolName, ':', JSON.stringify(firstTool, null, 2));
+  console.log('[API /chat] System prompt length:', systemPrompt.length, 'chars');
+  if (toolsWithCache) {
+    console.log('[API /chat] Tool names sent:', Object.keys(toolsWithCache).join(', '));
   }
 
   let streamResult;
@@ -749,13 +824,28 @@ If the user says "no tools" or "no code", respond in plain conversational text w
           finishReason: event.finishReason,
         });
 
-        // Log tool results to see what model receives
+        // Log tool results and track per-tool token usage
         if (event.toolResults && event.toolResults.length > 0) {
           event.toolResults.forEach((result, idx) => {
+            const toolName = result.toolName;
             console.log(`[API /chat] Tool result ${idx}:`, {
-              toolName: result.toolName,
+              toolName,
               resultPreview: JSON.stringify(result).slice(0, 300),
             });
+
+            // Estimate tool token usage based on result size
+            // This is approximate since we don't have exact token counts from tools
+            // In the Vercel AI SDK, the tool result object contains the result directly
+            const resultStr = JSON.stringify(result);
+            // Look for args in the corresponding tool call from the same step
+            // Cast to any to access dynamic properties since TypeScript doesn't know the shape
+            const toolCall = event.toolCalls?.find(tc => tc.toolName === toolName);
+            const argsStr = JSON.stringify((toolCall as any)?.args || {});
+            // Rough estimate: ~4 characters per token
+            const estimatedInputTokens = Math.ceil(argsStr.length / 4);
+            const estimatedOutputTokens = Math.ceil(resultStr.length / 4);
+
+            recordToolTokenUsage(id, toolName, estimatedInputTokens, estimatedOutputTokens);
           });
         }
       },
@@ -776,6 +866,58 @@ If the user says "no tools" or "no code", respond in plain conversational text w
           // Log final text to see what model actually generated
           const finalText = event.steps[event.steps.length - 1]?.text || '';
           console.log('[API /chat] Final generated text:', finalText.slice(0, 500));
+
+          // Extract token usage from the event
+          // The AI SDK provides usage per step and totalUsage across all steps
+          const totalUsage = (event as any).usage || (event as any).totalUsage;
+          if (totalUsage) {
+            const inputTokens = totalUsage.promptTokens ?? 0;
+            const outputTokens = totalUsage.completionTokens ?? 0;
+            const totalTokens = resolveTotalTokens(
+              inputTokens,
+              outputTokens,
+              totalUsage.totalTokens
+            );
+            const tokenUsage: TokenUsage = {
+              inputTokens,
+              outputTokens,
+              totalTokens,
+              cacheReadTokens: totalUsage.promptTokenDetails?.cachedTokens ?? 0,
+              cacheWriteTokens: 0, // Not always available
+              reasoningTokens: totalUsage.completionTokenDetails?.reasoningTokens ?? 0,
+            };
+            console.log('[API /chat] Token usage:', tokenUsage);
+          }
+
+          // Also aggregate per-step usage for detailed breakdown
+          let aggregatedUsage = createEmptyTokenUsage();
+          for (const step of event.steps) {
+            const stepUsage = (step as any).usage;
+            if (stepUsage) {
+              const inputTokens = stepUsage.promptTokens ?? 0;
+              const outputTokens = stepUsage.completionTokens ?? 0;
+              const totalTokens = resolveTotalTokens(
+                inputTokens,
+                outputTokens,
+                stepUsage.totalTokens
+              );
+              const stepTokens: TokenUsage = {
+                inputTokens,
+                outputTokens,
+                totalTokens,
+                cacheReadTokens: stepUsage.promptTokenDetails?.cachedTokens ?? 0,
+                cacheWriteTokens: 0,
+                reasoningTokens: stepUsage.completionTokenDetails?.reasoningTokens ?? 0,
+              };
+              aggregatedUsage = mergeTokenUsage(aggregatedUsage, stepTokens);
+              console.log('[API /chat] Step token usage:', stepTokens);
+            }
+          }
+          if (aggregatedUsage.totalTokens > 0) {
+            console.log('[API /chat] Aggregated token usage:', aggregatedUsage);
+            // Record the aggregated usage for metrics display (per-conversation)
+            recordTokenUsage(aggregatedUsage, effectiveModel, id);
+          }
         } catch (error) {
           console.warn('[API /chat] logging finish event failed:', error);
         }

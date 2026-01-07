@@ -15,7 +15,7 @@ import {
   untrackRequest,
   getActiveRequests,
   MCP_PROTOCOL_VERSION,
-} from '@/lib/mcp-client-enhanced';
+} from '../lib/mcp-client-enhanced';
 
 describe('MCP Enhanced Features', () => {
   beforeEach(() => {

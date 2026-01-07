@@ -1,96 +1,206 @@
 {
   "servers": [
     {
-      "name": "BioMCP Remote",
-      "type": "streamable-http",
-      "url": "https://remote.biomcp.org/mcp",
-      "description": "Genomoncology BioMCP remote server with hosted OAuth sign-in",
-      "auth": {
-        "type": "oauth",
-        "clientId": "biomcp-client",
-        "authorizationEndpoint": "https://remote.biomcp.org/authorize",
-        "tokenEndpoint": "https://remote.biomcp.org/token",
-        "scopes": ["openid", "profile", "email"],
-        "authorizationParams": {
-          "access_type": "offline",
-          "prompt": "select_account"
-        }
-      }
-    },
-    { "name": "ClinicalTrials",
+      "name": "ClinicalTrials",
       "type": "streamable-http",
       "url": "https://clinicaltrialsgov-mcp-server.quentincody.workers.dev/mcp",
-      "description": "Access to the ClinicalTrials.gov database of clinical studies"
-
+      "description": "Access to the ClinicalTrials.gov database of clinical studies",
+      "idCapabilities": {
+        "accepts": ["nct"],
+        "produces": ["nct", "pmid"],
+        "hints": {
+          "nct": "Use nctId parameter directly in study queries"
+        }
+      }
     },
     {
       "name": "OpenTargets",
       "type": "streamable-http",
       "url": "https://open-targets-mcp-server.quentincody.workers.dev/mcp",
-      "description": "Access to OpenTargets genetics and drug discovery data"
+      "description": "Access to OpenTargets genetics and drug discovery data",
+      "idCapabilities": {
+        "accepts": ["ensembl_gene", "chembl", "drugbank"],
+        "produces": ["ensembl_gene", "uniprot_accession", "chembl", "drugbank"],
+        "hints": {
+          "ensembl_gene": "Primary identifier for target queries - use directly",
+          "uniprot_accession": "Requires conversion to Ensembl gene ID first",
+          "chembl": "Use directly in drug/molecule queries"
+        }
+      }
     },
     {
       "name": "Entrez",
       "type": "streamable-http",
       "url": "https://entrez-mcp-server.quentincody.workers.dev/mcp",
-      "description": "NCBI Entrez system for accessing a variety of biological databases"
+      "description": "NCBI Entrez system for accessing a variety of biological databases",
+      "idCapabilities": {
+        "accepts": ["pmid", "ncbi_gene", "pdb", "uniprot_accession", "doi"],
+        "produces": ["pmid", "ncbi_gene", "pdb", "uniprot_accession", "ensembl_gene"],
+        "hints": {
+          "pmid": "Use directly in PubMed database queries",
+          "ncbi_gene": "Use directly in gene database queries",
+          "pdb": "Search structure database with PDB ID",
+          "doi": "Search PubMed with DOI to find linked publications"
+        }
+      }
     },
     {
       "name": "CIViC",
       "type": "streamable-http",
       "url": "https://civic-mcp-server.quentincody.workers.dev/mcp",
-      "description": "Clinical Interpretation of Variants in Cancer database"
+      "description": "Clinical Interpretation of Variants in Cancer database",
+      "idCapabilities": {
+        "accepts": ["ensembl_gene", "ncbi_gene", "pmid"],
+        "produces": ["ensembl_gene", "ncbi_gene", "pmid", "nct"],
+        "hints": {
+          "ensembl_gene": "Search variants and evidence by Ensembl gene ID",
+          "pmid": "Evidence items reference PMIDs for source publications"
+        }
+      }
     },
     {
       "name": "CatalysisHub",
       "type": "sse",
-      "url": "https://catalysis-hub-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://catalysis-hub-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": [],
+        "produces": ["doi"],
+        "hints": {}
+      }
     },
     {
       "name": "DataCite",
       "type": "streamable-http",
-      "url": "https://datacite-mcp-server.quentincody.workers.dev/mcp"
+      "url": "https://datacite-mcp-server.quentincody.workers.dev/mcp",
+      "description": "DataCite PID Graph - resolve DOIs and discover related research outputs, authors, funders, and organizations",
+      "idCapabilities": {
+        "accepts": ["doi", "orcid", "ror", "crossref_funder"],
+        "produces": ["doi", "pmid", "orcid", "ror", "crossref_funder"],
+        "hints": {
+          "doi": "Resolve DOI to get full metadata including authors, funders, and related works",
+          "orcid": "Search for researcher's publications and datasets by ORCID",
+          "ror": "Search for organization's research outputs by ROR ID",
+          "crossref_funder": "Find all works funded by a specific funder"
+        }
+      }
     },
     {
       "name": "RCSB PDB",
       "type": "sse",
-      "url": "https://rcsb-pdb-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://rcsb-pdb-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["pdb", "uniprot_accession", "ensembl_protein"],
+        "produces": ["pdb", "uniprot_accession", "ensembl_protein", "doi", "pmid"],
+        "hints": {
+          "pdb": "Use entry_id parameter directly for structure queries",
+          "uniprot_accession": "Search structures by UniProt accession"
+        }
+      }
     },
     {
       "name": "NCI GDC",
       "type": "streamable-http",
-      "url": "https://nci-gdc-mcp-server.quentincody.workers.dev/mcp"
+      "url": "https://nci-gdc-mcp-server.quentincody.workers.dev/mcp",
+      "idCapabilities": {
+        "accepts": ["ensembl_gene", "ncbi_gene"],
+        "produces": ["ensembl_gene", "ncbi_gene"],
+        "hints": {
+          "ensembl_gene": "Use for gene-level queries in cancer genomics data"
+        }
+      }
     },
     {
       "name": "Pharos",
       "type": "sse",
-      "url": "https://pharos-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://pharos-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["uniprot_accession", "chembl", "drugbank"],
+        "produces": ["uniprot_accession", "chembl", "drugbank", "ensembl_gene"],
+        "hints": {
+          "uniprot_accession": "Primary identifier for target queries",
+          "chembl": "Query ligand/drug information",
+          "drugbank": "Query drug information"
+        }
+      }
     },
     {
       "name": "NCI PDC",
       "type": "sse",
-      "url": "https://nci-pdc-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://nci-pdc-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["uniprot_accession", "ensembl_gene"],
+        "produces": ["uniprot_accession", "ensembl_gene"],
+        "hints": {
+          "uniprot_accession": "Use for proteomics data queries"
+        }
+      }
     },
     {
       "name": "DGIdb",
       "type": "streamable-http",
       "url": "https://dgidb-mcp-server.quentincody.workers.dev/mcp",
-      "description": "Drug-Gene Interaction Database"
+      "description": "Drug-Gene Interaction Database",
+      "idCapabilities": {
+        "accepts": ["chembl", "drugbank", "ncbi_gene"],
+        "produces": ["chembl", "drugbank", "ncbi_gene", "pmid"],
+        "hints": {
+          "chembl": "Search drug-gene interactions by ChEMBL compound ID",
+          "drugbank": "Search drug-gene interactions by DrugBank ID"
+        }
+      }
     },
     {
       "name": "ZincBind",
       "type": "sse",
-      "url": "https://zincbind-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://zincbind-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["pdb", "uniprot_accession"],
+        "produces": ["pdb", "uniprot_accession"],
+        "hints": {
+          "pdb": "Query zinc binding sites by PDB structure ID"
+        }
+      }
     },
     {
       "name": "OpenNeuro",
       "type": "sse",
-      "url": "https://open-neuro-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://open-neuro-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["doi"],
+        "produces": ["doi"],
+        "hints": {
+          "doi": "Query neuroimaging datasets by DOI"
+        }
+      }
     },
     {
       "name": "UniProt",
       "type": "sse",
-      "url": "https://uniprot-mcp-server.quentincody.workers.dev/sse"
+      "url": "https://uniprot-mcp-server.quentincody.workers.dev/sse",
+      "idCapabilities": {
+        "accepts": ["uniprot_accession", "ensembl_gene", "ensembl_protein", "pdb", "ncbi_gene", "hgnc"],
+        "produces": ["uniprot_accession", "ensembl_gene", "ensembl_protein", "ensembl_transcript", "pdb", "ncbi_gene", "hgnc"],
+        "hints": {
+          "uniprot_accession": "Primary identifier - use directly",
+          "ensembl_gene": "Can map Ensembl gene ID to UniProt accession",
+          "pdb": "Cross-referenced in UniProt entries"
+        }
+      }
+    },
+    {
+      "name": "PubMed",
+      "type": "streamable-http",
+      "url": "https://pubmed.mcp.claude.com/mcp",
+      "description": "Anthropic-hosted PubMed MCP server for biomedical literature search and retrieval",
+      "idCapabilities": {
+        "accepts": ["pmid", "doi"],
+        "produces": ["pmid", "doi", "pmc"],
+        "hints": {
+          "pmid": "Use PMID directly for article retrieval and citation data",
+          "doi": "Search by DOI to find linked PubMed articles",
+          "pmc": "Access full-text articles via PMC ID when available"
+        }
+      }
     }
   ]
 }

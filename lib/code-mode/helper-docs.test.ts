@@ -83,3 +83,61 @@ describe('ID Resolution Server Mapping', () => {
     expect(examples).toMatch(/opentargets.*ensembl|pdb.*uniprot/i);
   });
 });
+
+describe('Server-Specific Guidance', () => {
+  it('includes DGIdb drug-gene interaction examples', () => {
+    const examples = generateUsageExamples();
+
+    expect(examples).toContain('dgidb');
+    expect(examples).toMatch(/drug.*interaction|interaction.*drug/i);
+  });
+
+  it('includes ClinicalTrials query examples', () => {
+    const examples = generateUsageExamples();
+
+    expect(examples).toContain('clinicaltrials');
+    expect(examples).toMatch(/trial|condition|intervention/i);
+  });
+
+  it('includes CIViC variant examples', () => {
+    const examples = generateUsageExamples();
+
+    expect(examples).toContain('civic');
+    expect(examples).toMatch(/variant|evidence/i);
+  });
+
+  it('includes Pharos target examples', () => {
+    const examples = generateUsageExamples();
+
+    expect(examples).toContain('pharos');
+  });
+
+  it('includes NCI GDC mutation examples', () => {
+    const examples = generateUsageExamples();
+
+    expect(examples).toMatch(/gdc|nci/i);
+    expect(examples).toMatch(/mutation|cancer/i);
+  });
+
+  it('includes a server ID requirements table', () => {
+    const examples = generateUsageExamples();
+
+    // Should have a table showing what each server accepts
+    expect(examples).toMatch(/\|.*Server.*\|.*Accepts.*\|/i);
+  });
+
+  it('includes common ID resolution chains', () => {
+    const examples = generateUsageExamples();
+
+    // Should show common patterns like Gene → Protein, Gene → Drugs
+    expect(examples).toMatch(/gene.*→.*protein|gene.*→.*drug|gene.*→.*structure/i);
+  });
+
+  it('includes a comprehensive multi-server pipeline example', () => {
+    const examples = generateUsageExamples();
+
+    // Should show a complete example using multiple servers
+    expect(examples).toMatch(/comprehensive|complete|pipeline/i);
+    expect(examples).toMatch(/step\s*1|step\s*2|step\s*3|step\s*4/i);
+  });
+});

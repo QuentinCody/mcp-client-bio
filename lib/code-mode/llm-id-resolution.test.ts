@@ -374,6 +374,112 @@ describeOrSkip('LLM Cross-Server ID Resolution Behavior', () => {
       expect(code!.toLowerCase()).toMatch(/civic|variant|evidence/);
     }, 300000);
   });
+
+  describe('Drug-Gene interactions (DGIdb)', () => {
+    it('resolves gene name before querying drug interactions', async () => {
+      const { code } = await harness.captureGeneratedCode(
+        'What drugs interact with the EGFR gene?'
+      );
+
+      console.log('\n=== Generated Code (DGIdb) ===');
+      console.log(code?.slice(0, 1000) || 'NO CODE');
+
+      expect(code).not.toBeNull();
+
+      // Should use DGIdb or Pharos for drug-gene interactions
+      const usesDrugServer =
+        code!.toLowerCase().includes('dgidb') ||
+        code!.toLowerCase().includes('pharos') ||
+        code!.toLowerCase().includes('drug');
+      expect(usesDrugServer).toBe(true);
+    }, 300000);
+  });
+
+  describe('Clinical Trials queries', () => {
+    it('resolves condition/gene to search clinical trials', async () => {
+      const { code } = await harness.captureGeneratedCode(
+        'Find clinical trials for BRCA1-related breast cancer treatments'
+      );
+
+      console.log('\n=== Generated Code (ClinicalTrials) ===');
+      console.log(code?.slice(0, 1000) || 'NO CODE');
+
+      expect(code).not.toBeNull();
+
+      // Should use clinical trials server
+      const usesTrials =
+        code!.toLowerCase().includes('clinicaltrials') ||
+        code!.toLowerCase().includes('clinical') ||
+        code!.toLowerCase().includes('trial') ||
+        code!.toLowerCase().includes('nct');
+      expect(usesTrials).toBe(true);
+    }, 300000);
+  });
+
+  describe('Cancer genomics (NCI GDC)', () => {
+    it('queries cancer genomics data with gene resolution', async () => {
+      const { code } = await harness.captureGeneratedCode(
+        'What mutations in TP53 are found in lung cancer samples in GDC?'
+      );
+
+      console.log('\n=== Generated Code (NCI GDC) ===');
+      console.log(code?.slice(0, 1000) || 'NO CODE');
+
+      expect(code).not.toBeNull();
+
+      // Should use NCI GDC or related cancer database
+      const usesCancerDB =
+        code!.toLowerCase().includes('gdc') ||
+        code!.toLowerCase().includes('nci') ||
+        code!.toLowerCase().includes('cancer') ||
+        code!.toLowerCase().includes('mutation');
+      expect(usesCancerDB).toBe(true);
+    }, 300000);
+  });
+
+  describe('Literature search (Entrez/PubMed)', () => {
+    it('searches literature with proper gene/protein context', async () => {
+      const { code } = await harness.captureGeneratedCode(
+        'Find recent publications about CRISPR and BRCA1 gene therapy'
+      );
+
+      console.log('\n=== Generated Code (Entrez) ===');
+      console.log(code?.slice(0, 1000) || 'NO CODE');
+
+      expect(code).not.toBeNull();
+
+      // Should use Entrez for literature
+      const usesEntrez =
+        code!.toLowerCase().includes('entrez') ||
+        code!.toLowerCase().includes('pubmed') ||
+        code!.toLowerCase().includes('publication');
+      expect(usesEntrez).toBe(true);
+    }, 300000);
+  });
+
+  describe('Comprehensive multi-server workflow', () => {
+    it('chains gene → protein → structure → drug pipeline', async () => {
+      const { code } = await harness.captureGeneratedCode(
+        'For the ALK gene, find its protein structure and any drugs that target it'
+      );
+
+      console.log('\n=== Generated Code (Multi-server) ===');
+      console.log(code?.slice(0, 1000) || 'NO CODE');
+
+      expect(code).not.toBeNull();
+      const analysis = analyzeCodeForIDResolution(code!);
+
+      // Should use multiple servers
+      const usesMultipleDataSources =
+        analysis.serversCalled.length >= 2 ||
+        (code!.toLowerCase().includes('uniprot') &&
+         (code!.toLowerCase().includes('pdb') ||
+          code!.toLowerCase().includes('drug') ||
+          code!.toLowerCase().includes('pharos')));
+
+      expect(usesMultipleDataSources).toBe(true);
+    }, 300000);
+  });
 });
 
 // Unit tests for the analysis helper (these always run)

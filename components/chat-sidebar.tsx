@@ -330,11 +330,11 @@ export function ChatSidebar() {
                   }`}
                 >
                   {isCollapsed ? (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-background/50">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background">
                       <MessageSquare className="h-3 w-3 text-muted-foreground" />
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 w-full px-3 py-2 rounded-md border border-dashed border-border/50 bg-background/50">
+                    <div className="flex items-center gap-3 w-full px-3 py-2 rounded-md border border-dashed border-border bg-background">
                       <MessageSquare className="h-4 w-4 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground font-normal">
                         No conversations yet
@@ -417,7 +417,7 @@ export function ChatSidebar() {
 
         <div className="relative my-0">
           <div className="absolute inset-x-0">
-            <Separator className="w-full h-px bg-border/40" />
+            <Separator className="w-full h-px bg-border" />
           </div>
         </div>
 

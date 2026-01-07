@@ -531,4 +531,140 @@
   .animate-cursor {
     animation: cursor-blink 1s ease-in-out infinite;
   }
+
+  /* ========================================
+     SLASH MENU - Luminous Terminal Aesthetic
+     ======================================== */
+
+  /* Entrance animation - slide up with fade */
+  @keyframes menu-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .animate-menu-enter {
+    animation: menu-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Staggered item reveal */
+  @keyframes item-reveal {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-item-reveal {
+    animation: item-reveal 0.15s ease-out forwards;
+    opacity: 0;
+  }
+
+  /* Luminous glow pulse for active items */
+  @keyframes glow-pulse {
+    0%, 100% {
+      box-shadow:
+        0 0 0 1px hsl(var(--primary) / 0.3),
+        0 0 20px -5px hsl(var(--primary) / 0.2);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px hsl(var(--primary) / 0.5),
+        0 0 30px -5px hsl(var(--primary) / 0.35);
+    }
+  }
+
+  .animate-glow-pulse {
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+
+  /* Subtle background scan effect */
+  @keyframes scan-line {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+
+  .slash-menu-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.03) 50%,
+      transparent 100%
+    );
+    transform: translateY(-100%);
+    animation: scan-line 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* Noise texture overlay */
+  .noise-texture::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.015;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    border-radius: inherit;
+  }
+
+  .dark .noise-texture::after {
+    opacity: 0.03;
+  }
+
+  /* Icon glow effect */
+  .icon-glow {
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+
+  /* Keyboard hint styling */
+  .kbd-glow {
+    text-shadow: 0 0 8px hsl(var(--primary) / 0.5);
+  }
+
+  /* Input focus glow */
+  @keyframes input-glow {
+    0%, 100% {
+      box-shadow:
+        0 0 0 2px hsl(var(--primary) / 0.2),
+        0 0 20px -8px hsl(var(--primary) / 0.3);
+    }
+    50% {
+      box-shadow:
+        0 0 0 2px hsl(var(--primary) / 0.35),
+        0 0 30px -8px hsl(var(--primary) / 0.5);
+    }
+  }
+
+  .animate-input-glow:focus {
+    animation: input-glow 2s ease-in-out infinite;
+  }
+
+  /* Success indicator pulse */
+  @keyframes success-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.2);
+      opacity: 0.8;
+    }
+  }
+
+  .animate-success-pulse {
+    animation: success-pulse 1.5s ease-in-out infinite;
+  }
 }

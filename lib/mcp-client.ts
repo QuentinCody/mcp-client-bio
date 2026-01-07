@@ -2,6 +2,7 @@ import { dynamicTool, experimental_createMCPClient as createMCPClient } from 'ai
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
 import { sanitizeSchema, sanitizeToolParameters } from './schema-sanitizer';
+import { enrichToolResult, initializeWithActiveServers } from './id-enrichment/id-enrichment';
 
 export interface KeyValuePair {
   key: string;
@@ -339,7 +340,9 @@ export function transformMCPToolsForResponsesAPI(tools: Record<string, any>): Re
       return async (args: unknown) => {
         const normalizedArgs =
           typeof adapt === 'function' && args !== undefined ? adapt(structuredClone(args)) : args;
-        return await baseExecute(normalizedArgs);
+        const result = await baseExecute(normalizedArgs);
+        // Enrich result with cross-reference metadata for biological IDs
+        return enrichToolResult(result, name);
       };
     };
 
@@ -500,6 +503,13 @@ export async function initializeMCPClients(
     abortSignal.addEventListener('abort', async () => {
       await cleanupMCPClients(acquiredClients);
     });
+  }
+
+  // Initialize ID enrichment cross-references with only the active/connected servers
+  // This ensures cross-reference hints only point to servers that are actually available
+  const activeServerNames = Array.from(toolsByServer.values()).map(v => v.config.name).filter(Boolean) as string[];
+  if (activeServerNames.length > 0) {
+    initializeWithActiveServers(activeServerNames);
   }
 
   return {
