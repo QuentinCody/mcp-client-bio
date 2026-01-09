@@ -80,6 +80,10 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedHeaders = normalizeHeaders(headers);
+    // Required for DeepSense MCP servers (they filter by User-Agent)
+    if (!normalizedHeaders['User-Agent']) {
+      normalizedHeaders['User-Agent'] = 'claude-code/2.0';
+    }
 
     // Check connection pool first
     const poolKey = `${url}-${JSON.stringify(normalizedHeaders)}`;

@@ -37,14 +37,17 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = new URL(url);
     client = new Client({ name: 'mcp-prompt-complete', version: '1.0.0' });
+    const headerEntries = normalizeHeaders(headers);
+    // Required for DeepSense MCP servers (they filter by User-Agent)
+    if (!headerEntries['User-Agent']) {
+      headerEntries['User-Agent'] = 'claude-code/2.0';
+    }
     if (type === 'http') {
-      const headerEntries = normalizeHeaders(headers);
       const transport = new StreamableHTTPClientTransport(baseUrl, {
         requestInit: { headers: headerEntries, credentials: 'include', mode: 'cors' },
       });
       await client.connect(transport);
     } else {
-      const headerEntries = normalizeHeaders(headers);
       const transport = new SSEClientTransport(baseUrl, {
         requestInit: { headers: headerEntries },
       });

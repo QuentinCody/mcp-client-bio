@@ -479,6 +479,10 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
         const client = new Client({ name: 'bio-mcp-client', version: '0.2.0' });
         const baseUrl = new URL(server.url);
         const headers = headerPairsToRecord(server.headers);
+        // Required for DeepSense MCP servers (they filter by User-Agent)
+        if (!headers['User-Agent']) {
+          headers['User-Agent'] = 'claude-code/2.0';
+        }
         if (server.type === 'http') {
           const transport = new StreamableHTTPClientTransport(baseUrl, {
             requestInit: { headers, mode: 'cors' },

@@ -443,6 +443,8 @@ export async function initializeMCPClients(
     if (server.type !== 'sse') {
       headersObj['Accept'] = headersObj['Accept'] ?? 'application/json, text/event-stream';
     }
+    // Required for DeepSense MCP servers (they filter by User-Agent)
+    headersObj['User-Agent'] = headersObj['User-Agent'] ?? 'claude-code/2.0';
 
     const connectTimeoutMs = server.type === 'sse' ? 8000 : 6000;
 

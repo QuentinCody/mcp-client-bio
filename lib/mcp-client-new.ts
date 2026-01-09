@@ -176,7 +176,11 @@ export async function initializeMCPClients(
       const headers = mcpServer.headers?.reduce((acc, header) => {
         if (header.key) acc[header.key] = header.value || '';
         return acc;
-      }, {} as Record<string, string>);
+      }, {} as Record<string, string>) ?? {};
+      // Required for DeepSense MCP servers (they filter by User-Agent)
+      if (!headers['User-Agent']) {
+        headers['User-Agent'] = 'claude-code/2.0';
+      }
 
       const transport = mcpServer.type === 'sse'
         ? {

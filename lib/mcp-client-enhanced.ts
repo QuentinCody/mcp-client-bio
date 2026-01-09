@@ -142,6 +142,8 @@ function createEnhancedTransport(
       ...headersObj,
       'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
       'Accept': 'application/json, text/event-stream',
+      // Required for DeepSense MCP servers (they filter by User-Agent)
+      'User-Agent': headersObj['User-Agent'] ?? 'claude-code/2.0',
     };
 
     return new StreamableHTTPClientTransport(new URL(server.url), {

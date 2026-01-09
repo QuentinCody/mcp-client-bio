@@ -201,6 +201,90 @@
           "pmc": "Access full-text articles via PMC ID when available"
         }
       }
+    },
+    {
+      "name": "NPI Registry",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/npi_registry/mcp",
+      "description": "US National Provider Identifier Registry - healthcare provider lookup, validation, and search",
+      "idCapabilities": {
+        "accepts": ["npi"],
+        "produces": ["npi"],
+        "hints": {
+          "npi": "Use NPI number directly for provider lookup and validation"
+        }
+      }
+    },
+    {
+      "name": "ICD-10 Codes",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/icd10_codes/mcp",
+      "description": "ICD-10 diagnosis and procedure code lookup, search, validation, and hierarchy navigation",
+      "idCapabilities": {
+        "accepts": ["icd10"],
+        "produces": ["icd10"],
+        "hints": {
+          "icd10": "Use ICD-10 code directly for lookup, validation, or hierarchy queries"
+        }
+      }
+    },
+    {
+      "name": "CMS Coverage",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/cms_coverage/mcp",
+      "description": "Medicare coverage policies - National and Local Coverage Determinations, billing articles, and contractor info",
+      "idCapabilities": {
+        "accepts": ["hcpcs", "ncd_id", "lcd_id"],
+        "produces": ["hcpcs", "ncd_id", "lcd_id"],
+        "hints": {
+          "hcpcs": "Use HCPCS code for SAD exclusion list and coverage searches",
+          "ncd_id": "Use NCD document ID to retrieve specific National Coverage Determinations",
+          "lcd_id": "Use LCD document ID to retrieve specific Local Coverage Determinations"
+        }
+      }
+    },
+    {
+      "name": "Clinical Trials (DeepSense)",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/clinical_trials/mcp",
+      "description": "ClinicalTrials.gov data with eligibility matching, endpoint analysis, and investigator search",
+      "idCapabilities": {
+        "accepts": ["nct"],
+        "produces": ["nct"],
+        "hints": {
+          "nct": "Use NCT number to retrieve detailed trial information"
+        }
+      }
+    },
+    {
+      "name": "ChEMBL",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/chembl/mcp",
+      "description": "Chemical compound database - 2.4M+ compounds with bioactivity, mechanisms, and ADMET data",
+      "idCapabilities": {
+        "accepts": ["chembl", "uniprot_accession", "ensembl_gene", "smiles"],
+        "produces": ["chembl", "uniprot_accession", "ensembl_gene"],
+        "hints": {
+          "chembl": "Use ChEMBL ID directly for compound or target lookup",
+          "uniprot_accession": "Search targets by UniProt accession",
+          "ensembl_gene": "Search targets by Ensembl gene ID",
+          "smiles": "Search compounds by SMILES structure"
+        }
+      }
+    },
+    {
+      "name": "bioRxiv",
+      "type": "streamable-http",
+      "url": "https://mcp.deepsense.ai/biorxiv/mcp",
+      "description": "bioRxiv/medRxiv preprint server - 260K+ preprints across biology and medicine",
+      "idCapabilities": {
+        "accepts": ["doi", "ror"],
+        "produces": ["doi"],
+        "hints": {
+          "doi": "Use DOI to retrieve specific preprint details",
+          "ror": "Search preprints by funder ROR ID (e.g., NIH: '021nxhr62')"
+        }
+      }
     }
   ]
 }
