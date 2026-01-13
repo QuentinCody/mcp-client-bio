@@ -16,6 +16,7 @@ import {
   Power,
   PowerOff,
   ExternalLink,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -114,6 +115,21 @@ export const MCPServerManager = ({
     toast.success("All servers disabled");
   };
 
+  const handleCopyError = async (message: string) => {
+    if (!navigator?.clipboard?.writeText) {
+      toast.error("Clipboard not available");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(message);
+      toast.success("Error copied to clipboard");
+    } catch (error) {
+      console.error("Failed to copy error message:", error);
+      toast.error("Failed to copy error");
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
@@ -144,6 +160,7 @@ export const MCPServerManager = ({
                 const isExpanded = expandedServer === server.id;
                 const toolCount = server.tools?.length || 0;
                 const status = isEnabled ? (server.status || "disconnected") : "disconnected";
+                const errorMessage = server.errorMessage || "Connection failed. Try refreshing.";
 
                 return (
                   <div key={server.id} className="bg-white dark:bg-zinc-900">
@@ -258,8 +275,24 @@ export const MCPServerManager = ({
 
                         {/* Error Message */}
                         {status === "error" && (
-                          <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
-                            Connection failed. Try refreshing.
+                          <div className="rounded bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="whitespace-pre-wrap">{errorMessage}</span>
+                              {server.errorMessage && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyError(errorMessage);
+                                  }}
+                                  className="h-7 px-2 text-[10px] text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-200"
+                                >
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
 
