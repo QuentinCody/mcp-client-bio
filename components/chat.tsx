@@ -44,6 +44,7 @@ import {
   SheetDescription,
 } from "./ui/sheet";
 import { downloadChatAsJSON, downloadChatAsMarkdown } from "@/lib/chat-export";
+import { BatchQueryDialog } from "./batch-query-dialog";
 
 const MESSAGE_WINDOW_SIZE = 45;
 
@@ -296,6 +297,61 @@ export default function Chat() {
     downloadChatAsMarkdown(chatSessionId, title, messages, createdAt);
     toast.success("Chat exported as Markdown");
   }, [chatSessionId, messages, chatData]);
+
+  // Batch Query Mode state and handlers
+  const [batchModeOpen, setBatchModeOpen] = useState(false);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchCurrentIndex, setBatchCurrentIndex] = useState(0);
+  const [batchTotalQueries, setBatchTotalQueries] = useState(0);
+
+  const handleBatchSubmit = useCallback(async (queries: string[]) => {
+    if (queries.length === 0) return;
+
+    setBatchProcessing(true);
+    setBatchTotalQueries(queries.length);
+    setBatchCurrentIndex(0);
+
+    const chatBody = {
+      selectedModel,
+      mcpServers: mcpServersForApi,
+      chatId: chatId || generatedChatId,
+      userId,
+    };
+
+    try {
+      for (let i = 0; i < queries.length; i++) {
+        setBatchCurrentIndex(i);
+        // Send each query using the sendMessage function
+        await sendMessage(
+          {
+            role: 'user',
+            parts: [{ type: 'text', text: queries[i] }]
+          },
+          {
+            headers: {
+              'x-model-id': selectedModel,
+            },
+            body: chatBody,
+          }
+        );
+        // Wait for the response to complete before sending next query
+        // The sendMessage is async but we need to wait for streaming to finish
+        if (i < queries.length - 1) {
+          // Wait for status to return to ready before next query
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      toast.success(`Completed ${queries.length} queries`);
+      setBatchModeOpen(false);
+    } catch (error) {
+      toast.error("Error processing batch queries");
+      console.error("Batch query error:", error);
+    } finally {
+      setBatchProcessing(false);
+      setBatchCurrentIndex(0);
+      setBatchTotalQueries(0);
+    }
+  }, [sendMessage, selectedModel, mcpServersForApi, chatId, generatedChatId, userId]);
 
   const handleFormSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -614,6 +670,7 @@ export default function Chat() {
           chatId={chatSessionId}
           onExportJSON={handleExportJSON}
           onExportMarkdown={handleExportMarkdown}
+          onOpenBatchMode={() => setBatchModeOpen(true)}
         />
       </div>
       <div className="flex h-full min-h-0 flex-col">
@@ -787,6 +844,16 @@ export default function Chat() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Batch Query Mode Dialog */}
+      <BatchQueryDialog
+        open={batchModeOpen}
+        onOpenChange={setBatchModeOpen}
+        onSubmit={handleBatchSubmit}
+        isProcessing={batchProcessing}
+        currentQueryIndex={batchCurrentIndex}
+        totalQueries={batchTotalQueries}
+      />
 
       {/* Floating Action Buttons for Mobile */}
       <div className="sm:hidden absolute bottom-[140px] left-4 flex flex-col gap-2">
