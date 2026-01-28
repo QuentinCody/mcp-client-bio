@@ -1309,11 +1309,11 @@ export function MCPProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
 
-        // Use very aggressive timeout - fail extremely fast for broken servers
+        // Use generous timeout to allow slow servers to connect
         const healthResult = await checkServerHealth(
           server.url,
           server.headers,
-          server.type === 'sse' ? 9000 : 7000,
+          30000, // 30 second timeout for all server types
           server.type
         );
 

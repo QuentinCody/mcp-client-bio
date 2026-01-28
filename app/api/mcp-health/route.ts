@@ -171,10 +171,10 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
 
-    // Get tools with timeout
+    // Get tools with generous timeout
     const toolsPromise = client.listTools();
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Tool listing timeout')), 5000);
+      setTimeout(() => reject(new Error('Tool listing timeout')), 30000);
     });
 
     try {
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
       // Also attempt to list prompts (soft-fail if unsupported)
       let prompts: any = { prompts: [] };
       try {
-        const promptsTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Prompt listing timeout')), 4000));
+        const promptsTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Prompt listing timeout')), 30000));
         prompts = await Promise.race([client.listPrompts(), promptsTimeout]).catch(() => ({ prompts: [] }));
       } catch {
         prompts = { prompts: [] };

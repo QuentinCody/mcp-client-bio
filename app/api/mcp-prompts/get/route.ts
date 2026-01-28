@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       });
       await client.connect(transport);
     }
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('prompts/get timeout')), 7000));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('prompts/get timeout')), 30000));
     const normalizedArgs: Record<string, string> = {};
     if (args && typeof args === "object") {
       for (const [key, value] of Object.entries(args)) {
