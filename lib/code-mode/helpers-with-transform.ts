@@ -266,7 +266,51 @@ export function generateTransformingHelpersImplementation(
     '  return minimal;',
     '}',
     '',
-    'function summarizeToolError({ server, tool, args, error, validation }) {',
+    'function summarizeToolError({ server, tool, args, error, validation, schema }) {',
+    '  // Generate example call from schema',
+    '  let exampleCall = null;',
+    '  if (schema) {',
+    '    const required = schema.required || [];',
+    '    const props = schema.properties || {};',
+    '    const exampleArgs = {};',
+    '    for (const name of required) {',
+    '      const prop = props[name];',
+    '      if (prop?.enum && prop.enum.length > 0) {',
+    '        exampleArgs[name] = prop.enum[0];',
+    '      } else if (prop?.type === "string") {',
+    '        exampleArgs[name] = prop.default || `<${name}>`;',
+    '      } else if (prop?.type === "number" || prop?.type === "integer") {',
+    '        exampleArgs[name] = prop.default || 1;',
+    '      } else if (prop?.type === "boolean") {',
+    '        exampleArgs[name] = prop.default ?? true;',
+    '      } else if (prop?.type === "array") {',
+    '        exampleArgs[name] = [];',
+    '      } else {',
+    '        exampleArgs[name] = `<${name}>`;',
+    '      }',
+    '    }',
+    '    exampleCall = `helpers.${server}.${tool}(${JSON.stringify(exampleArgs)})`;',
+    '  }',
+    '  ',
+    '  // Build schema summary for LLM',
+    '  let schemaSummary = null;',
+    '  if (schema) {',
+    '    const props = schema.properties || {};',
+    '    const required = schema.required || [];',
+    '    schemaSummary = {',
+    '      required: required.map(name => ({',
+    '        name,',
+    '        type: props[name]?.type || "unknown",',
+    '        description: props[name]?.description,',
+    '        enum: props[name]?.enum',
+    '      })),',
+    '      optional: Object.keys(props).filter(n => !required.includes(n)).slice(0, 5).map(name => ({',
+    '        name,',
+    '        type: props[name]?.type || "unknown"',
+    '      }))',
+    '    };',
+    '  }',
+    '  ',
     '  return {',
     '    server,',
     '    tool,',
@@ -275,7 +319,10 @@ export function generateTransformingHelpersImplementation(
     '      message: error?.message || String(error),',
     '      code: error?.code || error?.name || "UNKNOWN_ERROR"',
     '    },',
-    '    validation',
+    '    validation,',
+    '    schema: schemaSummary,',
+    '    exampleCall,',
+    '    hint: schema ? `Use helpers.${server}.getToolSchema("${tool}") to see full parameter details` : null',
     '  };',
     '}',
     '',
@@ -685,11 +732,42 @@ export function generateTransformingHelpersImplementation(
     lines.push(`    const finalArgs = coerceArgsToSchema(args, schema);`);
     lines.push(`    const requiredCheck = validateRequiredArgs(finalArgs, schema);`);
     lines.push(`    if (!requiredCheck.ok) {`);
-    lines.push(`      const err = new Error(\`Missing required arguments: \${requiredCheck.missing.join(", ")}\`);`);
+    lines.push(`      // Build helpful error with schema info for auto-retry`);
+    lines.push(`      const props = schema?.properties || {};`);
+    lines.push(`      const missingDetails = requiredCheck.missing.map(name => {`);
+    lines.push(`        const prop = props[name];`);
+    lines.push(`        let detail = name;`);
+    lines.push(`        if (prop?.type) detail += \` (\${prop.type})\`;`);
+    lines.push(`        if (prop?.enum) detail += \` - one of: \${prop.enum.slice(0, 5).join(", ")}\`;`);
+    lines.push(`        if (prop?.description) detail += \` - \${prop.description.slice(0, 50)}\`;`);
+    lines.push(`        return detail;`);
+    lines.push(`      });`);
+    lines.push(`      `);
+    lines.push(`      // Generate example call`);
+    lines.push(`      const exampleArgs = {};`);
+    lines.push(`      for (const name of requiredCheck.missing) {`);
+    lines.push(`        const prop = props[name];`);
+    lines.push(`        if (prop?.enum?.[0]) exampleArgs[name] = prop.enum[0];`);
+    lines.push(`        else if (prop?.default !== undefined) exampleArgs[name] = prop.default;`);
+    lines.push(`        else if (prop?.type === "string") exampleArgs[name] = "<" + name + ">";`);
+    lines.push(`        else if (prop?.type === "number") exampleArgs[name] = 1;`);
+    lines.push(`        else exampleArgs[name] = "<" + name + ">";`);
+    lines.push(`      }`);
+    lines.push(`      // Merge with provided args`);
+    lines.push(`      const fullExample = { ...exampleArgs, ...compactArgs(finalArgs) };`);
+    lines.push(`      const exampleCall = \`helpers.${serverKey}.\${resolvedTool}(\${JSON.stringify(fullExample)})\`;`);
+    lines.push(`      `);
+    lines.push(`      let errMsg = \`Missing required arguments: \${requiredCheck.missing.join(", ")}\\n\\n\`;`);
+    lines.push(`      errMsg += \`Required parameters:\\n  - \${missingDetails.join("\\n  - ")}\\n\\n\`;`);
+    lines.push(`      errMsg += \`Example call:\\n  \${exampleCall}\`;`);
+    lines.push(`      `);
+    lines.push(`      const err = new Error(errMsg);`);
     lines.push(`      err.code = "MISSING_REQUIRED_PARAM";`);
     lines.push(`      err.server = '${serverKey}';`);
     lines.push(`      err.toolName = resolvedTool;`);
     lines.push(`      err.args = finalArgs;`);
+    lines.push(`      err.schema = schema;`);
+    lines.push(`      err.exampleCall = exampleCall;`);
     lines.push(`      throw err;`);
     lines.push(`    }`);
     lines.push(`    `);
@@ -719,7 +797,8 @@ export function generateTransformingHelpersImplementation(
     lines.push(`        tool: resolvedTool,`);
     lines.push(`        args: finalArgs,`);
     lines.push(`        error: err,`);
-    lines.push(`        validation: transformed._validation`);
+    lines.push(`        validation: transformed._validation,`);
+    lines.push(`        schema`);
     lines.push(`      });`);
     lines.push(`      const minimalArgs = buildMinimalArgs(finalArgs, schema);`);
     lines.push(`      if (options.retryOnError !== false && JSON.stringify(minimalArgs) !== JSON.stringify(finalArgs)) {`);
@@ -805,7 +884,8 @@ export function generateTransformingHelpersImplementation(
     lines.push(`        tool: resolvedTool,`);
     lines.push(`        args: finalArgs,`);
     lines.push(`        error: err,`);
-    lines.push(`        validation: transformed._validation`);
+    lines.push(`        validation: transformed._validation,`);
+    lines.push(`        schema`);
     lines.push(`      });`);
     lines.push(`      const minimalArgs = buildMinimalArgs(finalArgs, schema);`);
     lines.push(`      if (JSON.stringify(minimalArgs) !== JSON.stringify(finalArgs)) {`);
