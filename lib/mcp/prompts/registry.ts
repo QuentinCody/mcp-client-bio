@@ -49,6 +49,26 @@ export class PromptRegistry {
     return new Map(this.usage);
   }
 
+  /**
+   * Get recently used prompts, sorted by most recent first.
+   * @param limit Maximum number of prompts to return (default: all)
+   */
+  getRecent(limit?: number): SlashPromptDef[] {
+    const entries = Array.from(this.usage.entries())
+      .filter(([id]) => this.byId.has(id))
+      .sort((a, b) => b[1] - a[1]);
+
+    const result: SlashPromptDef[] = [];
+    for (const [id] of entries) {
+      const prompt = this.byId.get(id);
+      if (prompt) {
+        result.push(prompt);
+        if (typeof limit === "number" && result.length >= limit) break;
+      }
+    }
+    return result;
+  }
+
   search(q: string, opts?: { limit?: number; recentBias?: Map<string, number> }) {
     return this.searchDetailed(q, opts).map((entry) => entry.prompt);
   }

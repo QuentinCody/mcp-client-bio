@@ -35,7 +35,7 @@ import {
 import { getSlashRuntimeActions, setSlashRuntimeActions } from "@/lib/slash/runtime";
 import { useScrollToBottom } from "@/lib/hooks/use-scroll-to-bottom";
 import { AnimatePresence, motion } from "motion/react";
-import { ChatHeader } from "./chat-header";
+import { ChatHeader } from "./status-nexus-header";
 import {
   Sheet,
   SheetContent,
