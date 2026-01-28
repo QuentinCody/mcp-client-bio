@@ -164,9 +164,65 @@ export function generateToolsTypeDefinitions(
 }
 
 /**
- * Generate helper API type definitions
+ * Generate helper API type definitions (COMPACT version for token optimization)
+ * Instead of full interfaces for every tool, we provide:
+ * 1. Discovery methods (listTools, searchTools, getToolSchema)
+ * 2. Generic invoke methods
+ * 3. Top tool names per server (not full schemas)
+ *
+ * LLM discovers parameters at runtime via getToolSchema() or by trying the tool.
  */
 export function generateHelperAPITypes(
+  serverTools: Map<string, Record<string, any>>
+): string {
+  const lines: string[] = [
+    '// Compact Helper API Reference',
+    '// Use helpers.SERVER.getToolSchema(toolName) to get parameter details',
+    '',
+    'interface HelperUtils {',
+    '  safeGet(obj: any, path: string, fallback?: any): any;',
+    '  hasValue(v: any): boolean;',
+    '}',
+    '',
+    'interface ServerHelper {',
+    '  listTools(): Promise<string[]>;',
+    '  searchTools(q: string): Promise<{name: string; description: string}[]>;',
+    '  getToolSchema(toolName: string): Promise<any>;',
+    '  invoke(toolName: string, args: any): Promise<any>;',
+    '  getData(toolName: string, args: any): Promise<any>;',
+    '  [toolName: string]: (args: any) => Promise<any>;',
+    '}',
+    '',
+  ];
+
+  // List available servers with their top tools (compact)
+  lines.push('// Available servers and tools:');
+  for (const [serverName, tools] of serverTools.entries()) {
+    const helperName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const toolNames = Object.keys(tools);
+    const topTools = toolNames.slice(0, 5).join(', ');
+    const moreCount = toolNames.length > 5 ? ` +${toolNames.length - 5} more` : '';
+    lines.push(`// helpers.${helperName}: ${topTools}${moreCount}`);
+  }
+  lines.push('');
+
+  // Main Helpers interface (compact)
+  lines.push('interface Helpers {');
+  for (const [serverName] of serverTools.entries()) {
+    const helperName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    lines.push(`  ${helperName}: ServerHelper;`);
+  }
+  lines.push('  utils: HelperUtils;');
+  lines.push('}');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate FULL helper API type definitions (original verbose version)
+ * Use this only when detailed type information is needed
+ */
+export function generateFullHelperAPITypes(
   serverTools: Map<string, Record<string, any>>
 ): string {
   const lines: string[] = [
@@ -239,6 +295,79 @@ export function generateHelperAPITypes(
   }
   lines.push('  utils: HelperUtils;');
   lines.push('}');
+
+  return lines.join('\n');
+}
+
+/**
+ * Extract compact parameter signature from tool schema
+ * Returns format like: "query, limit?" or "{ query, limit? }"
+ */
+function extractCompactParams(toolDef: any): string {
+  const schema = toolDef.parameters?.jsonSchema ||
+                 toolDef.parameters ||
+                 toolDef.inputSchema ||
+                 { type: 'object', properties: {} };
+
+  const properties = schema.properties || {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+
+  const params = Object.keys(properties).map(key => {
+    const isRequired = required.includes(key);
+    return isRequired ? key : `${key}?`;
+  });
+
+  if (params.length === 0) return '';
+  if (params.length <= 3) return params.join(', ');
+  return `${params.slice(0, 2).join(', ')}, +${params.length - 2} more`;
+}
+
+/**
+ * Generate COMPACT helper API type definitions (80% token reduction)
+ * Instead of full TypeScript interfaces, produces minimal method signatures
+ */
+export function generateCompactHelperAPITypes(
+  serverTools: Map<string, Record<string, any>>
+): string {
+  const lines: string[] = [
+    '// Helper API - use helpers.serverName.toolName({ args }) or helpers.serverName.invoke("toolName", args)',
+    '',
+  ];
+
+  // Utils summary (compact)
+  lines.push('// helpers.utils: safeGet(obj, "path", fallback), hasValue(val), compactArgs(args)');
+  lines.push('');
+
+  for (const [serverName, tools] of serverTools.entries()) {
+    const helperName = serverName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const toolEntries = Object.entries(tools);
+    const toolCount = toolEntries.length;
+
+    lines.push(`// helpers.${helperName} (${toolCount} tools)`);
+
+    // Show up to 8 tools with compact signatures, then summarize the rest
+    const maxTools = 8;
+    const shownTools = toolEntries.slice(0, maxTools);
+    const hiddenCount = toolCount - maxTools;
+
+    for (const entry of shownTools) {
+      const toolName = entry[0];
+      const toolDef = entry[1] as any;
+      const params = extractCompactParams(toolDef);
+      const desc = toolDef.description?.split('.')[0]?.slice(0, 60) || '';
+      const descSuffix = desc ? ` // ${desc}` : '';
+      lines.push(`//   .${toolName}(${params ? `{ ${params} }` : ''})${descSuffix}`);
+    }
+
+    if (hiddenCount > 0) {
+      lines.push(`//   ... +${hiddenCount} more tools (use listTools() to see all)`);
+    }
+
+    lines.push('');
+  }
+
+  // Common methods available on all helpers
+  lines.push('// All helpers support: .listTools(), .searchTools(query), .invoke(name, args), .getData(name, args)');
 
   return lines.join('\n');
 }

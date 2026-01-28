@@ -28,7 +28,7 @@ import {
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
 // generateUsageExamples disabled - using API-only mode (uncomment to re-enable static examples)
 import { generateCompactHelperDocs /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
-import { generateHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
+import { generateHelperAPITypes, generateCompactHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
 function validateCodeModeSnippet(code: string) {
@@ -246,7 +246,8 @@ export async function POST(req: Request) {
     const serverToolsMap = new Map(
       Array.from(serverToolMap.entries()).map(([key, value]) => [key, value.tools])
     );
-    const typeDefinitions = generateHelperAPITypes(serverToolsMap);
+    // Use compact type definitions to reduce token usage by ~80%
+    const typeDefinitions = generateCompactHelperAPITypes(serverToolsMap);
 
     // Generate dynamic examples from first available server (no hardcoded server names)
     const serverEntries = Array.from(serverToolsMap.entries());
@@ -255,34 +256,14 @@ export async function POST(req: Request) {
     const firstServerTools = firstServer?.[1] || {};
     const firstToolName = Object.keys(firstServerTools)[0] || 'tool_name';
 
-    const baseHelperDocs = `## Available Helper APIs
+    const baseHelperDocs = `## Helper APIs
 
-You can call tools using TypeScript-style method syntax:
-
-\`\`\`typescript
 ${typeDefinitions}
-\`\`\`
 
-Each method is async and returns a Promise. You can call them directly:
-
-\`\`\`javascript
-// Direct method calls (RECOMMENDED)
-const data = await helpers.${firstServerName}.${firstToolName}({ /* args */ });
-
-// Generic invoke() also works (raw response)
-const raw = await helpers.${firstServerName}.invoke('${firstToolName}', { /* args */ });
-
-// Envelope helpers for safer error handling
-const result = await helpers.${firstServerName}.invokeWithMeta('${firstToolName}', { /* args */ });
-if (!result.ok) return result; // sandbox handling only; still summarize in final response
-\`\`\`
-
-Helper utilities for safer access:
-
-\`\`\`javascript
-const name = helpers.utils.safeGet(data, "field.name", "Unknown");
-const hasItems = helpers.utils.hasValue(data?.items);
-\`\`\``;
+Call tools via: \`await helpers.SERVER.toolName(args)\` or \`await helpers.SERVER.getData("toolName", args)\`
+Discover tools: \`await helpers.SERVER.listTools()\` or \`await helpers.SERVER.searchTools("query")\`
+Get params: \`await helpers.SERVER.getToolSchema("toolName")\`
+Utils: \`helpers.utils.safeGet(obj, "path", fallback)\`, \`helpers.utils.hasValue(val)\``;
 
     // Static usage examples disabled - relying on dynamic API type definitions only
     // To re-enable, uncomment the following lines:

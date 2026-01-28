@@ -355,76 +355,20 @@ export function getSafeColumnName(server: string, semanticName: string): string 
 }
 
 /**
- * Generate documentation for SQL helpers as a string
+ * Generate documentation for SQL helpers as a string (COMPACT version)
  * This can be included in the system prompt for Code Mode
  */
 export function generateSQLHelperDocs(): string {
   return `
-## SQL Query Helpers for Staged Data
+## SQL Helpers (for staged data)
 
-When working with staged data, use these SQL helper functions for common patterns:
-
-### Quick Aggregations
-
-\`\`\`javascript
-// Count records by field
-const byJournal = helpers.sql.countBy('article', 'journal', { limit: 20, minCount: 5 });
-// SELECT journal, COUNT(*) as count FROM article WHERE journal IS NOT NULL GROUP BY journal HAVING count >= 5 ORDER BY count DESC LIMIT 20
-
-// Get top N by score
-const topPapers = helpers.sql.topN('article', 'citation_count', 50, ['pmid', 'title', 'journal']);
-// SELECT pmid, title, journal FROM article WHERE citation_count IS NOT NULL ORDER BY citation_count DESC LIMIT 50
-
-// Temporal analysis
-const byMonth = helpers.sql.temporal('article', 'pub_date', 'month', { minDate: '2023-01-01' });
-// SELECT strftime('%Y-%m', pub_date) as period, COUNT(*) as count FROM article WHERE pub_date IS NOT NULL AND pub_date >= '2023-01-01' GROUP BY period ORDER BY period DESC
-
-// Statistical summary
-const stats = helpers.sql.statistics('article', 'citation_count');
-// SELECT COUNT(*) as count, AVG(CAST(citation_count AS REAL)) as avg, MIN(...) as min, MAX(...) as max FROM article
-\`\`\`
-
-### Text Search
-
-\`\`\`javascript
-// Single field search
-const found = helpers.sql.textSearch('article', 'abstract', 'CRISPR', { limit: 100 });
-// SELECT * FROM article WHERE abstract LIKE '%CRISPR%' LIMIT 100
-
-// Multi-field search
-const results = helpers.sql.multiFieldSearch('article', ['title', 'abstract', 'keywords'], 'immunotherapy', { limit: 200 });
-// SELECT * FROM article WHERE title LIKE '%immunotherapy%' OR abstract LIKE '%immunotherapy%' OR keywords LIKE '%immunotherapy%' LIMIT 200
-\`\`\`
-
-### Ranking and Analysis
-
-\`\`\`javascript
-// Rank with percentiles
-const ranked = helpers.sql.rankBy('article', 'citation_count', { limit: 100, selectFields: ['pmid', 'title'] });
-// SELECT pmid, title, citation_count, ROW_NUMBER() OVER (ORDER BY citation_count DESC) as rank, PERCENT_RANK() OVER (ORDER BY citation_count) as percentile FROM article WHERE citation_count IS NOT NULL ORDER BY rank LIMIT 100
-\`\`\`
-
-### Advanced Patterns
-
-\`\`\`javascript
-// Build custom query
-const query = helpers.sql.buildSelectQuery({
-  table: 'article',
-  select: ['journal', 'COUNT(*) as count', 'AVG(citation_count) as avg_citations'],
-  where: ['pub_date >= "2023-01-01"', 'citation_count > 10'],
-  groupBy: ['journal'],
-  having: ['count >= 5'],
-  orderBy: ['avg_citations DESC'],
-  limit: 20
-});
-// Generates complete SELECT query with all clauses
-\`\`\`
-
-**Benefits:**
-- Reduces SQL syntax errors
-- Ensures proper escaping and formatting
-- Provides consistent patterns across queries
-- Makes code more readable and maintainable
+\`helpers.sql.countBy(table, field, {limit?, minCount?})\` - Count by field
+\`helpers.sql.topN(table, scoreField, n, [fields])\` - Top N records
+\`helpers.sql.temporal(table, dateField, 'month'|'year'|'day')\` - Time series
+\`helpers.sql.statistics(table, numericField)\` - Min/max/avg/count
+\`helpers.sql.textSearch(table, field, term, {limit?})\` - LIKE search
+\`helpers.sql.multiFieldSearch(table, [fields], term)\` - Multi-field search
+\`helpers.sql.buildSelectQuery({table, select, where, groupBy, orderBy, limit})\` - Custom query
 `.trim();
 }
 
