@@ -87,6 +87,7 @@ interface ChatItem {
   title: string;
   createdAt: string | Date;
   updatedAt?: string | Date;
+  userId?: string;
   preview?: string;
   isPinned?: boolean;
 }
