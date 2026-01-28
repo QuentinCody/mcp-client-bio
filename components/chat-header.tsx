@@ -1,11 +1,11 @@
 "use client";
 
 import { type modelID } from "@/ai/providers";
-import { ModelPicker } from "@/components/model-picker";
+import { NeuralPalettePicker } from "@/components/neural-palette-picker";
 import { CodeModeToggle } from "@/components/code-mode-toggle";
 import { TokenIndicator } from "@/components/token-indicator";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, ServerIcon, Download, FileJson, FileText } from "lucide-react";
+import { Loader2, Plus, ServerIcon, Download, FileJson, FileText, List } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +30,7 @@ interface ChatHeaderProps {
   chatId?: string;
   onExportJSON?: () => void;
   onExportMarkdown?: () => void;
+  onOpenBatchMode?: () => void;
 }
 
 export function ChatHeader({
@@ -42,6 +43,7 @@ export function ChatHeader({
   chatId,
   onExportJSON,
   onExportMarkdown,
+  onOpenBatchMode,
 }: ChatHeaderProps) {
   const activeServers = serverStatusCounts.total;
   const onlineServers = serverStatusCounts.online;
@@ -102,7 +104,7 @@ export function ChatHeader({
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-border/60 bg-gradient-to-b from-background/95 to-background/85 px-4 backdrop-blur-xl">
       {/* Left: Model picker */}
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <ModelPicker
+        <NeuralPalettePicker
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
           variant="inline"
@@ -163,6 +165,19 @@ export function ChatHeader({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+
+        {/* Batch Query Mode button */}
+        {onOpenBatchMode && (
+          <button
+            onClick={onOpenBatchMode}
+            type="button"
+            title="Batch Query Mode"
+            className="hidden md:inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <List className="h-3.5 w-3.5" />
+            Batch
+          </button>
         )}
 
         <button
