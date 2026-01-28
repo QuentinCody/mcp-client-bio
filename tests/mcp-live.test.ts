@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import serversConfig from '../config/mcp-servers.json';
 
 const TEST_TIMEOUT_MS = 120_000;
-const nonAuthServers = serversConfig.servers.filter((server) => !server.auth);
+const nonAuthServers = serversConfig.servers.filter((server) => !(server as any).auth);
 const manualCheckServers = new Set(['CatalysisHub']);
 
 function toTransport(server: { type: string; url: string }) {
