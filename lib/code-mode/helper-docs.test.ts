@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateUsageExamples } from './helper-docs';
+import { generateUsageExamples, generateResponseTypeHints, generateCompactResponseTypeHints } from './helper-docs';
 
 describe('Cross-Server ID Resolution Guidance', () => {
   describe('generateUsageExamples', () => {
@@ -139,5 +139,90 @@ describe('Server-Specific Guidance', () => {
     // Should show a complete example using multiple servers
     expect(examples).toMatch(/comprehensive|complete|pipeline/i);
     expect(examples).toMatch(/step\s*1|step\s*2|step\s*3|step\s*4/i);
+  });
+});
+
+describe('Response Type Hints', () => {
+  describe('generateResponseTypeHints', () => {
+    it('documents common response wrapper patterns', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toContain('results');
+      expect(hints).toContain('nodes');
+      expect(hints).toContain('studies');
+      expect(hints).toContain('idlist');
+    });
+
+    it('includes UniProt response shapes', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toContain('UniProt');
+      expect(hints).toContain('primaryAccession');
+      expect(hints).toMatch(/response\?\.results/);
+    });
+
+    it('includes OpenTargets response shapes', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toContain('OpenTargets');
+      expect(hints).toMatch(/data.*search.*hits|associatedTargets/);
+    });
+
+    it('includes CIViC response shapes', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toContain('CIViC');
+      expect(hints).toContain('nodes');
+      expect(hints).toContain('edges');
+    });
+
+    it('includes defensive extraction patterns', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toMatch(/Array\.isArray/);
+      expect(hints).toMatch(/\|\| \[\]/);
+      expect(hints).toMatch(/\?\./);
+    });
+
+    it('shows correct and incorrect examples', () => {
+      const hints = generateResponseTypeHints();
+
+      expect(hints).toMatch(/CORRECT|WRONG/);
+      expect(hints).toContain('TypeError');
+    });
+  });
+
+  describe('generateCompactResponseTypeHints', () => {
+    it('is shorter than the full version', () => {
+      const full = generateResponseTypeHints();
+      const compact = generateCompactResponseTypeHints();
+
+      expect(compact.length).toBeLessThan(full.length);
+    });
+
+    it('includes essential response patterns table', () => {
+      const hints = generateCompactResponseTypeHints();
+
+      expect(hints).toMatch(/\|.*API.*\|.*Response.*\|/i);
+      expect(hints).toContain('UniProt');
+      expect(hints).toContain('OpenTargets');
+      expect(hints).toContain('CIViC');
+    });
+
+    it('includes mandatory defensive patterns', () => {
+      const hints = generateCompactResponseTypeHints();
+
+      expect(hints).toMatch(/Array\.isArray/);
+      expect(hints).toMatch(/\?\./);
+      expect(hints).toMatch(/\|\| \[\]/);
+    });
+
+    it('shows safe extraction patterns for common APIs', () => {
+      const hints = generateCompactResponseTypeHints();
+
+      expect(hints).toContain('response?.results || []');
+      expect(hints).toContain('response?.nodes || []');
+      expect(hints).toContain('response?.studies || []');
+    });
   });
 });

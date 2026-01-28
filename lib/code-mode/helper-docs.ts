@@ -566,6 +566,240 @@ return \`## \${geneName} Comprehensive Analysis
 }
 
 /**
+ * Generate response type hints for common MCP server APIs
+ * This helps LLMs understand expected response shapes and avoid type errors
+ * like "targetsData.map is not a function"
+ */
+export function generateResponseTypeHints(): string {
+  return `
+## Response Type Hints (CRITICAL)
+
+**⚠️ API responses vary in structure. ALWAYS use defensive extraction patterns.**
+
+### Common Response Wrappers
+
+Most APIs wrap data in container objects. NEVER assume an array is returned directly:
+
+| Pattern | Example APIs | Safe Extraction |
+|---------|--------------|-----------------|
+| \`{ results: T[] }\` | UniProt, OpenTargets search | \`response?.results || []\` |
+| \`{ data: T[] }\` | OpenTargets GraphQL | \`response?.data?.targets || []\` |
+| \`{ nodes: T[] }\` | CIViC, DGIdb GraphQL | \`response?.nodes || []\` |
+| \`{ studies: T[] }\` | ClinicalTrials.gov | \`response?.studies || []\` |
+| \`{ hits: T[] }\` | OpenTargets search | \`response?.hits || []\` |
+| \`{ edges: [{node: T}] }\` | GraphQL connections | \`response?.edges?.map(e => e.node) || []\` |
+| \`{ idlist: string[] }\` | Entrez search | \`response?.idlist || []\` |
+
+### Server-Specific Response Shapes
+
+**UniProt:**
+\`\`\`typescript
+// uniprot_search response
+{ results: Array<{ primaryAccession: string; uniProtkbId: string; ... }> }
+
+// uniprot_entry response
+{ primaryAccession: string; sequence: { value: string; length: number }; ... }
+
+// uniprot_id_mapping response
+{ results: Array<{ from: string; to: { primaryAccession: string } | string }> }
+
+// Safe extraction:
+const accession = mapping?.results?.[0]?.to?.primaryAccession || mapping?.results?.[0]?.to;
+const proteins = response?.results || [];
+\`\`\`
+
+**OpenTargets:**
+\`\`\`typescript
+// GraphQL responses are nested under 'data'
+{ data: { search: { hits: Array<{ id: string; name: string; ... }> } } }
+{ data: { target: { id: string; associatedDiseases: { rows: Array<...> } } } }
+{ data: { disease: { associatedTargets: { rows: Array<...>; count: number } } } }
+
+// Safe extraction:
+const hits = response?.data?.search?.hits || [];
+const targets = response?.data?.disease?.associatedTargets?.rows || [];
+const count = response?.data?.disease?.associatedTargets?.count || 0;
+\`\`\`
+
+**CIViC:**
+\`\`\`typescript
+// GraphQL responses use 'nodes' pattern
+{ nodes: Array<{ id: number; name: string; ... }>, totalCount: number }
+
+// Connections have edges
+{ edges: Array<{ node: { id: number; ... } }> }
+
+// Safe extraction:
+const genes = response?.nodes || [];
+const variants = response?.edges?.map(e => e.node) || [];
+\`\`\`
+
+**Entrez/NCBI:**
+\`\`\`typescript
+// entrez_query search response
+{ count: number; idlist: string[]; ... }
+
+// entrez_data fetch response (varies by database)
+// PubMed: { result: { [pmid]: { title: string; authors: [...] } } }
+// Gene: { result: { [geneId]: { symbol: string; ... } } }
+
+// Safe extraction:
+const ids = response?.idlist || [];
+const count = parseInt(response?.count) || 0;
+\`\`\`
+
+**ClinicalTrials.gov:**
+\`\`\`typescript
+// ctgov_search_studies response
+{ studies: Array<{ protocolSection: { ... }; ... }>; totalCount: number }
+
+// Safe extraction:
+const studies = response?.studies || [];
+const total = response?.totalCount || 0;
+\`\`\`
+
+**RCSB PDB:**
+\`\`\`typescript
+// search_by_uniprot response
+Array<{ pdb_id: string; title?: string; ... }>  // NOTE: Direct array!
+
+// fetch response
+{ entry: { id: string; struct: { title: string }; ... } }
+
+// Safe extraction:
+const structures = Array.isArray(response) ? response : [];
+\`\`\`
+
+**DGIdb:**
+\`\`\`typescript
+// GraphQL response
+{ data: { genes: { nodes: Array<{ name: string; interactions: { nodes: [...] } }> } } }
+
+// Safe extraction:
+const genes = response?.data?.genes?.nodes || [];
+const interactions = genes[0]?.interactions?.nodes || [];
+\`\`\`
+
+**Pharos:**
+\`\`\`typescript
+// GraphQL response
+{ data: { targets: Array<{ name: string; tdl: string; ... }> } }
+{ data: { target: { name: string; drugs: Array<...> } } }
+
+// Safe extraction:
+const targets = response?.data?.targets || [];
+const drugs = response?.data?.target?.drugs || [];
+\`\`\`
+
+**NCI GDC:**
+\`\`\`typescript
+// GraphQL explore response
+{ data: { explore: { ssms: { hits: { edges: Array<{ node: { ... } }> } } } } }
+{ data: { explore: { genes: { hits: { edges: [...] } } } } }
+
+// Safe extraction:
+const mutations = response?.data?.explore?.ssms?.hits?.edges?.map(e => e.node) || [];
+\`\`\`
+
+### Defensive Extraction Patterns
+
+**Always check before iterating:**
+\`\`\`javascript
+// ✓ CORRECT - Check type before map
+const items = response?.results || [];
+if (!Array.isArray(items)) {
+  return "Unexpected response format";
+}
+const names = items.map(i => i.name);
+
+// ✓ CORRECT - Use optional chaining with fallback
+const count = response?.data?.associatedTargets?.count ?? 0;
+const rows = response?.data?.associatedTargets?.rows || [];
+
+// ✗ WRONG - Assumes response is array
+const names = response.map(i => i.name);  // TypeError if response is object!
+
+// ✗ WRONG - No null check
+const first = response.results[0].name;  // TypeError if results undefined!
+\`\`\`
+
+**Safe iteration patterns:**
+\`\`\`javascript
+// For arrays that might be undefined/null
+(items || []).map(i => i.name)
+(items ?? []).forEach(i => process(i))
+
+// For possibly-empty results
+const first = items?.[0]?.name || "Unknown";
+
+// For nested GraphQL data
+const targets = response?.data?.disease?.associatedTargets?.rows || [];
+targets.slice(0, 10).map(t => t.target?.approvedSymbol || "N/A")
+\`\`\`
+
+### Type Coercion Safety
+
+**Numbers from APIs may be strings:**
+\`\`\`javascript
+// ✓ Safe number handling
+const count = parseInt(response?.count) || 0;
+const score = parseFloat(response?.score) ?? 0;
+
+// ✗ Unsafe - may get "100" string
+const count = response.count + 1;  // "1001" if count is "100"!
+\`\`\`
+
+**IDs may be numbers or strings:**
+\`\`\`javascript
+// ✓ Safe ID handling (always convert to string for comparison)
+const id = String(response?.id || "");
+const matches = items.filter(i => String(i.id) === targetId);
+\`\`\`
+`.trim();
+}
+
+/**
+ * Generate compact response type hints for system prompts
+ * This is a shorter version optimized for token efficiency
+ */
+export function generateCompactResponseTypeHints(): string {
+  return `
+## API Response Patterns (CRITICAL - Prevent Type Errors)
+
+**⚠️ NEVER assume response shape. ALWAYS use defensive extraction.**
+
+### Common Response Wrappers (use these patterns):
+| API | Response Shape | Safe Extraction |
+|-----|---------------|-----------------|
+| UniProt search | \`{ results: [...] }\` | \`response?.results || []\` |
+| OpenTargets | \`{ data: { X: { rows: [...] } } }\` | \`response?.data?.X?.rows || []\` |
+| CIViC | \`{ nodes: [...] }\` | \`response?.nodes || []\` |
+| ClinicalTrials | \`{ studies: [...] }\` | \`response?.studies || []\` |
+| Entrez search | \`{ idlist: [...], count: N }\` | \`response?.idlist || []\` |
+| GraphQL edges | \`{ edges: [{node:...}] }\` | \`response?.edges?.map(e=>e.node) || []\` |
+| RCSB PDB | Direct array OR object | \`Array.isArray(r) ? r : []\` |
+
+### Mandatory Defensive Patterns:
+\`\`\`javascript
+// ✓ ALWAYS check before iterating
+const items = response?.results || [];
+if (!Array.isArray(items)) return "Unexpected response";
+const names = items.map(i => i.name);
+
+// ✓ ALWAYS use fallbacks for nested data
+const targets = response?.data?.disease?.associatedTargets?.rows || [];
+const count = response?.data?.disease?.associatedTargets?.count ?? 0;
+
+// ✗ WRONG - Will crash if response is not array
+response.map(i => i.name);  // TypeError!
+
+// ✗ WRONG - No null check
+response.results[0].name;  // TypeError if undefined!
+\`\`\`
+`.trim();
+}
+
+/**
  * Enhanced search that uses parsed descriptions
  */
 export function searchToolsWithParsing(

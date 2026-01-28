@@ -27,7 +27,7 @@ import {
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
 // generateUsageExamples disabled - using API-only mode (uncomment to re-enable static examples)
-import { generateCompactHelperDocs /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
+import { generateCompactHelperDocs, generateCompactResponseTypeHints /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
 import { generateHelperAPITypes, generateCompactHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
@@ -274,13 +274,17 @@ Utils: \`helpers.utils.safeGet(obj, "path", fallback)\`, \`helpers.utils.hasValu
     const { generateSQLHelperDocs } = await import('@/lib/code-mode/sql-helpers');
     const sqlDocs = generateSQLHelperDocs();
 
-    // API-only mode: just type definitions + SQL helpers, no static examples
-    helpersDocs = baseHelperDocs + '\n\n' + sqlDocs;
+    // Add response type hints to help LLMs understand API response shapes
+    const responseTypeHints = generateCompactResponseTypeHints();
+
+    // API-only mode: type definitions + response type hints + SQL helpers
+    helpersDocs = baseHelperDocs + '\n\n' + responseTypeHints + '\n\n' + sqlDocs;
 
     // Log documentation component sizes for token analysis
     console.log('[API /chat] Helper docs breakdown (API-only mode):');
     console.log('  - Type definitions:', typeDefinitions.length, 'chars');
     console.log('  - Base helper docs:', baseHelperDocs.length, 'chars');
+    console.log('  - Response type hints:', responseTypeHints.length, 'chars');
     console.log('  - SQL docs:', sqlDocs.length, 'chars');
     console.log('  - Total helpersDocs:', helpersDocs.length, 'chars (~', Math.round(helpersDocs.length / 4), 'tokens)');
 
@@ -331,6 +335,9 @@ Code Requirements:
 - NO function declarations - use top-level code only
 - NO TypeScript syntax (no type annotations)
 - Use await directly
+- ALWAYS check Array.isArray() before .map()/.forEach()
+- ALWAYS use optional chaining (?.) for nested access
+- ALWAYS provide fallback values (|| [] or ?? 0)
 
 ${helpersDocs || 'No helper APIs available.'}
 
@@ -344,7 +351,9 @@ Your code should return a PLAIN TEXT STRING - this becomes your final response.
 Example:
 \`\`\`javascript
 const proteins = await helpers.uniprot.getData("search", { query: "TP53" });
-return \`Found \${proteins.length} proteins. Top result: \${proteins[0]?.name || "N/A"}\`;
+// DEFENSIVE: check array before using .length or .map()
+const items = Array.isArray(proteins) ? proteins : proteins?.results || [];
+return \`Found \${items.length} proteins. Top result: \${items[0]?.name || "N/A"}\`;
 \`\`\`
 
 After execution, output the returned string directly. Do NOT generate more code.
@@ -375,7 +384,62 @@ Available methods:
 - helpers.server.invoke(tool, args) - Returns raw response
 - helpers.server.listTools() - List available tools
 - helpers.utils.safeGet(obj, "path", fallback) - Safe property access
+- helpers.utils.extractArray(result, "path") - Safely extract arrays
 - console.log() - Debug output
+
+## Defensive Coding Patterns (REQUIRED)
+
+ALWAYS use these patterns to prevent runtime errors:
+
+1. **Safe Array Operations:**
+\`\`\`javascript
+// CORRECT - check before using array methods
+const items = Array.isArray(data?.results) ? data.results : [];
+items.forEach(item => console.log(item));
+
+// WRONG - crashes if data.results is undefined or not an array
+data.results.map(x => x.name);  // ❌ "map is not a function"
+\`\`\`
+
+2. **Optional Chaining for Nested Access:**
+\`\`\`javascript
+// CORRECT
+const name = result?.data?.items?.[0]?.name || "Unknown";
+
+// WRONG - crashes if any property is missing
+const name = result.data.items[0].name;  // ❌ "Cannot read property"
+\`\`\`
+
+3. **Default Values:**
+\`\`\`javascript
+// CORRECT
+const count = data?.total ?? 0;
+const items = data?.results || [];
+
+// WRONG - no fallback
+const count = data.total;  // ❌ undefined if missing
+\`\`\`
+
+## Anti-Patterns to AVOID
+
+❌ **Never assume response shape without checking:**
+\`\`\`javascript
+// BAD - assumes data is an array
+return data.map(x => x.name).join(", ");
+
+// GOOD - verify first
+const items = Array.isArray(data) ? data : data?.results || [];
+return items.map(x => x?.name || "N/A").join(", ");
+\`\`\`
+
+❌ **Never access nested properties without optional chaining:**
+\`\`\`javascript
+// BAD
+const diseases = target.associatedDiseases.rows;
+
+// GOOD
+const diseases = target?.associatedDiseases?.rows || [];
+\`\`\`
 
 CRITICAL WORKFLOW:
 1. Execute code ONCE to gather data
@@ -389,11 +453,15 @@ Example:
 const proteins = await helpers.uniprot.getData("search", { query: "TP53" });
 const diseases = await helpers.opentargets.getData("get_target", { target_id: "ENSG00000141510" });
 
+// DEFENSIVE: safely extract arrays and handle missing data
+const proteinList = Array.isArray(proteins) ? proteins : proteins?.results || [];
+const diseaseList = diseases?.associatedDiseases?.rows || [];
+
 return \`## TP53 Analysis
 
-Found \${proteins.length} protein entries.
-Primary isoform: \${proteins[0]?.name || "Unknown"}
-Associated diseases: \${diseases?.associatedDiseases?.length || 0} conditions.\`;
+Found \${proteinList.length} protein entries.
+Primary isoform: \${proteinList[0]?.name || "Unknown"}
+Associated diseases: \${diseaseList.length} conditions.\`;
 \`\`\`
 
 After code execution completes, output the returned string. Do NOT generate more code.
