@@ -65,7 +65,7 @@ export const MCPServerManagerLegacy = ({
   onSelectedServersChange,
   open,
   onOpenChange,
-}: MCPServerManagerProps) => {
+}: MCPServerManagerLegacyProps) => {
   const [expandedServer, setExpandedServer] = useState<string | null>(null);
   const { startServer, stopServer } = useMCP();
 
