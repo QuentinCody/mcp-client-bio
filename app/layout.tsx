@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChatSidebar } from "@/components/chat-sidebar";
+import { NavigationOasis } from "@/components/navigation-oasis";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Menu } from "lucide-react";
 import { Providers } from "./providers";
@@ -67,7 +67,7 @@ export default function RootLayout({
       >
         <Providers>
           <div className="flex h-[100dvh] w-full overflow-hidden">
-            <ChatSidebar />
+            <NavigationOasis />
             <main className="flex flex-1 min-h-0 flex-col overflow-hidden">
               <div className="relative z-20 flex flex-1 min-h-0 flex-col bg-background">
                 <div className="absolute left-4 top-4 z-30 md:hidden">
