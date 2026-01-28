@@ -5,7 +5,13 @@ import { ModelPicker } from "@/components/model-picker";
 import { CodeModeToggle } from "@/components/code-mode-toggle";
 import { TokenIndicator } from "@/components/token-indicator";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, ServerIcon } from "lucide-react";
+import { Loader2, Plus, ServerIcon, Download, FileJson, FileText } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ServerStatusCounts {
   total: number;
@@ -22,6 +28,8 @@ interface ChatHeaderProps {
   serverStatusCounts: ServerStatusCounts;
   status: "error" | "submitted" | "streaming" | "ready";
   chatId?: string;
+  onExportJSON?: () => void;
+  onExportMarkdown?: () => void;
 }
 
 export function ChatHeader({
@@ -32,6 +40,8 @@ export function ChatHeader({
   serverStatusCounts,
   status,
   chatId,
+  onExportJSON,
+  onExportMarkdown,
 }: ChatHeaderProps) {
   const activeServers = serverStatusCounts.total;
   const onlineServers = serverStatusCounts.online;
@@ -124,6 +134,36 @@ export function ChatHeader({
         <div className="hidden sm:block">
           <CodeModeToggle />
         </div>
+
+        {/* Export dropdown */}
+        {chatId && (onExportJSON || onExportMarkdown) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title="Export chat"
+                className="hidden md:inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onExportJSON && (
+                <DropdownMenuItem onClick={onExportJSON}>
+                  <FileJson className="mr-2 h-4 w-4" />
+                  Export as JSON
+                </DropdownMenuItem>
+              )}
+              {onExportMarkdown && (
+                <DropdownMenuItem onClick={onExportMarkdown}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Export as Markdown
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         <button
           onClick={onNewChat}

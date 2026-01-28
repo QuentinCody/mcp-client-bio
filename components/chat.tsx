@@ -43,12 +43,14 @@ import {
   SheetTitle,
   SheetDescription,
 } from "./ui/sheet";
+import { downloadChatAsJSON, downloadChatAsMarkdown } from "@/lib/chat-export";
 
 const MESSAGE_WINDOW_SIZE = 45;
 
 // Type for chat data from DB
 interface ChatData {
   id: string;
+  title?: string;
   messages: DBMessage[];
   createdAt: string;
   updatedAt: string;
@@ -271,6 +273,29 @@ export default function Chat() {
     setPromptPreview(null);
     router.push("/");
   }, [router, setMessages, setPromptPreview]);
+
+  // Export handlers
+  const handleExportJSON = useCallback(() => {
+    if (!chatSessionId || messages.length === 0) {
+      toast.error("No messages to export");
+      return;
+    }
+    const title = chatData?.title || "Chat Export";
+    const createdAt = chatData?.createdAt ? new Date(chatData.createdAt) : undefined;
+    downloadChatAsJSON(chatSessionId, title, messages, createdAt);
+    toast.success("Chat exported as JSON");
+  }, [chatSessionId, messages, chatData]);
+
+  const handleExportMarkdown = useCallback(() => {
+    if (!chatSessionId || messages.length === 0) {
+      toast.error("No messages to export");
+      return;
+    }
+    const title = chatData?.title || "Chat Export";
+    const createdAt = chatData?.createdAt ? new Date(chatData.createdAt) : undefined;
+    downloadChatAsMarkdown(chatSessionId, title, messages, createdAt);
+    toast.success("Chat exported as Markdown");
+  }, [chatSessionId, messages, chatData]);
 
   const handleFormSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -587,6 +612,8 @@ export default function Chat() {
           serverStatusCounts={serverStatusCounts}
           status={status as "error" | "submitted" | "streaming" | "ready"}
           chatId={chatSessionId}
+          onExportJSON={handleExportJSON}
+          onExportMarkdown={handleExportMarkdown}
         />
       </div>
       <div className="flex h-full min-h-0 flex-col">
