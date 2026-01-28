@@ -25,7 +25,56 @@ const messageAnimationStyle = `
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+@keyframes shimmerSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
 `;
+
+// Thinking Indicator - shows immediately when user submits a query
+const ThinkingIndicator = () => {
+  return (
+    <div className="space-y-3">
+      {/* Preparing response indicator */}
+      <div className="flex items-center gap-3">
+        <div className="flex gap-1">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-2 w-2 rounded-full bg-primary/60"
+              style={{
+                animation: `dotPulse 1.4s ease-in-out infinite`,
+                animationDelay: `${i * 0.16}s`,
+              }}
+            />
+          ))}
+        </div>
+        <span className="text-sm text-muted-foreground">Preparing response...</span>
+      </div>
+
+      {/* Skeleton code block outline */}
+      <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-4 overflow-hidden relative">
+        {/* Shimmer overlay */}
+        <div
+          className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-primary/5 to-transparent"
+          style={{ animation: 'shimmerSlide 2s ease-in-out infinite' }}
+        />
+
+        {/* Skeleton lines */}
+        <div className="space-y-2.5 relative">
+          <div className="h-3 w-3/4 rounded bg-muted/60" />
+          <div className="h-3 w-1/2 rounded bg-muted/50" />
+          <div className="h-3 w-5/6 rounded bg-muted/40" />
+          <div className="h-3 w-2/3 rounded bg-muted/30" />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface ReasoningPart {
   type: "reasoning";
@@ -213,6 +262,15 @@ const PurePreviewMessage = ({
   }
 
   const isActiveAssistant = isLatestMessage && status === "streaming";
+  const isThinking = isLatestMessage && status === "submitted";
+
+  // Check if message has meaningful content yet
+  const hasContent = message.parts && message.parts.length > 0 && message.parts.some(
+    (part) => (part.type === "text" && part.text && part.text.trim().length > 0) ||
+              part.type === "reasoning" ||
+              part.type === "dynamic-tool" ||
+              part.type.startsWith("tool-")
+  );
 
   // Assistant messages: elegant card with refined styling
   return (
@@ -228,12 +286,17 @@ const PurePreviewMessage = ({
             "relative rounded-2xl border transition-all duration-300",
             isActiveAssistant
               ? "border-primary/40 bg-gradient-to-b from-primary/[0.03] to-transparent shadow-lg shadow-primary/5"
-              : "border-border/60 bg-card/50 shadow-sm hover:shadow-md hover:border-border"
+              : isThinking
+                ? "border-amber-500/40 bg-gradient-to-b from-amber-500/[0.03] to-transparent shadow-lg shadow-amber-500/5"
+                : "border-border/60 bg-card/50 shadow-sm hover:shadow-md hover:border-border"
           )}
         >
-          {/* Subtle glow effect when streaming */}
+          {/* Subtle glow effect when streaming or thinking */}
           {isActiveAssistant && (
             <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
+          )}
+          {isThinking && (
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-amber-500/5 to-transparent pointer-events-none" />
           )}
 
           {/* Header row - refined */}
@@ -241,23 +304,36 @@ const PurePreviewMessage = ({
             "relative flex items-center justify-between rounded-t-2xl border-b px-4 py-2.5 sm:px-5",
             isActiveAssistant
               ? "border-primary/20 bg-primary/[0.02]"
-              : "border-border/40 bg-muted/30"
+              : isThinking
+                ? "border-amber-500/20 bg-amber-500/[0.02]"
+                : "border-border/40 bg-muted/30"
           )}>
             <div className="flex items-center gap-2.5">
               <div className={cn(
                 "flex h-6 w-6 items-center justify-center rounded-full",
                 isActiveAssistant
                   ? "bg-primary/10 text-primary"
-                  : "bg-muted text-muted-foreground"
+                  : isThinking
+                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    : "bg-muted text-muted-foreground"
               )}>
                 <Sparkles className="h-3.5 w-3.5" />
               </div>
               <span className={cn(
                 "text-xs font-medium",
-                isActiveAssistant ? "text-foreground" : "text-muted-foreground"
+                isActiveAssistant || isThinking ? "text-foreground" : "text-muted-foreground"
               )}>
                 Assistant
               </span>
+              {isThinking && (
+                <span className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                    style={{ animation: 'subtlePulse 1s ease-in-out infinite' }}
+                  />
+                  thinking
+                </span>
+              )}
               {isLatestMessage && status === "streaming" && (
                 <span className="flex items-center gap-1.5 text-[11px] text-primary/80">
                   <span
@@ -298,6 +374,9 @@ const PurePreviewMessage = ({
           {/* Message content - full width with refined spacing */}
           <div className="relative px-4 pb-5 pt-4 sm:px-5">
             <div className="text-[15px] leading-[1.7] text-foreground space-y-4">
+              {/* Show thinking indicator immediately when query is submitted */}
+              {isThinking && !hasContent && <ThinkingIndicator />}
+
               {message.parts?.map((part, i) => {
                 const key = `message-${message.id}-part-${i}`;
 
