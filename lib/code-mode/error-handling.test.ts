@@ -212,3 +212,54 @@ describe('Tool name resolution', () => {
     expect(code).toContain('helpers.testserver');
   });
 });
+
+describe('Safe array extraction (Task #4)', () => {
+  it('generates extractArray function', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    expect(code).toContain('function extractArray');
+    expect(code).toContain('Task #4');
+  });
+
+  it('auto-detects common array paths', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    // Should check common paths
+    expect(code).toContain('"data"');
+    expect(code).toContain('"results"');
+    expect(code).toContain('"items"');
+    expect(code).toContain('"hits"');
+    expect(code).toContain('"structuredContent.data"');
+  });
+
+  it('generates safeMap helper', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    expect(code).toContain('function safeMap');
+    expect(code).toContain('extractArray(result, path)');
+    expect(code).toContain('arr.map(mapFn)');
+  });
+
+  it('generates extractFirst helper', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    expect(code).toContain('function extractFirst');
+    expect(code).toContain('arr[0]');
+  });
+
+  it('exposes utilities on helpers.utils', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    expect(code).toContain('helpers.utils');
+    expect(code).toContain('extractArray,');
+    expect(code).toContain('safeMap,');
+    expect(code).toContain('extractFirst');
+  });
+
+  it('returns fallback when result is null', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    // Should handle null/undefined gracefully
+    expect(code).toContain('if (result == null) return fallback');
+  });
+
+  it('handles result that is already an array', () => {
+    const code = generateTransformingHelpersImplementation(serverToolMap);
+    // Should pass through arrays
+    expect(code).toContain('if (Array.isArray(result)) return result');
+  });
+});
