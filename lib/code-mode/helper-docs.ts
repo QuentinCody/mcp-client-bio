@@ -873,3 +873,184 @@ export function searchToolsWithParsing(
   // Sort by relevance (descending)
   return results.sort((a, b) => b.relevance - a.relevance);
 }
+
+/**
+ * Generate tool parameter schemas documentation
+ * This helps LLMs understand required and optional parameters for each tool
+ */
+export function generateToolParameterSchemas(): string {
+  return `
+## Tool Parameter Schemas (CRITICAL - Prevent Parameter Errors)
+
+**⚠️ Always use getToolSchema(toolName) to get exact parameter requirements before invoking.**
+
+### UniProt Tools
+
+**\`uniprot_search\`** - Search UniProt database
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | Search query (e.g., "gene:BRCA1 AND organism_id:9606") |
+| format | string | no | Response format (default: "json") |
+| size | number | no | Max results (default: 25) |
+
+**\`uniprot_entry\`** - Get single protein entry
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| accession | string | **YES** | UniProt accession (e.g., "P38398") |
+
+**\`uniprot_id_mapping\`** - Map identifiers between databases
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| from_db | string | **YES** | Source database (e.g., "Gene_Name", "UniProtKB") |
+| to_db | string | **YES** | Target database (e.g., "UniProtKB", "PDB") |
+| ids | string[] | **YES** | Array of identifiers to map |
+| taxon_id | string | no | Taxonomy ID filter (e.g., "9606" for human) |
+
+### OpenTargets Tools
+
+**\`opentargets_graphql_query\`** - Execute GraphQL query
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | GraphQL query string |
+| variables | object | no | Query variables |
+
+**\`get_disease_associated_targets\`** - Get targets for disease
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| efo_id | string | **YES** | Disease ID (e.g., "EFO_0000305") |
+
+### CIViC Tools
+
+**\`civic_search_genes\`** - Search for genes
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | Gene name or symbol |
+
+**\`civic_variants\`** - Get variants for gene
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| geneId | number | **YES** | CIViC gene ID (get from civic_search_genes) |
+
+**\`civic_evidence_items\`** - Get evidence for variant
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| variantId | number | **YES** | CIViC variant ID |
+
+### Entrez/NCBI Tools
+
+**\`entrez_query\`** - Search NCBI databases
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| operation | string | **YES** | "search" or "summary" |
+| database | string | **YES** | Database name (e.g., "pubmed", "gene", "protein") |
+| term | string | **YES** | Search query |
+| retmax | number | no | Max results (default: 20) |
+
+**\`entrez_data\`** - Fetch/process NCBI data
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| operation | string | **YES** | "fetch", "fetch_and_stage", or "query" |
+| database | string | required for fetch | Database name |
+| ids | string | required for fetch | Comma-separated IDs |
+| data_access_id | string | required for query | ID from fetch_and_stage |
+| sql | string | required for query | SQL query for staged data |
+
+### ClinicalTrials.gov Tools
+
+**\`ctgov_search_studies\`** - Search clinical trials
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query_cond | string | no | Condition/disease query |
+| query_intr | string | no | Intervention query |
+| query_term | string | no | General search term |
+| recrs | string | no | Recruitment status ("open", "closed", etc.) |
+| pageSize | number | no | Results per page (default: 10) |
+
+**\`ctgov_get_study\`** - Get single study details
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| nctId | string | **YES** | NCT identifier (e.g., "NCT01234567") |
+
+### RCSB PDB Tools
+
+**\`search_by_uniprot\`** - Search structures by UniProt ID
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| uniprot_id | string | **YES** | UniProt accession |
+
+**\`fetch\`** - Get PDB structure details
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| pdb_ids | string[] | **YES** | Array of PDB IDs |
+
+### DGIdb Tools
+
+**\`dgidb_graphql_query\`** - Execute DGIdb GraphQL query
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | GraphQL query string |
+
+### Pharos Tools
+
+**\`pharos_graphql_query\`** - Execute Pharos GraphQL query
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | GraphQL query string |
+
+### NCI GDC Tools
+
+**\`gdc_graphql_query\`** - Execute GDC GraphQL query
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| query | string | **YES** | GraphQL query string |
+| variables | object | no | Query variables |
+
+---
+
+### Parameter Validation Checklist
+
+Before invoking any tool:
+1. ✓ Check all **required** parameters are provided
+2. ✓ Verify parameter types match (string vs number vs array)
+3. ✓ Use getToolSchema(toolName) for tools not listed above
+4. ✓ Test with simple queries before complex ones
+`.trim();
+}
+
+/**
+ * Generate compact tool parameter hints for system prompts
+ * Optimized for token efficiency while providing essential info
+ */
+export function generateCompactToolSchemas(): string {
+  return `
+## Tool Parameters Quick Reference
+
+**⚠️ Use getToolSchema(toolName) for exact requirements. Below are common tools.**
+
+### Required Parameters (will error if missing):
+
+| Tool | Required Params | Example |
+|------|----------------|---------|
+| uniprot_search | query:string | { query: "gene:BRCA1" } |
+| uniprot_entry | accession:string | { accession: "P38398" } |
+| uniprot_id_mapping | from_db, to_db, ids:string[] | { from_db: "Gene_Name", to_db: "UniProtKB", ids: ["BRCA1"] } |
+| opentargets_graphql_query | query:string | { query: "{ target(ensemblId:\\"ENSG..\\") {...}}" } |
+| civic_search_genes | query:string | { query: "BRCA1" } |
+| civic_variants | geneId:number | { geneId: 5 } |
+| entrez_query | operation, database, term | { operation: "search", database: "gene", term: "TP53" } |
+| ctgov_search_studies | (at least one of query_cond/query_intr/query_term) | { query_cond: "breast cancer" } |
+| ctgov_get_study | nctId:string | { nctId: "NCT01234567" } |
+| search_by_uniprot | uniprot_id:string | { uniprot_id: "P38398" } |
+| dgidb_graphql_query | query:string | { query: "{ genes(names:[\\"EGFR\\"]) {...}}" } |
+| pharos_graphql_query | query:string | { query: "{ target(q:{sym:\\"EGFR\\"}) {...}}" } |
+| gdc_graphql_query | query:string | { query: "{ explore { ssms {...}}}" } |
+
+### Common Errors & Fixes:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Missing required parameter" | Required param not provided | Check table above |
+| "Invalid parameter type" | Wrong type (e.g., string instead of number) | civic_variants needs geneId as NUMBER not string |
+| "Unknown parameter" | Typo or wrong param name | Use getToolSchema() to verify exact names |
+`.trim();
+}

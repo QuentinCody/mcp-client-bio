@@ -27,7 +27,7 @@ import {
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
 // generateUsageExamples disabled - using API-only mode (uncomment to re-enable static examples)
-import { generateCompactHelperDocs, generateCompactResponseTypeHints /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
+import { generateCompactHelperDocs, generateCompactResponseTypeHints, generateCompactToolSchemas /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
 import { generateHelperAPITypes, generateCompactHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
 import { getCodeModeServers } from '@/lib/codemode/servers';
 
@@ -277,14 +277,18 @@ Utils: \`helpers.utils.safeGet(obj, "path", fallback)\`, \`helpers.utils.hasValu
     // Add response type hints to help LLMs understand API response shapes
     const responseTypeHints = generateCompactResponseTypeHints();
 
-    // API-only mode: type definitions + response type hints + SQL helpers
-    helpersDocs = baseHelperDocs + '\n\n' + responseTypeHints + '\n\n' + sqlDocs;
+    // Add tool parameter schemas to help LLMs avoid "Invalid parameters" errors
+    const toolSchemas = generateCompactToolSchemas();
+
+    // API-only mode: type definitions + response type hints + tool schemas + SQL helpers
+    helpersDocs = baseHelperDocs + '\n\n' + responseTypeHints + '\n\n' + toolSchemas + '\n\n' + sqlDocs;
 
     // Log documentation component sizes for token analysis
     console.log('[API /chat] Helper docs breakdown (API-only mode):');
     console.log('  - Type definitions:', typeDefinitions.length, 'chars');
     console.log('  - Base helper docs:', baseHelperDocs.length, 'chars');
     console.log('  - Response type hints:', responseTypeHints.length, 'chars');
+    console.log('  - Tool schemas:', toolSchemas.length, 'chars');
     console.log('  - SQL docs:', sqlDocs.length, 'chars');
     console.log('  - Total helpersDocs:', helpersDocs.length, 'chars (~', Math.round(helpersDocs.length / 4), 'tokens)');
 
