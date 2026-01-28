@@ -7,6 +7,7 @@ import { TokenSummary } from "./token-summary";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ensurePromptsLoaded, isPromptsLoaded, promptRegistry } from "@/lib/mcp/prompts/singleton";
 import { SlashMenu } from "@/components/slash-menu";
+import { CommandPalette } from "@/components/command-palette";
 import { ArgInput } from "@/components/arg-input";
 import { toToken } from "@/lib/mcp/prompts/token";
 import { renderTemplate } from "@/lib/mcp/prompts/template";
@@ -88,6 +89,8 @@ export const Textarea = ({
     item: MenuItem;
     server?: MCPServer;
   } | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -174,6 +177,60 @@ export const Textarea = ({
     });
     return merged;
   }, [commandItems, promptItems]);
+
+  // Palette-specific items using paletteQuery
+  const palettePromptItems = useMemo<MenuItem[]>(() => {
+    void mcpServers;
+    void registryRevision;
+    void promptsLoaded;
+    const results = promptRegistry.searchDetailed(paletteQuery, { limit: 80 });
+    return results.map(({ prompt, score }) => ({
+      ...prompt,
+      score,
+    }));
+  }, [paletteQuery, mcpServers, registryRevision, promptsLoaded]);
+
+  const paletteCommandItems = useMemo<MenuItem[]>(() => {
+    void registryRevision;
+    return slashRegistry
+      .list(paletteQuery)
+      .filter((suggestion) => suggestion.kind === "local")
+      .map((suggestion) => ({
+        id: `command/${suggestion.id}`,
+        trigger: suggestion.name,
+        namespace: suggestion.sourceId ? `command-${suggestion.sourceId}` : "commands",
+        name: suggestion.name,
+        title: suggestion.title || suggestion.name,
+        description: suggestion.description,
+        origin: "client",
+        mode: "command",
+        args: suggestion.arguments?.map((arg) => ({
+          name: arg.name,
+          description: arg.description,
+          required: arg.required,
+        })),
+        commandMetaId: suggestion.id,
+        commandMeta: suggestion,
+        score: suggestion.score,
+      }));
+  }, [paletteQuery, registryRevision]);
+
+  const paletteItems = useMemo<MenuItem[]>(() => {
+    const merged = [...paletteCommandItems, ...palettePromptItems];
+    merged.sort((a, b) => {
+      const aScore = typeof a.score === "number" ? a.score : 0;
+      const bScore = typeof b.score === "number" ? b.score : 0;
+      if (bScore !== aScore) return bScore - aScore;
+      return (a.trigger || a.name).localeCompare(b.trigger || b.name);
+    });
+    return merged;
+  }, [paletteCommandItems, palettePromptItems]);
+
+  // Handle palette selection
+  const handlePaletteSelect = useCallback((def: MenuItem) => {
+    setPaletteOpen(false);
+    insertPrompt(def);
+  }, []);
 
   useEffect(() => {
     if (activeIndex < items.length) return;
@@ -267,32 +324,14 @@ export const Textarea = ({
     const onGlobalShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        const el = textareaRef.current;
-        if (!el) return;
-        const start = el.selectionStart ?? input.length;
-        const end = el.selectionEnd ?? input.length;
-        let nextValue = input;
-        if (!input.slice(0, start).endsWith('/')) {
-          nextValue = `${input.slice(0, start)}/${input.slice(end)}`;
-          const fakeEvent = { target: { value: nextValue } } as any;
-          handleInputChange(fakeEvent);
-          requestAnimationFrame(() => {
-            const node = textareaRef.current;
-            if (node) {
-              const caret = start + 1;
-              node.setSelectionRange(caret, caret);
-            }
-          });
-        }
-        textareaRef.current?.focus();
-        setMenuOpen(true);
-        setQuery('');
-        setActiveIndex(0);
+        // Open the full-screen Command Palette
+        setPaletteQuery('');
+        setPaletteOpen(true);
       }
     };
     window.addEventListener('keydown', onGlobalShortcut);
     return () => window.removeEventListener('keydown', onGlobalShortcut);
-  }, [handleInputChange, input]);
+  }, []);
 
   async function onKeyDownEnhanced(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.defaultPrevented) {
@@ -586,6 +625,16 @@ export const Textarea = ({
           )}
         </div>
       )}
+
+      {/* Command Palette (⌘K) */}
+      <CommandPalette
+        isOpen={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        query={paletteQuery}
+        onQueryChange={setPaletteQuery}
+        items={paletteItems}
+        onSelect={handlePaletteSelect}
+      />
 
     </div>
   );
