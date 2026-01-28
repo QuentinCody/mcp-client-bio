@@ -2,6 +2,9 @@
 import { useEffect, useState } from 'react';
 import type { TokenUsage } from '@/lib/token-usage';
 
+// Re-export the new Observatory component as the main panel
+export { ToolMetricsObservatory as ToolMetricsPanel } from './tool-metrics-observatory';
+
 interface ToolMetricEntry {
   name: string;
   count: number;
@@ -35,9 +38,10 @@ interface TokenUsageStats {
   recentHistory: Array<{ timestamp: number; usage: TokenUsage; model?: string }>;
 }
 
+// Legacy compact panel - kept for backward compatibility
 // Access the global (window) functions exported via MCP client through a bridge
 // We'll attach them on first render if available
-export function ToolMetricsPanel() {
+export function ToolMetricsPanelLegacy() {
   const [data, setData] = useState<MetricsPayload | null>(null);
   const [tokenStats, setTokenStats] = useState<TokenUsageStats | null>(null);
   const [open, setOpen] = useState(false);
