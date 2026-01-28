@@ -266,6 +266,94 @@ export function generateTransformingHelpersImplementation(
     '  return minimal;',
     '}',
     '',
+    '// Task #96: Fallback result generation',
+    '// Converts certain errors to graceful "successful" responses with empty/fallback data',
+    'function generateFallbackResult(error, server, tool, args) {',
+    '  const code = error?.code || "UNKNOWN_ERROR";',
+    '  const message = error?.message || String(error);',
+    '',
+    '  // Check for "not found" patterns - return empty array instead of error',
+    '  if (code === "NOT_FOUND" || code === "GRAPHQL_NULL_DATA" ||',
+    '      /not found|no results|no data|no records|empty result/i.test(message) ||',
+    '      /HTTP 404|Status: 404/i.test(message)) {',
+    '    return {',
+    '      ok: true,',
+    '      data: [],',
+    '      fallback: {',
+    '        reason: "not_found",',
+    '        message: "No results found for your query",',
+    '        originalError: message.slice(0, 200),',
+    '        suggestions: [',
+    '          "Try a broader search term",',
+    '          "Verify the ID or identifier is correct",',
+    '          "Check if the data exists in this database"',
+    '        ]',
+    '      },',
+    '      meta: { server, tool, args, wasFallback: true }',
+    '    };',
+    '  }',
+    '',
+    '  // Check for rate limiting - return with retry info',
+    '  if (code === "RATE_LIMITED" || /HTTP 429|Status: 429|rate limit|too many requests/i.test(message)) {',
+    '    const retryMatch = message.match(/retry.after[:\\\\s]*(\\\\d+)/i);',
+    '    const retryAfter = retryMatch ? parseInt(retryMatch[1]) : 60;',
+    '    return {',
+    '      ok: true,',
+    '      data: null,',
+    '      fallback: {',
+    '        reason: "rate_limited",',
+    '        message: "Request rate limited - please wait before retrying",',
+    '        retryAfter: retryAfter,',
+    '        suggestions: [',
+    '          `Wait ${retryAfter} seconds before retrying`,',
+    '          "Reduce the frequency of API calls",',
+    '          "Consider batching multiple queries"',
+    '        ]',
+    '      },',
+    '      meta: { server, tool, args, wasFallback: true }',
+    '    };',
+    '  }',
+    '',
+    '  // Check for timeout - return with timeout info',
+    '  if (code === "TIMEOUT" || /timeout|timed out|ETIMEDOUT/i.test(message)) {',
+    '    return {',
+    '      ok: true,',
+    '      data: null,',
+    '      fallback: {',
+    '        reason: "timeout",',
+    '        message: "Request timed out - the query may be too complex",',
+    '        suggestions: [',
+    '          "Try a simpler or more specific query",',
+    '          "Reduce the number of results requested",',
+    '          "The server may be experiencing high load - try again later"',
+    '        ]',
+    '      },',
+    '      meta: { server, tool, args, wasFallback: true }',
+    '    };',
+    '  }',
+    '',
+    '  // Check for server errors (500+) - return with retry suggestion',
+    '  if (/HTTP 5\\\\d\\\\d|Status: 5\\\\d\\\\d|internal server error|service unavailable/i.test(message)) {',
+    '    return {',
+    '      ok: true,',
+    '      data: null,',
+    '      fallback: {',
+    '        reason: "server_error",',
+    '        message: "The external service is temporarily unavailable",',
+    '        suggestions: [',
+    '          "This is not your fault - the upstream server had an error",',
+    '          "Try again in a few moments",',
+    '          "If the problem persists, the service may be down for maintenance"',
+    '        ]',
+    '      },',
+    '      meta: { server, tool, args, wasFallback: true }',
+    '    };',
+    '  }',
+    '',
+    '  // Not a fallback-eligible error - return null to indicate normal error handling should proceed',
+    '  return null;',
+    '}',
+    '',
     'function summarizeToolError({ server, tool, args, error, validation, schema }) {',
     '  // Generate example call from schema',
     '  let exampleCall = null;',
@@ -808,6 +896,14 @@ export function generateTransformingHelpersImplementation(
     lines.push(`          return options.returnFormat === 'raw' ? retryResponse : retryTransformed.data;`);
     lines.push(`        }`);
     lines.push(`      }`);
+    lines.push(`      // Task #96: Check if error can be converted to fallback result`);
+    lines.push(`      if (options.useFallback !== false) {`);
+    lines.push(`        const fallbackResult = generateFallbackResult(err, '${serverKey}', resolvedTool, finalArgs);`);
+    lines.push(`        if (fallbackResult) {`);
+    lines.push(`          console.log('[invoke] Returning fallback result for', resolvedTool, ':', fallbackResult.fallback?.reason);`);
+    lines.push(`          return fallbackResult;`);
+    lines.push(`        }`);
+    lines.push(`      }`);
     lines.push(`      if (options.throwOnError !== false) {`);
     lines.push(`        throw err;`);
     lines.push(`      }`);
@@ -894,6 +990,13 @@ export function generateTransformingHelpersImplementation(
     lines.push(`        if (retryTransformed.ok) {`);
     lines.push(`          return retryTransformed.data;`);
     lines.push(`        }`);
+    lines.push(`      }`);
+    lines.push(`      // Task #96: Check if error can be converted to fallback result`);
+    lines.push(`      const fallbackResult = generateFallbackResult(err, '${serverKey}', resolvedTool, finalArgs);`);
+    lines.push(`      if (fallbackResult) {`);
+    lines.push(`        console.log('[getData] Returning fallback result for', resolvedTool, ':', fallbackResult.fallback?.reason);`);
+    lines.push(`        // For getData, return the data portion (empty array or null)`);
+    lines.push(`        return fallbackResult.data;`);
     lines.push(`      }`);
     lines.push(`      throw err;`);
     lines.push(`    }`);
