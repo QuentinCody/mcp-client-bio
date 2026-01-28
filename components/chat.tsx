@@ -45,6 +45,7 @@ import {
 } from "./ui/sheet";
 import { downloadChatAsJSON, downloadChatAsMarkdown } from "@/lib/chat-export";
 import { BatchQueryDialog } from "./batch-query-dialog";
+import { GuidedDiscovery } from "./guided-discovery";
 
 const MESSAGE_WINDOW_SIZE = 45;
 
@@ -707,42 +708,18 @@ export default function Chat() {
             ref={containerRef}
           >
             {showWelcomeState ? (
-              <div className="flex h-full items-center justify-center px-4 sm:px-6 py-12 sm:py-16">
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, ease: "easeOut" }}
-                  className="w-full max-w-lg space-y-6 text-center"
-                >
-                  <div className="space-y-4">
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
-                      <Sparkles className="h-7 w-7 text-primary" />
-                    </div>
-                    <h1 className="text-3xl sm:text-4xl font-semibold text-foreground">
-                      Bio MCP Chat
-                    </h1>
-                    <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                      {modelInfo
-                        ? `${modelInfo.name}${
-                            serverStatusCounts.total > 0
-                              ? ` · ${serverStatusCounts.online}/${serverStatusCounts.total} servers`
-                              : ""
-                          }`
-                        : "Configure your model and servers to get started"}
-                    </p>
-                  </div>
-                  {serverStatusCounts.total === 0 && (
-                    <Button
-                      variant="default"
-                      onClick={openServerManager}
-                      className="gap-2"
-                    >
-                      <ServerIcon className="h-4 w-4" />
-                      Connect Servers
-                    </Button>
-                  )}
-                </motion.div>
-              </div>
+              <GuidedDiscovery
+                selectedModel={selectedModel}
+                serverStatusCounts={serverStatusCounts}
+                onOpenServerManager={openServerManager}
+                onSendQuery={(query) => {
+                  setInput(query);
+                  // Auto-submit after a short delay to show the input
+                  setTimeout(() => {
+                    handleSubmit();
+                  }, 100);
+                }}
+              />
             ) : (
               <Messages
                 messages={displayMessages}
