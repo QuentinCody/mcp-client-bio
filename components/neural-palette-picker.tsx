@@ -90,7 +90,8 @@ const providerStyles: Record<string, {
     border: "border-cyan-500/30 hover:border-cyan-400/50",
     glow: "shadow-cyan-500/20",
     icon: "text-cyan-500",
-    pattern: "bg-[linear-gradient(90deg,transparent_0%,rgba(6,182,212,0.1)_25%,transparent_50%,rgba(6,182,212,0.1)_75%,transparent_100%)] animate-shimmer",
+    // Removed animate-shimmer to prevent undefined animation issues
+    pattern: "bg-[linear-gradient(90deg,transparent_0%,rgba(6,182,212,0.1)_25%,transparent_50%,rgba(6,182,212,0.1)_75%,transparent_100%)]",
   },
   XAI: {
     gradient: "from-violet-500/20 via-purple-400/10 to-fuchsia-500/20",
@@ -101,7 +102,7 @@ const providerStyles: Record<string, {
   },
 };
 
-// Animated capability badge component
+// Capability badge component - removed infinite animations to prevent visual loops
 const CapabilityBadge = ({
   capability,
   animated = false
@@ -116,7 +117,8 @@ const CapabilityBadge = ({
         return {
           bg: "bg-purple-500/10 border-purple-500/20",
           text: "text-purple-400",
-          animation: animated ? "animate-pulse" : "",
+          // Removed infinite pulse animation
+          animation: "",
         };
       case "fast":
       case "rapid":
@@ -124,13 +126,15 @@ const CapabilityBadge = ({
         return {
           bg: "bg-amber-500/10 border-amber-500/20",
           text: "text-amber-400",
-          animation: animated ? "animate-[shimmer_2s_ease-in-out_infinite]" : "",
+          // Removed infinite shimmer animation that caused visual loop
+          animation: "",
         };
       case "vision":
         return {
           bg: "bg-indigo-500/10 border-indigo-500/20",
           text: "text-indigo-400",
-          animation: animated ? "animate-[pulse_3s_ease-in-out_infinite]" : "",
+          // Removed infinite pulse animation
+          animation: "",
         };
       case "coding":
       case "code":
@@ -491,7 +495,7 @@ export const NeuralPalettePicker = ({
                 const displayProviderStyle = providerStyles[displayDetails.provider] || providerStyles.OpenAI;
 
                 return (
-                  <div className="animate-in fade-in duration-300">
+                  <div className="transition-opacity duration-200">
                     {/* Header with neural signature */}
                     <div className={cn(
                       "rounded-xl p-4 mb-4 border relative overflow-hidden",
