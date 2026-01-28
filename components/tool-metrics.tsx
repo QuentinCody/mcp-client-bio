@@ -119,7 +119,11 @@ export function ToolMetricsPanel() {
         {open ? 'Hide metrics' : 'Metrics'}
         {hasTokenStats && !open && (
           <span className="ml-1.5 text-muted-foreground">
-            ({formatNumber(tokenStats.sessionTotal.totalTokens)} tokens)
+            {tokenStats.lastUsage ? (
+              <>last: {formatNumber(tokenStats.lastUsage.totalTokens)}</>
+            ) : (
+              <>{tokenStats.messageCount} msgs</>
+            )}
           </span>
         )}
       </button>

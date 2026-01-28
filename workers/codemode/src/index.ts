@@ -191,44 +191,87 @@ Arguments: \${JSON.stringify(args, null, 2)}\`
         safeConsole.log('[error details]', JSON.stringify(err.details, null, 2));
       }
 
-      let enhancedError = errorMessage;
-      let errorHelp = '';
+      // Enhanced error handling - convert technical errors to user-friendly messages
+      let userMessage = errorMessage;
+      let suggestions = [];
+      let category = 'unknown';
+      let recoverable = true;
 
+      // Pattern matching for common errors
       if (errorMessage.includes('is not defined')) {
-        const match = errorMessage.match(/(\w+) is not defined/);
+        const match = errorMessage.match(/(\\w+) is not defined/);
         const varName = match?.[1] || 'variable';
-        errorHelp = \`
-
-Common causes:
-- Using function declarations (not allowed)
-- Referencing variables before they're defined
-- Typos in variable names
-
-If you declared a function, use top-level code instead:
-GOOD: const result = await helpers.server.getData(...);
-BAD:  async function \${varName}() { ... }; await \${varName}();\`;
-      } else if (errorMessage.includes('helpers') && errorMessage.includes('undefined')) {
-        errorHelp = \`
-
-The helpers object may not be properly initialized.
-Available helpers should include: uniprot, opentargets, entrez, civic, etc.
-Check that the MCP servers are connected.\`;
-      } else if (errorCode === 'INVALID_ARGUMENTS' || errorCode === 'MISSING_REQUIRED_PARAM') {
-        errorHelp = \`
-
-Tip: Use helpers.serverName.invoke(toolName, args, { throwOnError: false, returnFormat: 'raw' })
-to see the full error response with argument requirements.\`;
+        userMessage = \`Variable "\${varName}" was not found\`;
+        suggestions = [
+          'Check for typos in the variable name',
+          'If using a helper, verify it exists with helpers.serverName.listTools()',
+          'Use top-level code instead of function declarations'
+        ];
+        category = 'runtime';
+      } else if (/helpers\\.(\\w+).*undefined|Cannot read.*helpers\\.(\\w+)/i.test(errorMessage)) {
+        const match = errorMessage.match(/helpers\\.(\\w+)/);
+        const serverName = match?.[1] || 'unknown';
+        userMessage = \`Server "\${serverName}" is not available\`;
+        suggestions = [
+          'Check the server name spelling',
+          'Verify the MCP server is connected',
+          'Try: helpers.uniprot, helpers.pubmed, helpers.entrez, etc.'
+        ];
+        category = 'validation';
+      } else if (/HTTP (\\d+)|Status: (\\d+)/.test(errorMessage)) {
+        const match = errorMessage.match(/HTTP (\\d+)|Status: (\\d+)/);
+        const status = parseInt(match?.[1] || match?.[2] || '0');
+        if (status === 400) {
+          userMessage = 'Invalid parameters sent to the tool';
+          suggestions = ['Use getToolSchema(toolName) to see required parameters', 'Check parameter types'];
+        } else if (status === 404) {
+          userMessage = 'The requested data was not found';
+          suggestions = ['Verify the ID or query is correct', 'The data may not exist'];
+        } else if (status === 429) {
+          userMessage = 'Rate limit exceeded - too many requests';
+          suggestions = ['Wait a moment and try again', 'Reduce API calls'];
+        } else if (status >= 500) {
+          userMessage = 'The external service is temporarily unavailable';
+          suggestions = ['This is not your fault - try again shortly'];
+        }
+        category = 'tool';
+      } else if (/missing required|required parameter|MISSING_REQUIRED_PARAM/i.test(errorMessage)) {
+        userMessage = 'A required parameter is missing';
+        suggestions = [
+          'Use getToolSchema(toolName) to see required parameters',
+          'Check the tool documentation'
+        ];
+        category = 'validation';
+      } else if (/timeout|timed out|ETIMEDOUT/i.test(errorMessage)) {
+        userMessage = 'The request took too long';
+        suggestions = ['Try a simpler query', 'The API may be slow - try again'];
+        category = 'network';
+      } else if (/Failed to reach|ECONNREFUSED|network/i.test(errorMessage)) {
+        userMessage = 'Could not connect to the tool server';
+        suggestions = ['This is usually temporary - try again', 'Check if MCP servers are running'];
+        category = 'network';
+      } else if (/INVALID_ARGUMENTS|invalid.*argument|type.*error/i.test(errorMessage)) {
+        userMessage = 'Parameter type mismatch';
+        suggestions = ['Check if strings should be numbers', 'Use getToolSchema() for types'];
+        category = 'validation';
       }
 
-      enhancedError = errorMessage + errorHelp;
+      // Format the user-friendly error
+      const formattedSuggestions = suggestions.length > 0
+        ? '\\n\\nSuggestions:\\n' + suggestions.map(s => '• ' + s).join('\\n')
+        : '';
+      const enhancedError = userMessage + formattedSuggestions;
 
       return new Response(JSON.stringify({
         error: enhancedError,
-        errorCode: errorCode,
+        errorCode: category.toUpperCase(),
+        userFriendly: true,
+        suggestions: suggestions,
+        recoverable: recoverable,
         logs,
         _debug: {
           originalMessage: errorMessage,
-          code: errorCode,
+          originalCode: errorCode,
           details: err?.details,
           stack: errorStack?.split('\\n').slice(0, 3).join('\\n') // First 3 lines only
         }
