@@ -1,5 +1,8 @@
 "use client";
 
+// Re-export the new Mission Control component as the main MCPServerManager
+export { MissionControl as MCPServerManager } from "./mission-control";
+
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -30,7 +33,8 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 
-interface MCPServerManagerProps {
+// Legacy component - kept for backward compatibility
+interface MCPServerManagerLegacyProps {
   servers: MCPServer[];
   onServersChange: (servers: MCPServer[]) => void;
   selectedServers: string[];
@@ -54,7 +58,7 @@ const statusLabels = {
   disconnected: "Disconnected",
 };
 
-export const MCPServerManager = ({
+export const MCPServerManagerLegacy = ({
   servers,
   onServersChange,
   selectedServers,
