@@ -1,6 +1,6 @@
 import { type modelID } from "@/ai/providers";
 import { Textarea as ShadcnTextarea } from "@/components/ui/textarea";
-import { ArrowUp, Hash, ServerIcon, CircleStop } from "lucide-react";
+import { ArrowUp, Hash, ServerIcon, CircleStop, Sparkles, Clock, Zap, Command } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./model-picker";
 import { TokenSummary } from "./token-summary";
@@ -446,8 +446,113 @@ export const Textarea = ({
   const showInlineModelPicker = showModelPicker && modelPickerVariant === "inline";
   const showFloatingModelPicker = showModelPicker && modelPickerVariant === "floating";
 
+  // Recently used prompts for smart suggestions
+  const recentPrompts = useMemo(() => {
+    const usageSnapshot = promptRegistry.getUsageSnapshot();
+    const entries = Array.from(usageSnapshot.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    const recent: { id: string; name: string; title: string }[] = [];
+    for (const [id] of entries) {
+      const prompt = promptRegistry.getById(id);
+      if (prompt) {
+        recent.push({
+          id: prompt.id,
+          name: prompt.name,
+          title: prompt.title || prompt.name,
+        });
+      }
+    }
+    return recent;
+  }, [promptsLoaded, registryRevision]);
+
+  // Quick suggestion chips based on connected servers
+  const quickSuggestions = useMemo(() => {
+    const suggestions: { label: string; icon: typeof Sparkles; query: string }[] = [];
+
+    // Add contextual suggestions based on connected servers
+    const serverNames = mcpServers
+      .filter(s => selectedMcpServers.includes(s.id) && s.status === 'connected')
+      .map(s => s.name?.toLowerCase() || '');
+
+    if (serverNames.some(n => n.includes('target') || n.includes('opentargets'))) {
+      suggestions.push({ label: 'Drug targets', icon: Zap, query: 'Find drug targets for ' });
+    }
+    if (serverNames.some(n => n.includes('uniprot'))) {
+      suggestions.push({ label: 'Protein search', icon: Sparkles, query: 'Search UniProt for ' });
+    }
+    if (serverNames.some(n => n.includes('clinical') || n.includes('trials'))) {
+      suggestions.push({ label: 'Clinical trials', icon: Sparkles, query: 'Find clinical trials for ' });
+    }
+
+    return suggestions.slice(0, 3);
+  }, [mcpServers, selectedMcpServers]);
+
+  const handleQuickSuggestion = (query: string) => {
+    handleInputChange({ target: { value: query } } as any);
+    textareaRef.current?.focus();
+    // Set cursor at end
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (node) {
+        node.setSelectionRange(query.length, query.length);
+      }
+    });
+  };
+
+  const handleRecentPrompt = (promptId: string) => {
+    const prompt = promptItems.find(p => p.id === promptId);
+    if (prompt) {
+      insertPrompt(prompt);
+    }
+  };
+
   return (
-    <div className="w-full space-y-2">
+    <div className="w-full space-y-3">
+      {/* Smart Suggestions Bar - "Command Bridge" feature */}
+      {!menuOpen && !argMode && !input.trim() && (recentPrompts.length > 0 || quickSuggestions.length > 0) && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {recentPrompts.length > 0 && (
+            <>
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60 shrink-0">
+                <Clock className="h-3 w-3" />
+                Recent
+              </span>
+              {recentPrompts.map((prompt) => (
+                <button
+                  key={prompt.id}
+                  type="button"
+                  onClick={() => handleRecentPrompt(prompt.id)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-transparent hover:border-border/50 transition-all shrink-0"
+                >
+                  <Hash className="h-3 w-3" />
+                  {prompt.title}
+                </button>
+              ))}
+            </>
+          )}
+          {quickSuggestions.length > 0 && (
+            <>
+              {recentPrompts.length > 0 && (
+                <div className="w-px h-4 bg-border/50 shrink-0" />
+              )}
+              {quickSuggestions.map((suggestion, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => handleQuickSuggestion(suggestion.query)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/5 hover:bg-primary/10 text-primary/70 hover:text-primary border border-primary/10 hover:border-primary/20 transition-all shrink-0"
+                >
+                  <suggestion.icon className="h-3 w-3" />
+                  {suggestion.label}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Status bar - desktop */}
       <div className="hidden sm:flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-3">
@@ -463,19 +568,37 @@ export const Textarea = ({
         </div>
         <div className="flex items-center gap-3">
           {activeServerCount > 0 && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
               <ServerIcon className="h-3 w-3" />
-              {activeServerCount}
+              <span className="font-medium">{activeServerCount}</span>
             </span>
           )}
-          <span className="text-muted-foreground/60">
-            <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">⌘K</kbd>
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPaletteQuery('');
+              setPaletteOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <Command className="h-3 w-3" />
+            <kbd className="px-1 py-0.5 bg-muted rounded text-[10px] font-mono">K</kbd>
+          </button>
         </div>
       </div>
 
-      {/* Main input */}
-      <div className="relative rounded-2xl border border-border bg-background shadow-sm focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+      {/* Main input - "Command Bridge" elevated design */}
+      <div className={cn(
+        "relative rounded-2xl border bg-background transition-all duration-300",
+        "shadow-[0_2px_8px_rgba(0,0,0,0.04),0_4px_16px_rgba(0,0,0,0.04)]",
+        "hover:shadow-[0_4px_12px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.06)]",
+        "focus-within:shadow-[0_0_0_1px_hsl(var(--primary)/0.2),0_4px_16px_rgba(0,0,0,0.08),0_0_32px_hsl(var(--primary)/0.1)]",
+        "border-border/60 focus-within:border-primary/50"
+      )}>
         {/* Slash command menu */}
         {menuOpen && items.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 z-50">
@@ -530,11 +653,12 @@ export const Textarea = ({
         {/* Textarea */}
         <ShadcnTextarea
           className={cn(
-            "max-h-[40vh] min-h-[48px] w-full resize-none border-none bg-transparent px-4 py-3 text-sm placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:outline-none"
+            "max-h-[40vh] min-h-[56px] w-full resize-none border-none bg-transparent px-4 py-4 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:outline-none",
+            "transition-[min-height] duration-200 ease-out"
           )}
           value={input}
           autoFocus
-          placeholder={menuOpen || argMode ? "Search commands..." : "Message..."}
+          placeholder={menuOpen || argMode ? "Search commands..." : "Ask anything about biological data..."}
           onChange={handleInputChange}
           onKeyDown={onKeyDownEnhanced}
           ref={textareaRef}
@@ -550,29 +674,48 @@ export const Textarea = ({
           />
         )}
 
-        {/* Send button */}
-        <div className="absolute bottom-3 right-3 flex items-center gap-2">
-          {menuOpen && (
-            <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-1">
-              {items.length} results
-            </span>
-          )}
+        {/* Bottom bar with actions */}
+        <div className="flex items-center justify-between px-3 pb-3">
+          {/* Left side - hints and status */}
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+            {menuOpen && items.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-primary/5 text-primary/70 border border-primary/10">
+                {items.length} results
+              </span>
+            )}
+            {!menuOpen && input.length > 0 && (
+              <span className="tabular-nums">
+                {input.length} chars
+              </span>
+            )}
+            {!menuOpen && !input.trim() && (
+              <span className="hidden sm:inline">
+                Type <kbd className="px-1 py-0.5 mx-0.5 rounded bg-muted text-[10px] font-mono">/</kbd> for commands
+              </span>
+            )}
+          </div>
 
+          {/* Right side - send button */}
           <button
             type={isStreaming ? "button" : "submit"}
             onClick={isStreaming ? stop : undefined}
             disabled={(!isStreaming && !input.trim()) || (isStreaming && status === "submitted")}
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-xl transition-all",
+              "flex items-center justify-center rounded-xl transition-all duration-200",
+              "h-9 min-w-[36px] px-3",
               isStreaming
-                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm shadow-destructive/20"
                 : !input.trim()
-                  ? "bg-muted text-muted-foreground cursor-not-allowed"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                  ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98]"
             )}
             aria-label={isStreaming ? "Stop" : "Send"}
           >
-            {isStreaming ? <CircleStop className="h-5 w-5" /> : <ArrowUp className="h-5 w-5" />}
+            {isStreaming ? (
+              <CircleStop className="h-4 w-4" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
