@@ -114,6 +114,7 @@ export function ToolMetricsPanel() {
     <div className="fixed bottom-3 right-3 z-40 text-xs">
       <button
         onClick={() => setOpen(o => !o)}
+        style={{ backgroundColor: 'hsl(var(--card))' }}
         className="px-2.5 py-1.5 rounded-lg bg-card hover:bg-muted text-foreground shadow-sm border border-border transition-colors"
       >
         {open ? 'Hide metrics' : 'Metrics'}
@@ -128,7 +129,7 @@ export function ToolMetricsPanel() {
         )}
       </button>
       {open && (
-        <div className="mt-2 w-[320px] max-h-[400px] overflow-auto rounded-xl border border-border bg-background/95 backdrop-blur p-3 shadow-lg">
+        <div style={{ backgroundColor: 'hsl(var(--background))' }} className="mt-2 w-[320px] max-h-[400px] overflow-auto rounded-xl border border-border bg-background p-3 shadow-lg">
           {/* Tabs */}
           <div className="flex gap-1 mb-3 border-b border-border pb-2">
             <button
@@ -151,51 +152,39 @@ export function ToolMetricsPanel() {
               <div className="text-sm font-medium text-foreground">Token Usage</div>
               {tokenStats && tokenStats.sessionTotal.totalTokens > 0 ? (
                 <>
-                  {/* Session Total */}
-                  <div className="rounded-lg border border-border p-2.5 bg-primary/5">
-                    <div className="text-[10px] text-muted-foreground mb-1">Session Total ({tokenStats.messageCount} messages)</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-blue-600 dark:text-blue-400">Input:</span>
-                        <span className="ml-1 font-medium">{formatNumber(tokenStats.sessionTotal.inputTokens)}</span>
+                  {/* Session Total & Last Message - Side by Side */}
+                  <div className="flex gap-2">
+                    {/* Session Total */}
+                    <div className="flex-1 rounded-lg border border-border p-2 bg-primary/5">
+                      <div className="text-[10px] text-muted-foreground mb-1">Session ({tokenStats.messageCount} msgs)</div>
+                      <div className="space-y-0.5 text-[10px]">
+                        <div className="text-blue-600 dark:text-blue-400">In: {formatNumber(tokenStats.sessionTotal.inputTokens)}</div>
+                        <div className="text-green-600 dark:text-green-400">Out: {formatNumber(tokenStats.sessionTotal.outputTokens)}</div>
                       </div>
-                      <div>
-                        <span className="text-green-600 dark:text-green-400">Output:</span>
-                        <span className="ml-1 font-medium">{formatNumber(tokenStats.sessionTotal.outputTokens)}</span>
+                      <div className="mt-1 text-foreground font-medium text-xs">
+                        {formatNumber(tokenStats.sessionTotal.totalTokens)}
                       </div>
+                      {tokenStats.sessionTotal.cacheReadTokens > 0 && (
+                        <div className="text-purple-600 dark:text-purple-400 text-[9px]">
+                          Cache: {formatNumber(tokenStats.sessionTotal.cacheReadTokens)}
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-1 text-foreground font-medium">
-                      Total: {formatNumber(tokenStats.sessionTotal.totalTokens)}
-                    </div>
-                    {tokenStats.sessionTotal.cacheReadTokens > 0 && (
-                      <div className="mt-1 text-purple-600 dark:text-purple-400 text-[10px]">
-                        Cache: {formatNumber(tokenStats.sessionTotal.cacheReadTokens)} read
-                      </div>
-                    )}
-                    {tokenStats.sessionTotal.reasoningTokens > 0 && (
-                      <div className="mt-1 text-yellow-600 dark:text-yellow-400 text-[10px]">
-                        Reasoning: {formatNumber(tokenStats.sessionTotal.reasoningTokens)}
+
+                    {/* Last Message */}
+                    {tokenStats.lastUsage && (
+                      <div className="flex-1 rounded-lg border border-border p-2">
+                        <div className="text-[10px] text-muted-foreground mb-1">Last Message</div>
+                        <div className="space-y-0.5 text-[10px]">
+                          <div className="text-blue-600 dark:text-blue-400">In: {formatNumber(tokenStats.lastUsage.inputTokens)}</div>
+                          <div className="text-green-600 dark:text-green-400">Out: {formatNumber(tokenStats.lastUsage.outputTokens)}</div>
+                        </div>
+                        <div className="mt-1 text-foreground font-medium text-xs">
+                          {formatNumber(tokenStats.lastUsage.totalTokens)}
+                        </div>
                       </div>
                     )}
                   </div>
-
-                  {/* Last Message */}
-                  {tokenStats.lastUsage && (
-                    <div className="rounded-lg border border-border p-2.5">
-                      <div className="text-[10px] text-muted-foreground mb-1">Last Message</div>
-                      <div className="grid grid-cols-3 gap-1 text-[10px]">
-                        <div className="text-blue-600 dark:text-blue-400">
-                          In: {formatNumber(tokenStats.lastUsage.inputTokens)}
-                        </div>
-                        <div className="text-green-600 dark:text-green-400">
-                          Out: {formatNumber(tokenStats.lastUsage.outputTokens)}
-                        </div>
-                        <div className="text-foreground">
-                          Tot: {formatNumber(tokenStats.lastUsage.totalTokens)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Recent History */}
                   {tokenStats.recentHistory.length > 1 && (
