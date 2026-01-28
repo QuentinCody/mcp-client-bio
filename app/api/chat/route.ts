@@ -26,6 +26,7 @@ import {
   type ToolRegistry,
 } from '@/lib/code-mode/dynamic-helpers';
 import { generateTransformingHelpersImplementation } from '@/lib/code-mode/helpers-with-transform';
+import { fetchWithRetry, formatRetryError } from '@/lib/code-mode/fetch-with-retry';
 // generateUsageExamples disabled - using API-only mode (uncomment to re-enable static examples)
 import { generateCompactHelperDocs, generateCompactResponseTypeHints, generateCompactToolSchemas /* , generateUsageExamples */ } from '@/lib/code-mode/helper-docs';
 import { generateHelperAPITypes, generateCompactHelperAPITypes } from '@/lib/code-mode/schema-to-typescript';
@@ -561,37 +562,46 @@ If the user says "no tools" or "no code", respond in plain conversational text w
         helpersImplementation: helpersImplementation || '',
       };
 
-        try {
-          const res = await fetch(codemodeWorkerUrl2, {
+        // Use fetchWithRetry for automatic retry on transient errors
+        const fetchResult = await fetchWithRetry(
+          codemodeWorkerUrl2,
+          {
             method: "POST",
             headers,
             body: JSON.stringify(payload),
-          });
-          const text = await res.text();
-          let parsed: any = null;
-          try { parsed = text ? JSON.parse(text) : null; } catch {}
-
-          if (!res.ok) {
-            return {
-              error: parsed?.error || text || `Codemode worker error (${res.status})`,
-              status: res.status,
-              logs: parsed?.logs || [],
-            };
+          },
+          {
+            maxRetries: 2,      // 3 total attempts
+            timeoutMs: 30000,   // 30 second timeout per attempt
           }
+        );
 
-          // Include console logs in the response
-          const result = parsed?.result;
-          const logs = parsed?.logs || [];
-
-          // Return result directly - let the model decide how to present it
-          // If string, the model should use it as-is. If object, model interprets it.
+        // Handle errors (after all retries exhausted)
+        if (fetchResult.error || !fetchResult.response?.ok) {
+          const errorInfo = formatRetryError(fetchResult);
           return {
-            result: result ?? null,
-            logs,
+            error: fetchResult.parsed?.error || fetchResult.error || errorInfo.error,
+            errorCode: fetchResult.errorCode,
+            details: errorInfo.details,
+            recoverable: errorInfo.recoverable,
+            status: fetchResult.response?.status,
+            logs: fetchResult.parsed?.logs || [],
+            attempts: fetchResult.attempts,
           };
-        } catch (error: any) {
-          return { error: error instanceof Error ? error.message : String(error) };
         }
+
+        // Include console logs in the response
+        const result = fetchResult.parsed?.result;
+        const logs = fetchResult.parsed?.logs || [];
+
+        // Return result directly - let the model decide how to present it
+        // If string, the model should use it as-is. If object, model interprets it.
+        return {
+          result: result ?? null,
+          logs,
+          attempts: fetchResult.attempts,
+          totalTimeMs: fetchResult.totalTimeMs,
+        };
       },
     });
 
