@@ -446,7 +446,8 @@ export async function initializeMCPClients(
     // Required for DeepSense MCP servers (they filter by User-Agent)
     headersObj['User-Agent'] = headersObj['User-Agent'] ?? 'claude-code/2.0';
 
-    const connectTimeoutMs = server.type === 'sse' ? 8000 : 6000;
+    // Per-server connection timeout - generous to allow slow servers to connect
+    const connectTimeoutMs = 30000;
 
     const transport = server.type === 'sse'
       ? {
@@ -491,14 +492,8 @@ export async function initializeMCPClients(
     }
   });
 
-  // Apply overall budget (e.g., 10s)
-  const overallBudgetMs = 10000;
-  const overall = Promise.all(connectionPromises);
-  const overallWithCap = Promise.race([
-    overall,
-    new Promise<void>(resolve => setTimeout(resolve, overallBudgetMs))
-  ]);
-  await overallWithCap;
+  // Wait for all connections to complete (each has its own 30s timeout)
+  await Promise.all(connectionPromises);
 
   // Attach abort cleanup only for newly acquired (not cached) clients
   if (abortSignal && acquiredClients.length > 0) {
