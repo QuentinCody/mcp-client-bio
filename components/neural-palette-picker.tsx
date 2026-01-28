@@ -225,7 +225,6 @@ const ModelCard = ({
   isHovered,
   onHover,
   stats,
-  staggerIndex,
 }: {
   modelId: modelID;
   details: typeof modelDetails[modelID];
@@ -233,7 +232,6 @@ const ModelCard = ({
   isHovered: boolean;
   onHover: (id: modelID | null) => void;
   stats?: { avgResponseTime?: number; totalCalls?: number; successRate?: number };
-  staggerIndex: number;
 }) => {
   const providerStyle = providerStyles[details.provider] || providerStyles.OpenAI;
 
@@ -242,17 +240,12 @@ const ModelCard = ({
       onMouseEnter={() => onHover(modelId)}
       onMouseLeave={() => onHover(null)}
       className={cn(
-        "relative group cursor-pointer rounded-xl p-3 transition-all duration-300 border",
-        "animate-in fade-in slide-in-from-left-2",
+        "relative group cursor-pointer rounded-xl p-3 transition-all duration-200 border",
         providerStyle.border,
         isSelected && `bg-gradient-to-br ${providerStyle.gradient} ${providerStyle.glow} shadow-lg`,
         isHovered && !isSelected && `bg-gradient-to-br ${providerStyle.gradient} opacity-70`,
         !isSelected && !isHovered && "bg-card/50 hover:bg-card"
       )}
-      style={{
-        animationDelay: `${staggerIndex * 50}ms`,
-        animationFillMode: "backwards",
-      }}
     >
       {/* Pattern overlay */}
       <div className={cn("absolute inset-0 rounded-xl opacity-50", providerStyle.pattern)} />
@@ -464,7 +457,7 @@ export const NeuralPalettePicker = ({
                     {group.provider}
                   </SelectLabel>
                   <div className="space-y-1">
-                    {group.models.map((modelId, idx) => (
+                    {group.models.map((modelId) => (
                       <SelectItem
                         key={modelId}
                         value={modelId}
@@ -482,7 +475,6 @@ export const NeuralPalettePicker = ({
                           isHovered={hoveredModel === modelId}
                           onHover={setHoveredModel}
                           stats={modelStats?.[modelId]}
-                          staggerIndex={groupIdx * 4 + idx}
                         />
                       </SelectItem>
                     ))}
