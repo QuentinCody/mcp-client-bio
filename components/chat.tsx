@@ -727,6 +727,7 @@ export default function Chat() {
                 status={status as "error" | "submitted" | "streaming" | "ready"}
                 disableAnimations={disableMessageAnimations}
                 endRef={endRef}
+                parentRef={containerRef}
               />
             )}
           </div>
