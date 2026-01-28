@@ -300,8 +300,33 @@ export function generateFullHelperAPITypes(
 }
 
 /**
- * Extract compact parameter signature from tool schema
- * Returns format like: "query, limit?" or "{ query, limit? }"
+ * Get compact type representation for a schema property
+ */
+function getCompactType(propSchema: any): string {
+  if (!propSchema || typeof propSchema !== 'object') return 'any';
+
+  if (Array.isArray(propSchema.enum)) {
+    // Show first 2 enum values as examples
+    const examples = propSchema.enum.slice(0, 2).map((v: any) => `"${v}"`).join('|');
+    return propSchema.enum.length > 2 ? `${examples}|...` : examples;
+  }
+
+  switch (propSchema.type) {
+    case 'string': return 'string';
+    case 'number':
+    case 'integer': return 'number';
+    case 'boolean': return 'boolean';
+    case 'array':
+      const itemType = propSchema.items?.type || 'any';
+      return `${itemType}[]`;
+    case 'object': return 'object';
+    default: return 'any';
+  }
+}
+
+/**
+ * Extract compact parameter signature from tool schema WITH TYPES
+ * Returns format like: "query: string, limit?: number"
  */
 function extractCompactParams(toolDef: any): string {
   const schema = toolDef.parameters?.jsonSchema ||
@@ -312,25 +337,38 @@ function extractCompactParams(toolDef: any): string {
   const properties = schema.properties || {};
   const required = Array.isArray(schema.required) ? schema.required : [];
 
-  const params = Object.keys(properties).map(key => {
+  const params = Object.entries(properties).map(([key, propSchema]) => {
     const isRequired = required.includes(key);
-    return isRequired ? key : `${key}?`;
+    const type = getCompactType(propSchema);
+    return isRequired ? `${key}: ${type}` : `${key}?: ${type}`;
   });
 
   if (params.length === 0) return '';
   if (params.length <= 3) return params.join(', ');
-  return `${params.slice(0, 2).join(', ')}, +${params.length - 2} more`;
+  // Show first 2 required params with types, then count
+  const requiredParams = params.filter(p => !p.includes('?:'));
+  const optionalCount = params.length - requiredParams.length;
+  const shown = requiredParams.slice(0, 2);
+  if (shown.length < 2 && optionalCount > 0) {
+    const optionalParams = params.filter(p => p.includes('?:'));
+    shown.push(...optionalParams.slice(0, 2 - shown.length));
+  }
+  const hiddenCount = params.length - shown.length;
+  return hiddenCount > 0 ? `${shown.join(', ')}, +${hiddenCount} more` : shown.join(', ');
 }
 
 /**
  * Generate COMPACT helper API type definitions (80% token reduction)
  * Instead of full TypeScript interfaces, produces minimal method signatures
+ * Now includes parameter TYPES to prevent "Invalid parameters" errors
  */
 export function generateCompactHelperAPITypes(
   serverTools: Map<string, Record<string, any>>
 ): string {
   const lines: string[] = [
-    '// Helper API - use helpers.serverName.toolName({ args }) or helpers.serverName.invoke("toolName", args)',
+    '// Helper API - use helpers.serverName.invoke("toolName", { args }) or helpers.serverName.toolName({ args })',
+    '// IMPORTANT: Parameters show TYPES - use correct types to avoid "Invalid parameters" errors!',
+    '// Example: query: string means pass a string, not a number; ids: string[] means pass an array of strings',
     '',
   ];
 
