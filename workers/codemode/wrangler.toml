@@ -1,0 +1,33 @@
+name = "codemode-sandbox"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["enable_ctx_exports"]
+
+[[worker_loaders]]
+binding = "LOADER"
+
+# Durable Object binding (required for migration to work)
+[durable_objects]
+bindings = []
+
+# Migration to delete the unused Durable Object class
+[[migrations]]
+tag = "v2"
+deleted_classes = ["CodeModeDatabase"]
+
+[vars]
+# Non-secret configuration (secrets are managed via `wrangler secret`)
+PROXY_URL = "https://mcp-client-bio.vercel.app/api/codemode/proxy"
+MEMORY_URL = "https://mcp-client-bio.vercel.app/api/codemode/memory"
+# PROXY_TOKEN and CODEMODE_CLIENT_TOKEN are stored as Cloudflare secrets
+# Set them with: wrangler secret put PROXY_TOKEN / wrangler secret put CODEMODE_CLIENT_TOKEN
+
+[env.production]
+name = "codemode-sandbox"
+[[env.production.worker_loaders]]
+binding = "LOADER"
+
+[env.production.vars]
+PROXY_URL = "https://mcp-client-bio.vercel.app/api/codemode/proxy"
+MEMORY_URL = "https://mcp-client-bio.vercel.app/api/codemode/memory"
+# Secrets are inherited from the worker's secret bindings
