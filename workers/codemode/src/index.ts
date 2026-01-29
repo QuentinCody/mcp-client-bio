@@ -1,5 +1,8 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
+// Version for deployment verification - update to test CI/CD
+const WORKER_VERSION = "2026-01-29-a";
+
 type Env = {
   LOADER: any;
   PROXY_URL: string;
