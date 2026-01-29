@@ -285,6 +285,41 @@
           "ror": "Search preprints by funder ROR ID (e.g., NIH: '021nxhr62')"
         }
       }
+    },
+    {
+      "name": "Scholar Gateway",
+      "type": "streamable-http",
+      "url": "https://connector.scholargateway.ai/mcp",
+      "description": "Peer-reviewed Wiley journals with verifiable DOI citations",
+      "idCapabilities": {
+        "accepts": ["doi"],
+        "produces": ["doi"],
+        "hints": {
+          "doi": "Access full-text from Wiley's peer-reviewed journal collection"
+        }
+      }
+    },
+    {
+      "name": "BioRender",
+      "type": "streamable-http",
+      "url": "https://mcp.services.biorender.com/mcp",
+      "description": "Scientific templates and icons for research visualizations",
+      "idCapabilities": {
+        "accepts": [],
+        "produces": [],
+        "hints": {}
+      }
+    },
+    {
+      "name": "Hugging Face",
+      "type": "streamable-http",
+      "url": "https://huggingface.co/mcp",
+      "description": "ML models and datasets including bioinformatics tools (protein structure, genomics)",
+      "idCapabilities": {
+        "accepts": [],
+        "produces": [],
+        "hints": {}
+      }
     }
   ]
 }
