@@ -60,6 +60,7 @@ nextjs.log
 
 # workers dependencies
 /workers/node_modules/
+/workers/codemode/node_modules/
 
 # Local development secrets (use wrangler secret for production)
 /workers/codemode/.dev.vars
