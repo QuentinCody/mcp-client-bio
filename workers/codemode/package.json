@@ -1,0 +1,11 @@
+{
+  "name": "codemode-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.56.0"
+  }
+}
