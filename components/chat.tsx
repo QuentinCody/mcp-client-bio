@@ -271,10 +271,14 @@ export default function Chat() {
   const isChatLoading = status === "streaming" || status === "submitted" || isLoadingChat;
 
   const handleNewChat = useCallback(() => {
+    // Stop any active streaming first
+    stop();
+    // Clear state immediately for instant feedback
     setMessages([]);
     setPromptPreview(null);
-    router.push("/");
-  }, [router, setMessages, setPromptPreview]);
+    // Use replace for faster navigation (no history entry)
+    router.replace("/");
+  }, [router, setMessages, setPromptPreview, stop]);
 
   // Export handlers
   const handleExportJSON = useCallback(() => {

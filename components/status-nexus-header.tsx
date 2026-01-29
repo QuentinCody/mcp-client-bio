@@ -365,21 +365,17 @@ export function StatusNexusHeader({
           {/* Quick actions dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="relative flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card/50 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              <button
+                className="relative flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card/50 text-muted-foreground hover:text-foreground hover:bg-muted transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4" />
                 {/* Notification dot */}
                 {showNotification && (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-background"
+                  <span
+                    className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-background animate-in zoom-in duration-200"
                   />
                 )}
-              </motion.button>
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={onNewChat}>
