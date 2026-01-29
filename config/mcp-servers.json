@@ -293,9 +293,10 @@
       "description": "Peer-reviewed Wiley journals with verifiable DOI citations",
       "auth": {
         "type": "oauth",
-        "clientId": "gCQh1maghAELqxEY",
+        "clientId": "TEOHcvwdYiTykY5j",
         "authorizationEndpoint": "https://connector.scholargateway.ai/authorize",
-        "tokenEndpoint": "https://connector.scholargateway.ai/token"
+        "tokenEndpoint": "https://connector.scholargateway.ai/token",
+        "scopes": ["openid", "profile", "email"]
       },
       "idCapabilities": {
         "accepts": ["doi"],
@@ -312,8 +313,7 @@
       "description": "Scientific templates and icons for research visualizations",
       "auth": {
         "type": "oauth",
-        "clientId": "efd7d4ccc9df30e8b453ecbe92d3b9e0",
-        "clientSecret": "REMOVED_SECRET",
+        "clientId": "a5827cfff5ea8efc0c755b981f21cbdc",
         "authorizationEndpoint": "https://mcp.services.biorender.com/oauth/authorize",
         "tokenEndpoint": "https://mcp.services.biorender.com/oauth/token",
         "scopes": ["profile", "email", "openid", "offline_access"]
