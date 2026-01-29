@@ -6,14 +6,8 @@ compatibility_flags = ["enable_ctx_exports"]
 [[worker_loaders]]
 binding = "LOADER"
 
-# Durable Object binding (required for migration to work)
-[durable_objects]
-bindings = []
-
-# Migration to delete the unused Durable Object class
-[[migrations]]
-tag = "v2"
-deleted_classes = ["CodeModeDatabase"]
+# Note: CodeModeDatabase Durable Object migration (v2) was applied to production on 2026-01-29
+# The migration config has been removed since it's a one-time cleanup
 
 [vars]
 # Non-secret configuration (secrets are managed via `wrangler secret`)
