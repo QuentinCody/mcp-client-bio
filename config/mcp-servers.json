@@ -291,6 +291,12 @@
       "type": "streamable-http",
       "url": "https://connector.scholargateway.ai/mcp",
       "description": "Peer-reviewed Wiley journals with verifiable DOI citations",
+      "auth": {
+        "type": "oauth",
+        "clientId": "gCQh1maghAELqxEY",
+        "authorizationEndpoint": "https://connector.scholargateway.ai/authorize",
+        "tokenEndpoint": "https://connector.scholargateway.ai/token"
+      },
       "idCapabilities": {
         "accepts": ["doi"],
         "produces": ["doi"],
@@ -304,6 +310,14 @@
       "type": "streamable-http",
       "url": "https://mcp.services.biorender.com/mcp",
       "description": "Scientific templates and icons for research visualizations",
+      "auth": {
+        "type": "oauth",
+        "clientId": "efd7d4ccc9df30e8b453ecbe92d3b9e0",
+        "clientSecret": "REMOVED_SECRET",
+        "authorizationEndpoint": "https://mcp.services.biorender.com/oauth/authorize",
+        "tokenEndpoint": "https://mcp.services.biorender.com/oauth/token",
+        "scopes": ["profile", "email", "openid", "offline_access"]
+      },
       "idCapabilities": {
         "accepts": [],
         "produces": [],
