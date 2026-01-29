@@ -9,30 +9,27 @@ type SetValue<T> = T | ((val: T) => T);
  * @returns A stateful value and a function to update it
  */
 export function useLocalStorage<T>(key: string, initialValue: T) {
-  // State to store our value
-  // Pass initial state function to useState so logic is only executed once
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
-
-  // Ref to track pending writes for debouncing
-  const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingValueRef = useRef<T | null>(null);
-
   // Check if we're in the browser environment
   const isBrowser = typeof window !== 'undefined';
 
-  // Initialize state from localStorage or use initialValue
-  useEffect(() => {
-    if (!isBrowser) return;
-
+  // State to store our value
+  // Read from localStorage synchronously on first mount to avoid race conditions
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    if (!isBrowser) return initialValue;
     try {
       const item = window.localStorage.getItem(key);
       if (item) {
-        setStoredValue(parseJSON(item));
+        return parseJSON(item);
       }
     } catch (error) {
       console.error(`Error reading localStorage key "${key}":`, error);
     }
-  }, [key, isBrowser]);
+    return initialValue;
+  });
+
+  // Ref to track pending writes for debouncing
+  const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingValueRef = useRef<T | null>(null);
 
   // Cleanup pending writes on unmount
   useEffect(() => {
